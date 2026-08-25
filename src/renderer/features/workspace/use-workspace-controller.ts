@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Activity, ApprovalRequest, Artifact, FileChangeSummary, PlanSnapshot, SubagentSnapshot, Task, TrustRequest, Workspace } from '../../../contracts/ipc/v1/workspace.js';
 import { sessionSlugFromPrompt } from './task-title.js';
 import { shouldAutoApprove, type ApprovalMode } from './approval-policy.js';
-import { EMPTY_FILE_CHANGE_SUMMARIES, EMPTY_FILE_CHANGE_SUMMARY, fileChangeSummariesFromActivities, fileChangesFromActivities, mergeFileChange, mergeFileChangeForTurn } from './file-changes.js';
+import { EMPTY_FILE_CHANGE_SUMMARIES, EMPTY_FILE_CHANGE_SUMMARY, fileChangeSummariesFromActivities, mergeFileChange, mergeFileChangeForTurn } from './file-changes.js';
 import { applyPlanEvent, applySubagentEvent } from './orchestration-events.js';
 
 export function useWorkspaceController() {
@@ -95,7 +95,13 @@ export function useWorkspaceController() {
   const loadActivities = useCallback(async (taskId: string): Promise<void> => {
     const requestId = ++activityRequestRef.current;
     const next = await window.lotagate.tasks.activities(taskId);
-    if (requestId === activityRequestRef.current) { setActivities(next); setFileChanges(fileChangesFromActivities(next)); setFileChangesByTurn(fileChangeSummariesFromActivities(next)); }
+    if (requestId === activityRequestRef.current) {
+      const summaries = fileChangeSummariesFromActivities(next);
+      setActivities(next);
+      setFileChangesByTurn(summaries);
+      const liveTurnId = activeTurnRef.current?.turnId;
+      setFileChanges(liveTurnId === undefined ? EMPTY_FILE_CHANGE_SUMMARY : summaries[liveTurnId] ?? EMPTY_FILE_CHANGE_SUMMARY);
+    }
   }, []);
 
   const scheduleActivityRefresh = useCallback((taskId: string) => {
@@ -223,7 +229,7 @@ export function useWorkspaceController() {
 
   const sendPrompt = useCallback(async (prompt: string) => {
     if (!prompt.trim() || workspace === undefined) return;
-    setBusy(true); setError(undefined);
+    setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setPlan(undefined); setSubagents([]);
     let failedTaskId: string | undefined;
     try {
       const isNewTask = task === undefined;

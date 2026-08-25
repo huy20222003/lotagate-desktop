@@ -29,6 +29,7 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceActionBusy, setWorkspaceActionBusy] = useState(false);
   const [changesOpen, setChangesOpen] = useState(false);
+  const [changesSummary, setChangesSummary] = useState<FileChangeSummary | undefined>();
   const threadViewportRef = useRef<HTMLDivElement>(null);
   const hasRenderedActivities = useRef(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -88,16 +89,17 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   async function confirmLogout() { setLoggingOut(true); try { await window.lotagate.auth.logout(); onLoggedOut(); } finally { setLoggingOut(false); setLogoutOpen(false); } }
   const accountName = user.fullName ?? user.username ?? user.email;
   const avatarProps = user.avatarUrl ? { name: accountName, src: user.avatarUrl } : { name: accountName };
+  const openChanges = useCallback((summary: FileChangeSummary) => { setChangesSummary(summary); setChangesOpen(true); }, []);
   if (settingsOpen) return <SettingsPage user={user} onBack={() => setSettingsOpen(false)} />;
   return <div className="workspace-shell">
     <WorkspaceSidebar accountName={accountName} avatarProps={avatarProps} workspaces={controller.workspaces} activeWorkspace={controller.workspace} tasks={controller.tasks} activeTask={controller.task} loading={controller.loading} accountOpen={accountOpen} onAccount={() => setAccountOpen(open => !open)} onCloseAccount={() => setAccountOpen(false)} onSettings={() => { setSettingsOpen(true); setAccountOpen(false); }} onLogout={() => { setLogoutOpen(true); setAccountOpen(false); }} onNewChat={startNewChat} onWorkspace={controller.selectWorkspace} onTask={controller.selectTask} onAddWorkspace={() => void openWorkspacePicker()} onRenameWorkspace={startRename} onRemoveWorkspace={startRemove} onArchiveTask={setArchiveTarget} onPinTask={(target, pinned) => { void controller.pinTaskById(target.id, pinned).catch(reason => showError('Unable to update session pin', toMessage(reason))); }} />
     <main className="conversation">
       <ConversationHeader task={controller.task} workspace={controller.workspace} />
-      <Scrollbar className="thread-scrollbar" viewportRef={threadViewportRef}><div className="thread-content">{controller.loading || controller.activitiesLoading ? <ChatLoadingSkeleton /> : <TaskConversation task={controller.task} activities={controller.activities} fileChangesByTurn={controller.fileChangesByTurn} statusText={controller.agentStatus} thinking={controller.thinking} turnTimings={controller.turnTimings} trust={controller.trust} onTrust={controller.respondTrust} />}</div></Scrollbar>
+      <Scrollbar className="thread-scrollbar" viewportRef={threadViewportRef}><div className="thread-content">{controller.loading || controller.activitiesLoading ? <ChatLoadingSkeleton /> : <TaskConversation task={controller.task} activities={controller.activities} fileChangesByTurn={controller.fileChangesByTurn} onOpenFileChanges={openChanges} statusText={controller.agentStatus} thinking={controller.thinking} turnTimings={controller.turnTimings} trust={controller.trust} onTrust={controller.respondTrust} />}</div></Scrollbar>
       <OrchestrationPanel plan={controller.plan} subagents={controller.subagents} />
-      {controller.thinking && controller.fileChanges.files.length > 0 ? <ChangeSummaryChip summary={controller.fileChanges} onClick={() => setChangesOpen(true)} /> : null}
+      {controller.thinking && controller.fileChanges.files.length > 0 ? <ChangeSummaryChip summary={controller.fileChanges} onClick={() => openChanges(controller.fileChanges)} /> : null}
       <Composer disabled={controller.workspace === undefined} workspace={controller.workspace} thinking={controller.thinking} task={controller.task} attachments={controller.attachments} models={controller.models} selectedModel={controller.selectedModel} onModel={controller.setSelectedModel} busy={controller.busy} error={controller.error} onSend={controller.sendPrompt} onCancel={controller.cancelTask} onDraft={controller.updateDraft} onAttach={controller.pickArtifact} onAttachImage={controller.attachImage} onRemoveAttachment={controller.removeAttachment} approval={controller.approval} approvalMode={controller.approvalMode} onApprovalMode={controller.setApprovalMode} onApproval={controller.respondApproval} />
-      {changesOpen ? <FileChangesDrawer summary={controller.fileChanges} onClose={() => setChangesOpen(false)} /> : null}
+      {changesOpen ? <FileChangesDrawer summary={changesSummary ?? controller.fileChanges} onClose={() => setChangesOpen(false)} /> : null}
     </main>
     {logoutOpen ? <Modal title="Sign out of LotaGate" onClose={() => setLogoutOpen(false)}><p className="modal-copy">Your server session will be cleared. Local task records remain available.</p><div className="modal-actions"><Button variant="secondary" onClick={() => setLogoutOpen(false)}>Cancel</Button><Button variant="danger" onClick={confirmLogout} disabled={loggingOut}>{loggingOut ? 'Signing out…' : 'Sign out'}</Button></div></Modal> : null}
     {renameTarget ? <Modal title="Edit workspace" onClose={() => setRenameTarget(undefined)}><div className="modal-form"><label className="field"><span className="field-label">Display name</span><TextInput value={workspaceName} onChange={event => setWorkspaceName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void saveWorkspaceName(); }} autoFocus /></label></div><div className="modal-actions"><Button variant="secondary" onClick={() => setRenameTarget(undefined)}>Cancel</Button><Button variant="primary" onClick={() => void saveWorkspaceName()} disabled={workspaceActionBusy || !workspaceName.trim()}>{workspaceActionBusy ? 'Saving…' : 'Save'}</Button></div></Modal> : null}
@@ -115,10 +117,10 @@ function ChatLoadingSkeleton() {
   return <div className="chat-loading-skeleton" aria-label="Loading chat"><Skeleton className="skeleton-chat-line skeleton-chat-short" /><Skeleton className="skeleton-chat-line" /><Skeleton className="skeleton-chat-line skeleton-chat-medium" /><Skeleton className="skeleton-chat-block" /></div>;
 }
 
-function TaskConversation({ task, activities, fileChangesByTurn, statusText, thinking, turnTimings, trust, onTrust }: { task?: Task | undefined; activities: Activity[]; fileChangesByTurn: FileChangeSummariesByTurn; statusText?: string | undefined; thinking: boolean; turnTimings: Record<string, { startedAt: number; endedAt?: number }>; trust?: TrustRequest | undefined; onTrust: (trusted: boolean) => Promise<void> }) {
+function TaskConversation({ task, activities, fileChangesByTurn, onOpenFileChanges, statusText, thinking, turnTimings, trust, onTrust }: { task?: Task | undefined; activities: Activity[]; fileChangesByTurn: FileChangeSummariesByTurn; onOpenFileChanges: (summary: FileChangeSummary) => void; statusText?: string | undefined; thinking: boolean; turnTimings: Record<string, { startedAt: number; endedAt?: number }>; trust?: TrustRequest | undefined; onTrust: (trusted: boolean) => Promise<void> }) {
   if (!task) return <EmptyState title="Create your first agent task" detail="Choose a workspace, then enter a prompt below." />;
   const transcript = mergeChatActivities(activities);
-  return <><div className="activity-list">{transcript.map(activity => { const fileChangeSummary = fileChangesByTurn[String(activity.metadata['turnId'] ?? '')]; return <ChatMessage key={activity.id} activity={activity} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...messageTiming(activity, turnTimings)} />; })}</div>{statusText ? <div className="agent-status" aria-live="polite">{statusText}</div> : thinking ? <TypingIndicator /> : null}{trust ? <TrustCard request={trust} onDecision={onTrust} /> : null}</>;
+  return <><div className="activity-list">{transcript.map(activity => { const fileChangeSummary = fileChangesByTurn[String(activity.metadata['turnId'] ?? '')]; return <ChatMessage key={activity.id} activity={activity} onOpenFileChanges={onOpenFileChanges} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...messageTiming(activity, turnTimings)} />; })}</div>{statusText ? <div className="agent-status" aria-live="polite">{statusText}</div> : thinking ? <TypingIndicator /> : null}{trust ? <TrustCard request={trust} onDecision={onTrust} /> : null}</>;
 }
 
 function messageTiming(activity: Activity, turnTimings: Record<string, { startedAt: number; endedAt?: number }>): { timing?: { startedAt: number; endedAt?: number } } {
@@ -127,26 +129,13 @@ function messageTiming(activity: Activity, turnTimings: Record<string, { started
   return timing === undefined ? {} : { timing };
 }
 
-function ChatMessage({ activity, timing, fileChangeSummary }: { activity: Activity; timing?: { startedAt: number; endedAt?: number }; fileChangeSummary?: FileChangeSummary }) {
+function ChatMessage({ activity, timing, fileChangeSummary, onOpenFileChanges }: { activity: Activity; timing?: { startedAt: number; endedAt?: number }; fileChangeSummary?: FileChangeSummary; onOpenFileChanges: (summary: FileChangeSummary) => void }) {
   if (activity.kind === 'user') return <UserMessage activity={activity} />;
-  return <AgentMessage activity={activity} {...(timing === undefined ? {} : { timing })} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} />;
+  return <AgentMessage activity={activity} onOpenFileChanges={onOpenFileChanges} {...(timing === undefined ? {} : { timing })} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} />;
 }
 
-function AgentMessage({ activity, timing, fileChangeSummary }: { activity: Activity; timing?: { startedAt: number; endedAt?: number }; fileChangeSummary?: FileChangeSummary }) {
-  const [copied, setCopied] = useState(false);
-  const resetTimer = useRef<number | undefined>();
-  useEffect(() => () => { if (resetTimer.current !== undefined) window.clearTimeout(resetTimer.current); }, []);
-  const copyRawContent = async () => {
-    try {
-      await navigator.clipboard.writeText(activity.text);
-      setCopied(true);
-      if (resetTimer.current !== undefined) window.clearTimeout(resetTimer.current);
-      resetTimer.current = window.setTimeout(() => setCopied(false), 1_500);
-    } catch {
-      setCopied(false);
-    }
-  };
-  return <article className="message agent-message"><div className="message-body"><ElapsedTime {...(timing === undefined ? {} : { timing })} fallback={activity.createdAt} /><AgentMarkdown content={activity.text} />{fileChangeSummary && fileChangeSummary.files.length > 0 ? <FileChangeCard summary={fileChangeSummary} /> : null}<div className="agent-message-meta"><Tooltip label={copied ? 'Copied' : 'Copy response'}><button type="button" className="agent-copy-button" aria-label="Copy response" onClick={() => void copyRawContent()}>{copied ? <Check size={13} /> : <Copy size={13} />}</button></Tooltip><time dateTime={activity.createdAt}>{formatTime(activity.createdAt)}</time></div></div></article>;
+function AgentMessage({ activity, timing, fileChangeSummary, onOpenFileChanges }: { activity: Activity; timing?: { startedAt: number; endedAt?: number }; fileChangeSummary?: FileChangeSummary; onOpenFileChanges: (summary: FileChangeSummary) => void }) {
+  return <article className="message agent-message"><div className="message-body"><ElapsedTime {...(timing === undefined ? {} : { timing })} fallback={activity.createdAt} /><AgentMarkdown content={activity.text} />{fileChangeSummary && fileChangeSummary.files.length > 0 ? <FileChangeCard summary={fileChangeSummary} onOpenFileChanges={onOpenFileChanges} /> : null}<div className="agent-message-meta"><CopyTextButton content={activity.text} label="Copy response" /><time dateTime={activity.createdAt}>{formatTime(activity.createdAt)}</time></div></div></article>;
 }
 
 function UserMessage({ activity }: { activity: Activity }) {
@@ -154,7 +143,7 @@ function UserMessage({ activity }: { activity: Activity }) {
   const limit = 480;
   const collapsible = activity.text.length > limit;
   const text = !expanded && collapsible ? `${activity.text.slice(0, limit).trimEnd()}…` : activity.text;
-  return <article className="message user-message"><div className="message-body"><div className="user-message-text"><PromptMarkup content={text} /></div>{collapsible ? <button className="show-more" onClick={() => setExpanded(current => !current)}>{expanded ? 'Show less' : 'Show more'}</button> : null}</div></article>;
+  return <article className="message user-message"><div className="message-body"><div className="user-message-text"><PromptMarkup content={text} /></div>{collapsible ? <button className="show-more" onClick={() => setExpanded(current => !current)}>{expanded ? 'Show less' : 'Show more'}</button> : null}<div className="user-message-meta"><time dateTime={activity.createdAt}>{formatTime(activity.createdAt)}</time><CopyTextButton content={activity.text} label="Copy message" /></div></div></article>;
 }
 
 function mergeChatActivities(activities: Activity[]): Activity[] {
@@ -211,6 +200,23 @@ function Composer({ disabled, workspace, thinking, task, attachments, models, se
 function TypingIndicator() { const [dots, setDots] = useState(1); useEffect(() => { const timer = window.setInterval(() => setDots(current => current === 3 ? 1 : current + 1), 420); return () => window.clearInterval(timer); }, []); return <div className="typing-indicator" aria-live="polite"><span>Thinking</span><strong>{'.'.repeat(dots)}</strong></div>; }
 function ElapsedTime({ timing, fallback }: { timing?: { startedAt: number; endedAt?: number }; fallback: string }) { const startedAt = timing?.startedAt ?? Date.parse(fallback); const [now, setNow] = useState(Date.now()); useEffect(() => { if (timing?.endedAt !== undefined) return; const timer = window.setInterval(() => setNow(Date.now()), 1_000); return () => window.clearInterval(timer); }, [timing?.endedAt]); const end = timing?.endedAt ?? (timing ? now : startedAt); return <div className="worked-time">Worked for {formatDuration(Math.max(0, end - startedAt))}</div>; }
 
+function CopyTextButton({ content, label }: { content: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<number | undefined>();
+  useEffect(() => () => { if (resetTimer.current !== undefined) window.clearTimeout(resetTimer.current); }, []);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      if (resetTimer.current !== undefined) window.clearTimeout(resetTimer.current);
+      resetTimer.current = window.setTimeout(() => setCopied(false), 1_500);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return <Tooltip label={copied ? 'Copied' : label}><button type="button" className="agent-copy-button" aria-label={label} onClick={() => void copy()}>{copied ? <Check size={13} /> : <Copy size={13} />}</button></Tooltip>;
+}
+
 function ChangeSummaryChip({ summary, onClick }: { summary: FileChangeSummary; onClick: () => void }) {
   return <button type="button" className="change-summary-chip" onClick={onClick}><span className="change-summary-step" aria-hidden="true" /><span>{summary.files.length} {summary.files.length === 1 ? 'file' : 'files'} changed</span><span className="change-additions">+{summary.additions}</span><span className="change-deletions">-{summary.deletions}</span></button>;
 }
@@ -219,12 +225,12 @@ function FileChangesDrawer({ summary, onClose }: { summary: FileChangeSummary; o
   return <aside className="file-changes-drawer" aria-label="Changed files"><header><div><strong>Changed files</strong><span>{summary.files.length} files · +{summary.additions} -{summary.deletions}</span></div><button type="button" className="icon-button" aria-label="Close changed files" onClick={onClose}><X size={16} /></button></header><div className="file-changes-list">{summary.files.map(change => <FileChangeItem key={change.path} change={change} />)}</div></aside>;
 }
 
-function FileChangeCard({ summary }: { summary: FileChangeSummary }) {
-  return <section className="file-change-card" aria-label="Edited files"><header><div><strong>Edited {summary.files.length} {summary.files.length === 1 ? 'file' : 'files'}</strong><span><b className="change-additions">+{summary.additions}</b><b className="change-deletions">-{summary.deletions}</b></span></div></header><div className="file-change-card-list">{summary.files.map(change => <FileChangeItem key={change.path} change={change} />)}</div></section>;
+function FileChangeCard({ summary, onOpenFileChanges }: { summary: FileChangeSummary; onOpenFileChanges: (summary: FileChangeSummary) => void }) {
+  return <section className="file-change-card" aria-label="Edited files"><header><div><strong>Edited {summary.files.length} {summary.files.length === 1 ? 'file' : 'files'}</strong><span><b className="change-additions">+{summary.additions}</b><b className="change-deletions">-{summary.deletions}</b></span></div></header><div className="file-change-card-list">{summary.files.map(change => <FileChangeItem key={change.path} change={change} onOpenFileChanges={() => onOpenFileChanges(summary)} />)}</div></section>;
 }
 
-function FileChangeItem({ change }: { change: FileChangeDiff }) {
+function FileChangeItem({ change, onOpenFileChanges }: { change: FileChangeDiff; onOpenFileChanges?: () => void }) {
   const [expanded, setExpanded] = useState(true);
-  return <section className="file-change-item"><header><button type="button" className="file-change-toggle" aria-label={`${expanded ? 'Collapse' : 'Expand'} changes for ${change.path}`} aria-expanded={expanded} onClick={() => setExpanded(current => !current)}>{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button><strong title={change.path}>{change.path}</strong><span><Plus size={12} />{change.additions}<Minus size={12} />{change.deletions}</span></header>{expanded ? <pre>{change.lines.map((line, index) => <code className={`diff-line diff-${line.kind}`} key={`${change.path}:${index}`}><span className="diff-line-number">{line.newLine ?? line.oldLine ?? ''}</span><span>{line.kind === 'addition' ? '+' : line.kind === 'deletion' ? '-' : ' '}{line.text}</span></code>)}{change.truncated ? <code className="diff-truncated">… diff truncated …</code> : null}</pre> : null}</section>;
+  return <section className="file-change-item"><header><button type="button" className="file-change-toggle" aria-label={`${expanded ? 'Collapse' : 'Expand'} changes for ${change.path}`} aria-expanded={expanded} onClick={() => setExpanded(current => !current)}>{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>{onOpenFileChanges ? <button type="button" className="file-change-path" title={change.path} onClick={onOpenFileChanges}>{change.path}</button> : <strong title={change.path}>{change.path}</strong>}<span><Plus size={12} />{change.additions}<Minus size={12} />{change.deletions}</span></header>{expanded ? <pre>{change.lines.map((line, index) => <code className={`diff-line diff-${line.kind}`} key={`${change.path}:${index}`}><span className="diff-line-number">{line.newLine ?? line.oldLine ?? ''}</span><span>{line.kind === 'addition' ? '+' : line.kind === 'deletion' ? '-' : ' '}{line.text}</span></code>)}{change.truncated ? <code className="diff-truncated">… diff truncated …</code> : null}</pre> : null}</section>;
 }
 function toMessage(reason: unknown): string { return reason instanceof Error ? reason.message : 'The workspace operation failed.'; }
