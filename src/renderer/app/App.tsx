@@ -1,0 +1,42 @@
+import { useEffect, useState } from 'react';
+import type { LoginInput, UserProfile } from '../../contracts/ipc/v1/auth.js';
+import { Spinner } from '../components/ui.js';
+import { LoginScreen } from '../features/auth/LoginScreen.js';
+import { WorkspaceShell } from '../features/workspace/WorkspaceShell.js';
+import { useLocale } from '../i18n/locale.js';
+
+type AppState = 'checking' | 'login' | 'workspace';
+
+export function App() {
+  const { t } = useLocale();
+  const [state, setState] = useState<AppState>('checking');
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [error, setError] = useState<string | undefined>();
+
+  useEffect(() => {
+    window.lotagate.auth.getCurrentUser().then((profile) => {
+      setUser(profile);
+      setState(profile ? 'workspace' : 'login');
+    }).catch((reason: unknown) => {
+      setError(toMessage(reason));
+      setState('login');
+    });
+    return window.lotagate.auth.onSessionExpired(() => { setUser(null); setState('login'); setError(t('sessionExpired')); });
+  }, [t]);
+
+  if (state === 'checking') return <main className="app-loading"><Spinner label={t('checkingSession')} /></main>;
+  if (state === 'login') return <LoginScreen {...(error === undefined ? {} : { initialError: error })} onLogin={handleLogin} />;
+  if (!user) return null;
+  return <WorkspaceShell user={user} onLoggedOut={() => { setUser(null); setState('login'); }} />;
+
+  async function handleLogin(input: LoginInput) {
+    setError(undefined);
+    const profile = await window.lotagate.auth.login(input);
+    setUser(profile);
+    setState('workspace');
+  }
+}
+
+function toMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : 'Unable to connect to the LotaGate API.';
+}
