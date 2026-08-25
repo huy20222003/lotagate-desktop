@@ -1,6 +1,6 @@
 import { BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
 
-export type DesktopMenuCommand = 'newTask' | 'openWorkspace' | 'settings' | 'activity';
+export type DesktopMenuCommand = 'newTask' | 'openWorkspace';
 export type DesktopMenuContext = 'login' | 'workspace';
 
 export function setApplicationMenu(context: DesktopMenuContext): void {
@@ -15,9 +15,8 @@ export function setApplicationMenu(context: DesktopMenuContext): void {
     {
       label: 'File',
       submenu: [
-        { label: 'New Task', accelerator: 'CmdOrCtrl+N', click: () => sendCommand('newTask') },
+        { label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: () => sendCommand('newTask') },
         { label: 'Open Workspace...', accelerator: 'CmdOrCtrl+O', click: () => sendCommand('openWorkspace') },
-        { label: 'Settings', click: () => sendCommand('settings') },
         { type: 'separator' },
         { role: 'quit', label: 'Exit' },
       ],

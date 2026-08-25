@@ -9,6 +9,14 @@ export interface AgentManagerHandler {
   onExit?(cwd: string, error: Error): void;
 }
 
+export interface CliAttachmentInput {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  path: string;
+}
+
 export class AgentManager {
   private readonly processes = new Map<string, CliAgentProcess>();
   private readonly recoveryAttempts = new Map<string, number>();
@@ -24,7 +32,15 @@ export class AgentManager {
   async sessionCreate(cwd: string, input: { model?: string; name?: string }): Promise<unknown> { return this.request(cwd, 'session.create', input); }
   async sessionList(cwd: string): Promise<unknown> { return this.request(cwd, 'session.list', {}); }
   async sessionResume(cwd: string, sessionId: string): Promise<unknown> { return this.request(cwd, 'session.resume', { sessionId }); }
-  async turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string }): Promise<unknown> { return this.request(cwd, 'turn.start', input); }
+  async turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; attachments?: CliAttachmentInput[] }): Promise<unknown> {
+    const process = this.getOrCreate(await requireDirectory(cwd));
+    const attachmentIds: string[] = [];
+    for (const attachment of input.attachments ?? []) {
+      await process.uploadAttachment(attachment);
+      attachmentIds.push(attachment.id);
+    }
+    return process.request('turn.start', { sessionId: input.sessionId, prompt: input.prompt, ...(input.model === undefined ? {} : { model: input.model }), ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
+  }
   async turnCancel(cwd: string, turnId: string): Promise<unknown> { return this.request(cwd, 'turn.cancel', { turnId }); }
   async approvalRespond(cwd: string, input: { approvalId: string; approved: boolean }): Promise<unknown> { return this.request(cwd, 'approval.respond', input); }
   async trustRespond(cwd: string, input: { trustRequestId: string; trusted: boolean }): Promise<unknown> { return this.request(cwd, 'trust.respond', input); }

@@ -23,7 +23,7 @@
     "package:smoke": "npm run build && npm run check:file-size && electron-forge package"
   },
   "dependencies": {
-    "@lotagate/cli": "0.1.6",
+    "@lotagate/cli": "0.1.8",
     "@vitejs/plugin-react": "5.0.4",
     "electron-vite": "5.0.0",
     "lucide-react": "0.468.0",

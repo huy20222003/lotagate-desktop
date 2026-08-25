@@ -4,13 +4,16 @@ import type { DesktopWorkspaceApi, DesktopTaskApi, AgentEventEnvelope, DesktopGi
 
 export interface DesktopBridge {
   menu: {
-    onCommand(listener: (command: 'newTask' | 'openWorkspace' | 'settings' | 'activity') => void): () => void;
+    onCommand(listener: (command: 'newTask' | 'openWorkspace') => void): () => void;
     setContext(context: 'login' | 'workspace'): Promise<void>;
   };
   auth: DesktopRendererAuthApi;
   userContext: {
     organizations(): Promise<unknown>;
     organization(code: string): Promise<unknown>;
+    wallet(code: string): Promise<unknown>;
+    usage(organizationCode: string, workspaceCode?: string): Promise<unknown>;
+    dashboardStats(organizationCode: string, workspaceCode?: string): Promise<unknown>;
     workspaces(code: string): Promise<unknown>;
     models(organizationCode: string, workspaceCode: string): Promise<unknown>;
   };
@@ -19,7 +22,7 @@ export interface DesktopBridge {
     sessionCreate(cwd: string, input: { model?: string; name?: string }): Promise<unknown>;
     sessionList(cwd: string): Promise<unknown>;
     sessionResume(cwd: string, sessionId: string): Promise<unknown>;
-    turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string }): Promise<unknown>;
+    turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; taskId?: string; attachmentIds?: string[] }): Promise<unknown>;
     turnCancel(cwd: string, turnId: string): Promise<unknown>;
     approvalRespond(cwd: string, input: { approvalId: string; approved: boolean }): Promise<unknown>;
     trustRespond(cwd: string, input: { trustRequestId: string; trusted: boolean }): Promise<unknown>;

@@ -6,13 +6,14 @@ const bridge: DesktopBridge = {
   menu: {
     setContext: context => ipcRenderer.invoke('menu.setContext', context),
     onCommand: listener => {
-      const handler = (_event: Electron.IpcRendererEvent, command: 'newTask' | 'openWorkspace' | 'settings' | 'activity') => listener(command);
+      const handler = (_event: Electron.IpcRendererEvent, command: 'newTask' | 'openWorkspace') => listener(command);
       ipcRenderer.on('menu.command', handler);
       return () => ipcRenderer.removeListener('menu.command', handler);
     },
   },
   auth: {
     getCurrentUser: () => ipcRenderer.invoke('auth.getCurrentUser'),
+    restoreSession: () => ipcRenderer.invoke('auth.restoreSession'),
     login: (input) => ipcRenderer.invoke('auth.login', input),
     logout: () => ipcRenderer.invoke('auth.logout'),
     onSessionExpired: listener => {
@@ -24,6 +25,9 @@ const bridge: DesktopBridge = {
   userContext: {
     organizations: () => ipcRenderer.invoke('userContext.organizations'),
     organization: code => ipcRenderer.invoke('userContext.organization', code),
+    wallet: code => ipcRenderer.invoke('userContext.wallet', code),
+    usage: (organizationCode, workspaceCode) => ipcRenderer.invoke('userContext.usage', organizationCode, workspaceCode),
+    dashboardStats: (organizationCode, workspaceCode) => ipcRenderer.invoke('userContext.dashboardStats', organizationCode, workspaceCode),
     workspaces: code => ipcRenderer.invoke('userContext.workspaces', code),
     models: (organizationCode, workspaceCode) => ipcRenderer.invoke('userContext.models', organizationCode, workspaceCode),
   },
@@ -52,6 +56,7 @@ const bridge: DesktopBridge = {
   },
   workspaces: {
     list: () => ipcRenderer.invoke('workspace.list'),
+    pickFolder: () => ipcRenderer.invoke('workspace.pickFolder'),
     add: rootPath => ipcRenderer.invoke('workspace.add', rootPath),
     addRoot: (workspaceId, rootPath) => ipcRenderer.invoke('workspace.addRoot', workspaceId, rootPath),
     rename: (workspaceId, name) => ipcRenderer.invoke('workspace.rename', workspaceId, name),
@@ -59,6 +64,7 @@ const bridge: DesktopBridge = {
     updateSettings: (workspaceId, patch) => ipcRenderer.invoke('workspace.settings', workspaceId, patch),
     remove: workspaceId => ipcRenderer.invoke('workspace.remove', workspaceId),
     trust: (workspaceId, trusted) => ipcRenderer.invoke('workspace.trust', workspaceId, trusted),
+    fileSuggestions: (rootPath, query) => ipcRenderer.invoke('workspace.fileSuggestions', rootPath, query),
   },
   tasks: {
     list: workspaceId => ipcRenderer.invoke('task.list', workspaceId),
@@ -75,6 +81,7 @@ const bridge: DesktopBridge = {
     artifacts: taskId => ipcRenderer.invoke('task.artifacts', taskId),
     pickArtifact: taskId => ipcRenderer.invoke('task.pickArtifact', taskId),
     createTextArtifact: (taskId, name, content, kind) => ipcRenderer.invoke('task.createTextArtifact', taskId, name, content, kind),
+    createImageArtifact: (taskId, name, bytes) => ipcRenderer.invoke('task.createImageArtifact', taskId, name, bytes),
     deleteArtifact: (taskId, artifactId, confirmed) => ipcRenderer.invoke('task.deleteArtifact', taskId, artifactId, confirmed),
     previewArtifact: (taskId, artifactId) => ipcRenderer.invoke('task.previewArtifact', taskId, artifactId),
     openArtifact: (taskId, artifactId) => ipcRenderer.invoke('task.openArtifact', taskId, artifactId),

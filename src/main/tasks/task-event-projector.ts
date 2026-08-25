@@ -19,7 +19,11 @@ export class TaskEventProjector {
     if (task === undefined) return;
     const data = event.data;
     const text = eventText(event.event, data);
-    if (text !== undefined) await this.tasks.appendEvent(task.id, activityKind(event.event), text, redactMetadata(data));
+    if (text !== undefined) {
+      const metadata = redactMetadata(data);
+      if (event.event === 'assistant.delta') await this.tasks.appendAssistantDelta(task.id, text, metadata);
+      else await this.tasks.appendEvent(task.id, activityKind(event.event), text, metadata);
+    }
     if (event.event === 'turn.started') await this.tasks.setStatus(task.id, 'active');
     if (event.event === 'turn.completed') { await this.tasks.setStatus(task.id, 'completed'); await this.tasks.update(task.id, { turnId: undefined, interruptedReason: undefined }); }
     if (event.event === 'turn.failed') await this.tasks.setStatus(task.id, 'failed');
@@ -38,7 +42,6 @@ function eventText(event: string, data: Record<string, unknown>): string | undef
   if (event === 'context.compacted') return 'Agent context was compacted.';
   if (event === 'usage.updated') return 'Usage updated.';
   if (event === 'turn.failed') return 'Agent turn failed.';
-  if (event === 'turn.completed') return 'Agent turn completed.';
   return undefined;
 }
 

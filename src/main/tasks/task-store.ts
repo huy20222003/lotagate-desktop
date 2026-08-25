@@ -15,14 +15,14 @@ export class TaskStore {
   async create(input: { workspaceId: string; title: string; cwd: string; prompt?: string }): Promise<Task> {
     return this.withExclusive(async () => {
       const now = new Date().toISOString();
-      const task = taskSchema.parse({ id: randomUUID(), workspaceId: input.workspaceId, title: input.title, cwd: input.cwd, status: 'queued', pinned: false, archived: false, draft: input.prompt ?? '', lastEventCursor: 0, createdAt: now, updatedAt: now });
+      const task = taskSchema.parse({ id: randomUUID(), workspaceId: input.workspaceId, title: input.title, cwd: input.cwd, status: 'queued', pinned: false, archived: false, draft: '', draftAttachmentIds: [], lastEventCursor: 0, createdAt: now, updatedAt: now });
       await this.taskStore.update(current => [...current, task]);
       if (input.prompt) await this.appendActivityInternal(task.id, 'user', input.prompt, {});
       return task;
     });
   }
 
-  async update(taskId: string, patch: Partial<Pick<Task, 'title' | 'pinned' | 'archived' | 'draft' | 'sessionId' | 'turnId' | 'model' | 'lastEventCursor' | 'interruptedReason'>>): Promise<Task> {
+  async update(taskId: string, patch: Partial<Pick<Task, 'title' | 'pinned' | 'archived' | 'draft' | 'draftAttachmentIds' | 'sessionId' | 'turnId' | 'model' | 'lastEventCursor' | 'interruptedReason'>>): Promise<Task> {
     return this.withExclusive(() => this.mutate(taskId, current => ({ ...current, ...patch, updatedAt: new Date().toISOString() })));
   }
 
@@ -40,9 +40,31 @@ export class TaskStore {
     return this.withExclusive(() => this.appendActivityInternal(taskId, kind, text, metadata));
   }
 
+  async appendAssistantDelta(taskId: string, text: string, metadata: Record<string, unknown>): Promise<Activity> {
+    return this.withExclusive(async () => {
+      const current = await this.activityStore.read();
+      const turnId = metadata['turnId'];
+      const index = [...current].reverse().findIndex(activity => activity.taskId === taskId && activity.kind === 'assistant' && activity.metadata['turnId'] === turnId);
+      if (index < 0) return this.appendActivityInternal(taskId, 'assistant', text, metadata);
+      const actualIndex = current.length - index - 1;
+      const previous = activitySchema.parse(current[actualIndex]);
+      const updated = activitySchema.parse({ ...previous, text: `${previous.text}${text}`, metadata: { ...previous.metadata, ...metadata } });
+      const next = [...current]; next[actualIndex] = updated;
+      await this.activityStore.write(next);
+      return updated;
+    });
+  }
+
   private async appendActivityInternal(taskId: string, kind: Activity['kind'], text: string, metadata: Record<string, unknown>): Promise<Activity> {
     const activity = activitySchema.parse({ id: randomUUID(), taskId, kind, text, metadata, createdAt: new Date().toISOString() });
     await this.activityStore.update(current => [...current, activity]);
+    await this.taskStore.update(current => {
+      const index = current.findIndex(task => task.id === taskId);
+      if (index < 0) throw new Error('Task was not found.');
+      const next = [...current];
+      next[index] = taskSchema.parse({ ...next[index], updatedAt: activity.createdAt });
+      return next;
+    });
     return activity;
   }
 

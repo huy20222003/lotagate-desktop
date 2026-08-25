@@ -1,5 +1,5 @@
 import { session, type Session } from 'electron';
-import { API_CRYPTO, API_PATHS, isDesktopApiPathAllowed } from './api-contract.js';
+import { API_AUTH_COOKIES, API_CRYPTO, API_PATHS, isDesktopApiPathAllowed } from './api-contract.js';
 import { bootstrapCryptoSession, decryptJson, encryptJson, isEnvelope, nextContext, shouldRotate, type ApiCryptoSession, type EcPublicJwk } from './api-crypto.js';
 
 export interface ApiTransportConfig {
@@ -42,13 +42,49 @@ export class ApiTransport {
     catch (error) {
       if (options.retryOnUnauthorized === false || !(error instanceof DesktopApiError) || error.status !== 401 || new Set<string>([API_PATHS.login, API_PATHS.refresh, API_PATHS.cryptoSession, API_PATHS.logout]).has(path)) throw error;
       await this.refreshSession();
-      return this.requestOnce<T>(path, method, body);
+      try {
+        return await this.requestOnce<T>(path, method, body);
+      } catch (retryError) {
+        if (retryError instanceof DesktopApiError && retryError.status === 401) await this.expireSession();
+        throw retryError;
+      }
     }
   }
 
   async clearSession(): Promise<void> {
     this.cryptoSession = null;
     await this.apiSession.clearStorageData({ storages: ['cookies'] });
+  }
+
+  async restoreSession(): Promise<boolean> {
+    if (!this.config.baseUrl || !this.config.trustedOrigin) throw new DesktopApiError(0, 'The LotaGate API URL and trusted origin must be configured.', false);
+    const cookies = await this.apiSession.cookies.get({ url: this.config.baseUrl });
+    const hasAccessCookie = cookies.some(cookie => cookie.name === API_AUTH_COOKIES.access);
+    const hasRefreshCookie = cookies.some(cookie => cookie.name === API_AUTH_COOKIES.refresh);
+    if (!hasAccessCookie && !hasRefreshCookie) return false;
+    if (hasAccessCookie) {
+      try {
+        await this.requestOnce(API_PATHS.me, 'GET');
+        return true;
+      } catch (error) {
+        if (!(error instanceof DesktopApiError) || error.status !== 401) throw error;
+      }
+    }
+    if (!hasRefreshCookie) {
+      await this.clearSession();
+      return false;
+    }
+    try {
+      await this.requestOnce(API_PATHS.refresh, 'POST');
+      this.cryptoSession = null;
+      return true;
+    } catch (error) {
+      if (error instanceof DesktopApiError && error.status === 401) {
+        await this.expireSession();
+        return false;
+      }
+      throw error;
+    }
   }
 
   private async requestOnce<T>(path: string, method: string, body?: unknown): Promise<T> {
@@ -69,12 +105,16 @@ export class ApiTransport {
         await this.requestOnce(API_PATHS.refresh, 'POST');
         this.cryptoSession = null;
       } catch (error) {
-        await this.clearSession();
-        this.config.onSessionExpired?.();
+        await this.expireSession();
         throw error;
       } finally { this.refreshOperation = undefined; }
     })();
     return this.refreshOperation;
+  }
+
+  private async expireSession(): Promise<void> {
+    await this.clearSession();
+    this.config.onSessionExpired?.();
   }
 
   private async ensureCryptoSession(): Promise<ApiCryptoSession> {

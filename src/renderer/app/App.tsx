@@ -14,7 +14,7 @@ export function App() {
   const [error, setError] = useState<string | undefined>();
 
   useEffect(() => {
-    window.lotagate.auth.getCurrentUser().then((profile) => {
+    window.lotagate.auth.restoreSession().then((profile) => {
       setUser(profile);
       void window.lotagate.menu.setContext(profile ? 'workspace' : 'login');
       setState(profile ? 'workspace' : 'login');

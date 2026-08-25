@@ -15,6 +15,14 @@ export class DesktopAuthService {
     }
   }
 
+  async restoreSession(): Promise<UserProfile | null> {
+    if (!(await this.transport.restoreSession())) return null;
+    const profile = await this.getCurrentUser();
+    if (profile) return profile;
+    await this.transport.clearSession();
+    return null;
+  }
+
   async login(input: LoginInput): Promise<UserProfile> {
     const credentials = loginInputSchema.parse(input);
     try {

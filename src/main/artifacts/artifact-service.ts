@@ -5,6 +5,8 @@ import { artifactSchema, type Artifact } from '../../contracts/ipc/v1/workspace.
 import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
 export class ArtifactService {
   private readonly store = new JsonFileStore<Artifact[]>(desktopDataPath('artifacts.json'), []);
 
@@ -16,11 +18,21 @@ export class ArtifactService {
     if (artifact.size > 2 * 1024 * 1024) return { artifact };
     const bytes = await readFile(artifact.path);
     if (['markdown', 'text', 'patch', 'json'].includes(artifact.kind)) return { artifact, content: bytes.toString('utf8') };
-    if (artifact.kind === 'image') return { artifact, dataUrl: `data:image/${artifact.name.split('.').pop() ?? 'png'};base64,${bytes.toString('base64')}` };
+    if (artifact.kind === 'image') return { artifact, dataUrl: `data:${artifactMimeType(artifact)};base64,${bytes.toString('base64')}` };
     return { artifact };
   }
 
   async path(taskId: string, artifactId: string): Promise<string> { const artifact = (await this.list(taskId)).find(item => item.id === artifactId); if (artifact === undefined) throw new Error('Artifact was not found.'); return artifact.path; }
+
+  async attachmentInputs(taskId: string, artifactIds: string[]): Promise<Array<{ id: string; name: string; mimeType: string; sizeBytes: number; path: string }>> {
+    const artifacts = await this.list(taskId);
+    return artifactIds.map(id => {
+      const artifact = artifacts.find(item => item.id === id);
+      if (artifact === undefined) throw new Error('Attachment artifact was not found.');
+      if (artifact.size <= 0 || artifact.size > MAX_ATTACHMENT_BYTES) throw new Error('The attachment exceeds the supported size limit.');
+      return { id: artifact.id, name: artifact.name, mimeType: artifactMimeType(artifact), sizeBytes: artifact.size, path: artifact.path };
+    });
+  }
 
   async importFile(taskId: string, sourcePath: string, kind: Artifact['kind']): Promise<Artifact> {
     const details = await stat(sourcePath);
@@ -44,6 +56,18 @@ export class ArtifactService {
     return artifact;
   }
 
+  async createImage(taskId: string, name: string, bytes: Uint8Array): Promise<Artifact> {
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('The image attachment exceeds the supported size limit.');
+    const safeName = basename(name).replace(/[^A-Za-z0-9._-]/gu, '_').slice(0, 120) || 'pasted-image.png';
+    const directory = join(desktopDataPath('artifacts'), taskId);
+    await mkdir(directory, { recursive: true });
+    const path = join(directory, `${randomUUID()}-${safeName}`);
+    await writeFile(path, bytes);
+    const artifact = artifactSchema.parse({ id: randomUUID(), taskId, name: safeName, path, kind: 'image', size: bytes.byteLength, createdAt: new Date().toISOString() });
+    await this.store.update(current => [...current, artifact]);
+    return artifact;
+  }
+
   async delete(taskId: string, artifactId: string, confirmed: boolean): Promise<void> {
     if (!confirmed) throw new Error('Artifact deletion requires explicit confirmation.');
     let path: string | undefined;
@@ -58,4 +82,30 @@ export class ArtifactService {
     });
     if (path) await unlink(path).catch(() => undefined);
   }
+}
+
+function artifactMimeType(artifact: Artifact): string {
+  if (artifact.kind !== 'image') {
+    const extension = artifact.name.split('.').pop()?.toLowerCase();
+    if (extension === 'pdf') return 'application/pdf';
+    if (extension === 'json') return 'application/json';
+    if (extension === 'md' || extension === 'markdown') return 'text/markdown';
+    if (extension === 'txt' || extension === 'log' || extension === 'csv') return 'text/plain';
+    if (extension === 'xml') return 'application/xml';
+    if (extension === 'html' || extension === 'htm') return 'text/html';
+    if (extension === 'js' || extension === 'ts' || extension === 'tsx' || extension === 'jsx' || extension === 'css') return 'text/plain';
+    if (extension === 'zip') return 'application/zip';
+    if (extension === 'doc') return 'application/msword';
+    if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (extension === 'xls') return 'application/vnd.ms-excel';
+    if (extension === 'xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    return 'application/octet-stream';
+  }
+  const name = artifact.name;
+  const extension = name.split('.').pop()?.toLowerCase();
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  if (extension === 'gif') return 'image/gif';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'bmp') return 'image/bmp';
+  return 'image/png';
 }

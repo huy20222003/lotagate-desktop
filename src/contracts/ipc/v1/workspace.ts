@@ -28,6 +28,7 @@ export const taskSchema = z.object({
   pinned: z.boolean(),
   archived: z.boolean(),
   draft: z.string(),
+  draftAttachmentIds: z.array(z.string().min(1)).default([]),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -91,6 +92,7 @@ export type AgentEvent = DesktopEvent;
 
 export interface DesktopWorkspaceApi {
   list(): Promise<Workspace[]>;
+  pickFolder(): Promise<string | null>;
   add(rootPath: string): Promise<Workspace>;
   addRoot(workspaceId: string, rootPath: string): Promise<Workspace>;
   rename(workspaceId: string, name: string): Promise<Workspace>;
@@ -98,12 +100,15 @@ export interface DesktopWorkspaceApi {
   updateSettings(workspaceId: string, patch: Record<string, unknown>): Promise<Workspace>;
   remove(workspaceId: string): Promise<void>;
   trust(workspaceId: string, trusted: boolean): Promise<Workspace>;
+  fileSuggestions(rootPath: string, query: string): Promise<WorkspaceFileSuggestion[]>;
 }
+
+export interface WorkspaceFileSuggestion { path: string; kind: 'file' | 'folder' }
 
 export interface DesktopTaskApi {
   list(workspaceId?: string): Promise<Task[]>;
   create(input: { workspaceId: string; title: string; prompt?: string }): Promise<Task>;
-  update(taskId: string, patch: { title?: string; pinned?: boolean; archived?: boolean; draft?: string; sessionId?: string; turnId?: string; model?: string; lastEventCursor?: number; interruptedReason?: string }): Promise<Task>;
+  update(taskId: string, patch: { title?: string; pinned?: boolean; archived?: boolean; draft?: string; draftAttachmentIds?: string[]; sessionId?: string; turnId?: string; model?: string; lastEventCursor?: number; interruptedReason?: string }): Promise<Task>;
   setStatus(taskId: string, status: TaskStatus): Promise<Task>;
   retry(taskId: string): Promise<Task>;
   cancel(taskId: string): Promise<Task>;
@@ -115,6 +120,7 @@ export interface DesktopTaskApi {
   artifacts(taskId: string): Promise<Artifact[]>;
   pickArtifact(taskId: string): Promise<Artifact | null>;
   createTextArtifact(taskId: string, name: string, content: string, kind?: 'text' | 'markdown' | 'patch' | 'json'): Promise<Artifact>;
+  createImageArtifact(taskId: string, name: string, bytes: Uint8Array): Promise<Artifact>;
   deleteArtifact(taskId: string, artifactId: string, confirmed: boolean): Promise<void>;
   previewArtifact(taskId: string, artifactId: string): Promise<Record<string, unknown>>;
   openArtifact(taskId: string, artifactId: string): Promise<string>;

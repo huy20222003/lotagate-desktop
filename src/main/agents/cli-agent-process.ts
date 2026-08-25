@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createReadStream } from 'node:fs';
 import { once } from 'node:events';
 import { desktopRequestSchema, parseDesktopEvent, parseDesktopResponse, type DesktopAgentResult, type DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js';
 
 const MAX_JSONL_LINE_BYTES = 4 * 1024 * 1024;
+const DESKTOP_ATTACHMENT_CHUNK_BYTES = 512 * 1024;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const PROCESS_CLOSE_TIMEOUT_MS = 3_000;
 
 export interface CliAgentProcessOptions {
@@ -49,6 +52,21 @@ export class CliAgentProcess {
       throw new CliAgentProcessError('Unable to write to the CLI agent process.', error);
     }
     return operation;
+  }
+
+  async uploadAttachment(input: { id: string; name: string; mimeType: string; sizeBytes: number; path: string }): Promise<void> {
+    if (input.sizeBytes <= 0 || input.sizeBytes > MAX_ATTACHMENT_BYTES) throw new CliAgentProcessError('The attachment exceeds the supported size limit.');
+    await this.request('attachment.begin', { attachmentId: input.id, name: input.name, mimeType: input.mimeType, sizeBytes: input.sizeBytes });
+    let index = 0;
+    try {
+      for await (const chunk of createReadStream(input.path, { highWaterMark: DESKTOP_ATTACHMENT_CHUNK_BYTES })) {
+        await this.request('attachment.chunk', { attachmentId: input.id, index, dataBase64: Buffer.from(chunk).toString('base64') });
+        index += 1;
+      }
+      await this.request('attachment.complete', { attachmentId: input.id });
+    } catch (error) {
+      throw new CliAgentProcessError(`Unable to upload attachment ${input.name}.`, error);
+    }
   }
 
   async shutdown(): Promise<void> {

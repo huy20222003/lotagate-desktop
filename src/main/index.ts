@@ -17,6 +17,7 @@ import { ArtifactService } from './artifacts/artifact-service.js';
 import { BrowserService } from './browser/browser-service.js';
 import { AutomationService } from './automation/automation-service.js';
 import { DesktopOperations } from './operations/desktop-operations.js';
+import { WorkspaceFileSuggestions } from './workspaces/workspace-file-suggestions.js';
 import type { Automation } from './automation/automation-service.js';
 
 loadRuntimeEnvironment();
@@ -75,7 +76,7 @@ app.whenReady().then(() => {
     await agents.turnStart(workspace.rootPath, { sessionId, prompt: automation.prompt });
   };
   const runAutomation = (id: string): Promise<Automation> => automations.run(id, executeAutomation);
-  registerIpc({ auth: new DesktopAuthService(transport), userContext: new DesktopUserContextService(transport), agents, workspaces, tasks, git: new GitService(), terminal: new TerminalService(), settings: new SettingsService(), artifacts: new ArtifactService(), browser, automations, operations, runAutomation, setMenuContext: setApplicationMenu });
+  registerIpc({ auth: new DesktopAuthService(transport), userContext: new DesktopUserContextService(transport), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, git: new GitService(), terminal: new TerminalService(), settings: new SettingsService(), artifacts: new ArtifactService(), browser, automations, operations, runAutomation, setMenuContext: setApplicationMenu });
   automations.start(executeAutomation, 15_000);
   createMainWindow();
   app.on('activate', () => {

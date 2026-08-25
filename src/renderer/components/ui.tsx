@@ -1,26 +1,44 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, PropsWithChildren, ReactNode, TextareaHTMLAttributes } from 'react';
-import { X } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { createContext, forwardRef, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Info, X, XCircle } from 'lucide-react';
+import { Scrollbar } from './Scrollbar.js';
 
 export function Button({ variant = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }) {
   return <button className={`button button-${variant} ${className}`} {...props} />;
+}
+
+export function Icon({ icon: IconComponent, size = 16, label, ...props }: { icon: LucideIcon; size?: number; label?: string; className?: string }) {
+  return <IconComponent size={size} aria-hidden={label === undefined} aria-label={label} {...props} />;
 }
 
 export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input className="text-input" {...props} />;
 }
 
-export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) { return <textarea className="text-input text-area" {...props} />; }
+export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(({ className = '', ...props }, ref) => <textarea ref={ref} className={`text-input text-area ${className}`} {...props} />);
 export function Label({ children }: PropsWithChildren) { return <span className="field-label">{children}</span>; }
 export function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) { return <label className="check-control"><input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} /> <span>{label}</span></label>; }
 export function Radio({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) { return <label className="check-control"><input type="radio" checked={checked} onChange={onChange} /> <span>{label}</span></label>; }
-export function Badge({ children, tone = 'neutral' }: PropsWithChildren<{ tone?: 'neutral' | 'success' | 'warning' | 'danger' }>) { return <span className={`badge badge-${tone}`}>{children}</span>; }
+export function Badge({ children, tone = 'neutral', size = 'sm', className = '' }: PropsWithChildren<{ tone?: 'neutral' | 'success' | 'warning' | 'danger'; size?: 'sm' | 'md'; className?: string }>) { return <span className={`badge badge-${tone} badge-${size} ${className}`}>{children}</span>; }
 export function Card({ children, className = '' }: PropsWithChildren<{ className?: string }>) { return <section className={`card ${className}`}>{children}</section>; }
 export function Divider() { return <hr className="divider" />; }
 export function EmptyState({ title, detail, action }: { title: string; detail?: string; action?: ReactNode }) { return <div className="empty-state"><strong>{title}</strong>{detail ? <p>{detail}</p> : null}{action}</div>; }
-export function Tooltip({ label, children }: PropsWithChildren<{ label: string }>) { return <span className="tooltip-wrap" title={label}>{children}</span>; }
+export function Tooltip({ label, children }: PropsWithChildren<{ label: string }>) { return <span className="tooltip-wrap"><span className="tooltip-bubble" role="tooltip">{label}</span>{children}</span>; }
+export function Skeleton({ children, className = '' }: PropsWithChildren<{ className?: string }>) { return <span className={`skeleton ${className}`} aria-hidden="true">{children}</span>; }
 
-export function Dropdown({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) { return <label className="dropdown"><span className="field-label">{label}</span><select className="model-select" aria-label={label} value={value} onChange={event => onChange(event.target.value)}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>; }
+export function Dropdown({ label, value, options, onChange, disabled = false }: { label?: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const selected = options.find(option => option.value === value)?.label ?? value;
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsideClick = (event: PointerEvent) => { if (!dropdownRef.current?.contains(event.target as Node)) setOpen(false); };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
+  }, [open]);
+  return <div ref={dropdownRef} className={`dropdown ${open ? 'open' : ''}`}>{label ? <span className="field-label">{label}</span> : null}<button type="button" className="model-select" aria-label={label ?? 'Select option'} aria-expanded={open} disabled={disabled} onClick={() => setOpen(current => !current)}><span>{selected}</span><ChevronDown size={14} /></button>{open ? <div className="dropdown-menu"><Scrollbar><div className="dropdown-options">{options.map(option => <button type="button" key={option.value} className={option.value === value ? 'dropdown-option selected' : 'dropdown-option'} onClick={() => { onChange(option.value); setOpen(false); }}>{option.label}</button>)}</div></Scrollbar></div> : null}</div>;
+}
 
 export function Tabs({ value, items, onChange }: { value: string; items: Array<{ value: string; label: string }>; onChange: (value: string) => void }) { return <div className="tabs" role="tablist" aria-label="Views">{items.map(item => <button key={item.value} role="tab" aria-selected={value === item.value} className={`tab ${value === item.value ? 'selected' : ''}`} onClick={() => onChange(item.value)}>{item.label}</button>)}</div>; }
 
@@ -52,10 +70,50 @@ export function Spinner({ label = 'Loading' }: { label?: string }) {
 }
 
 export function Avatar({ name, src }: { name?: string; src?: string }) {
+  const [imageState, setImageState] = useState<'loading' | 'loaded' | 'failed'>(src ? 'loading' : 'failed');
   const initials = (name ?? '?').split(/\s+/u).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
-  return src ? <img className="avatar" src={src} alt="" /> : <span className="avatar avatar-fallback" aria-hidden="true">{initials}</span>;
+  useEffect(() => setImageState(src ? 'loading' : 'failed'), [src]);
+  if (!src || imageState === 'failed') return <span className="avatar avatar-fallback" aria-hidden="true">{initials}</span>;
+  return <span className="avatar avatar-image-frame"><span className="avatar avatar-fallback" aria-hidden="true">{initials}</span><img className={`avatar avatar-image ${imageState === 'loaded' ? 'loaded' : ''}`} src={src} alt="" onLoad={() => setImageState('loaded')} onError={() => setImageState('failed')} /></span>;
 }
 
 export function Field({ label, children, error }: { label: string; children: ReactNode; error?: string }) {
   return <label className="field"><span className="field-label">{label}</span>{children}{error ? <span className="field-error">{error}</span> : null}</label>;
+}
+
+export type ToastTone = 'success' | 'error' | 'info';
+export interface ToastMessage { id: string; tone: ToastTone; title: string; detail?: string; }
+interface ToastContextValue { show: (message: Omit<ToastMessage, 'id'>) => void; success: (title: string, detail?: string) => void; error: (title: string, detail?: string) => void; info: (title: string, detail?: string) => void; }
+const ToastContext = createContext<ToastContextValue | undefined>(undefined);
+
+export function ToastProvider({ children }: PropsWithChildren) {
+  const [messages, setMessages] = useState<ToastMessage[]>([]);
+  const dismiss = useCallback((id: string) => setMessages(current => current.filter(message => message.id !== id)), []);
+  const show = useCallback((message: Omit<ToastMessage, 'id'>) => {
+    const next = { ...message, id: crypto.randomUUID() };
+    setMessages(current => [...current.slice(-3), next]);
+    window.setTimeout(() => dismiss(next.id), 5000);
+  }, [dismiss]);
+  const value: ToastContextValue = {
+    show,
+    success: (title, detail) => show({ tone: 'success', title, ...(detail === undefined ? {} : { detail }) }),
+    error: (title, detail) => show({ tone: 'error', title, ...(detail === undefined ? {} : { detail }) }),
+    info: (title, detail) => show({ tone: 'info', title, ...(detail === undefined ? {} : { detail }) }),
+  };
+  return <ToastContext.Provider value={value}>{children}<div className="toast-region" aria-live="polite" aria-atomic="true">{messages.map(message => <Toast key={message.id} message={message} onClose={() => dismiss(message.id)} />)}</div></ToastContext.Provider>;
+}
+
+export function useToast(): ToastContextValue {
+  const context = useContext(ToastContext);
+  if (!context) throw new Error('useToast must be used inside ToastProvider.');
+  return context;
+}
+
+export function Toast({ message, onClose }: { message: ToastMessage; onClose: () => void }) {
+  const StatusIcon = message.tone === 'success' ? CheckCircle2 : message.tone === 'error' ? XCircle : Info;
+  return <article className={`toast toast-${message.tone}`} role={message.tone === 'error' ? 'alert' : 'status'}>
+    <Icon icon={StatusIcon} size={16} />
+    <div><strong>{message.title}</strong>{message.detail ? <p>{message.detail}</p> : null}</div>
+    <button className="icon-button" aria-label="Dismiss notification" onClick={onClose}><Icon icon={X} size={14} /></button>
+  </article>;
 }

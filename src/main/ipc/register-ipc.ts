@@ -15,6 +15,7 @@ import type { Automation } from '../automation/automation-service.js';
 import type { DesktopOperations } from '../operations/desktop-operations.js';
 import { assertTrustedRenderer } from './sender-policy.js';
 import type { DesktopMenuContext } from '../windows/application-menu.js';
+import type { WorkspaceFileSuggestions } from '../workspaces/workspace-file-suggestions.js';
 
 const cwdSchema = z.string().min(1).max(4_096);
 
@@ -23,6 +24,7 @@ export interface DesktopIpcServices {
   userContext: DesktopUserContextService;
   agents: AgentManager;
   workspaces: WorkspaceRegistry;
+  workspaceFileSuggestions: WorkspaceFileSuggestions;
   tasks: TaskStore;
   git: GitService;
   terminal: TerminalService;
@@ -36,7 +38,7 @@ export interface DesktopIpcServices {
 }
 
 export function registerIpc(services: DesktopIpcServices): void {
-  const { auth, userContext, agents, workspaces, tasks, git, terminal, settings, artifacts, browser, automations, operations, runAutomation, setMenuContext } = services;
+  const { auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, git, terminal, settings, artifacts, browser, automations, operations, runAutomation, setMenuContext } = services;
   ipcMain.handle('menu.setContext', async (event, context: unknown) => {
     assertTrustedRenderer(event);
     setMenuContext(z.enum(['login', 'workspace']).parse(context));
@@ -44,6 +46,10 @@ export function registerIpc(services: DesktopIpcServices): void {
   ipcMain.handle('auth.getCurrentUser', async (event) => {
     assertTrustedRenderer(event);
     return auth.getCurrentUser();
+  });
+  ipcMain.handle('auth.restoreSession', async (event) => {
+    assertTrustedRenderer(event);
+    return auth.restoreSession();
   });
   ipcMain.handle('auth.login', async (event, input: LoginInput) => {
     assertTrustedRenderer(event);
@@ -55,6 +61,9 @@ export function registerIpc(services: DesktopIpcServices): void {
   });
   ipcMain.handle('userContext.organizations', async event => { assertTrustedRenderer(event); return userContext.organizations(); });
   ipcMain.handle('userContext.organization', async (event, code: unknown) => { assertTrustedRenderer(event); return userContext.organization(idSchema.parse(code)); });
+  ipcMain.handle('userContext.wallet', async (event, code: unknown) => { assertTrustedRenderer(event); return userContext.wallet(idSchema.parse(code)); });
+  ipcMain.handle('userContext.usage', async (event, organizationCode: unknown, workspaceCode?: unknown) => { assertTrustedRenderer(event); return userContext.usage(idSchema.parse(organizationCode), workspaceCode === undefined ? undefined : idSchema.parse(workspaceCode)); });
+  ipcMain.handle('userContext.dashboardStats', async (event, organizationCode: unknown, workspaceCode?: unknown) => { assertTrustedRenderer(event); return userContext.dashboardStats(idSchema.parse(organizationCode), workspaceCode === undefined ? undefined : idSchema.parse(workspaceCode)); });
   ipcMain.handle('userContext.workspaces', async (event, code: unknown) => { assertTrustedRenderer(event); return userContext.workspaces(idSchema.parse(code)); });
   ipcMain.handle('userContext.models', async (event, organizationCode: unknown, workspaceCode: unknown) => { assertTrustedRenderer(event); return userContext.models(idSchema.parse(organizationCode), idSchema.parse(workspaceCode)); });
   ipcMain.handle('runtime.getVersion', async (event) => {
@@ -72,7 +81,14 @@ export function registerIpc(services: DesktopIpcServices): void {
   ipcMain.handle('agent.sessionCreate', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.sessionCreate(cwdSchema.parse(cwd), objectSchema.parse(input) as { model?: string; name?: string }); });
   ipcMain.handle('agent.sessionList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.sessionList(cwdSchema.parse(cwd)); });
   ipcMain.handle('agent.sessionResume', async (event, cwd: unknown, sessionId: unknown) => { assertTrustedRenderer(event); return agents.sessionResume(cwdSchema.parse(cwd), idSchema.parse(sessionId)); });
-  ipcMain.handle('agent.turnStart', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.turnStart(cwdSchema.parse(cwd), objectSchema.parse(input) as { sessionId: string; prompt: string; model?: string }); });
+  ipcMain.handle('agent.turnStart', async (event, cwd: unknown, input: unknown) => {
+    assertTrustedRenderer(event);
+    const value = objectSchema.parse(input);
+    const attachmentIds = value['attachmentIds'] === undefined ? [] : z.array(idSchema).max(16).parse(value['attachmentIds']);
+    const taskId = value['taskId'] === undefined ? undefined : idSchema.parse(value['taskId']);
+    const attachments = taskId === undefined ? [] : await artifacts.attachmentInputs(taskId, attachmentIds);
+    return agents.turnStart(cwdSchema.parse(cwd), { sessionId: idSchema.parse(value['sessionId']), prompt: z.string().min(1).max(512 * 1024).parse(value['prompt']), ...(value['model'] === undefined ? {} : { model: z.string().min(1).max(256).parse(value['model']) }), ...(attachments.length === 0 ? {} : { attachments }) });
+  });
   ipcMain.handle('agent.turnCancel', async (event, cwd: unknown, turnId: unknown) => { assertTrustedRenderer(event); return agents.turnCancel(cwdSchema.parse(cwd), idSchema.parse(turnId)); });
   ipcMain.handle('agent.approvalRespond', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.approvalRespond(cwdSchema.parse(cwd), objectSchema.parse(input) as { approvalId: string; approved: boolean }); });
   ipcMain.handle('agent.trustRespond', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.trustRespond(cwdSchema.parse(cwd), objectSchema.parse(input) as { trustRequestId: string; trusted: boolean }); });
@@ -81,6 +97,11 @@ export function registerIpc(services: DesktopIpcServices): void {
   ipcMain.handle('agent.commandExecute', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.commandExecute(cwdSchema.parse(cwd), objectSchema.parse(input)); });
   ipcMain.handle('agent.commandCancel', async (event, cwd: unknown, commandId: unknown) => { assertTrustedRenderer(event); return agents.commandCancel(cwdSchema.parse(cwd), idSchema.parse(commandId)); });
   ipcMain.handle('workspace.list', async event => { assertTrustedRenderer(event); return workspaces.list(); });
+  ipcMain.handle('workspace.pickFolder', async event => {
+    assertTrustedRenderer(event);
+    const selected = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
+    return selected.canceled ? null : selected.filePaths[0] ?? null;
+  });
   ipcMain.handle('workspace.add', async (event, rootPath: unknown) => { assertTrustedRenderer(event); return workspaces.add(cwdSchema.parse(rootPath)); });
   ipcMain.handle('workspace.addRoot', async (event, workspaceId: unknown, rootPath: unknown) => { assertTrustedRenderer(event); return workspaces.addRoot(idSchema.parse(workspaceId), cwdSchema.parse(rootPath)); });
   ipcMain.handle('workspace.rename', async (event, workspaceId: unknown, name: unknown) => { assertTrustedRenderer(event); return workspaces.rename(idSchema.parse(workspaceId), z.string().parse(name)); });
@@ -88,6 +109,7 @@ export function registerIpc(services: DesktopIpcServices): void {
   ipcMain.handle('workspace.settings', async (event, workspaceId: unknown, patch: unknown) => { assertTrustedRenderer(event); return workspaces.updateSettings(idSchema.parse(workspaceId), objectSchema.parse(patch)); });
   ipcMain.handle('workspace.remove', async (event, workspaceId: unknown) => { assertTrustedRenderer(event); return workspaces.remove(idSchema.parse(workspaceId)); });
   ipcMain.handle('workspace.trust', async (event, workspaceId: unknown, trusted: unknown) => { assertTrustedRenderer(event); return workspaces.trust(idSchema.parse(workspaceId), z.boolean().parse(trusted)); });
+  ipcMain.handle('workspace.fileSuggestions', async (event, rootPath: unknown, query: unknown) => { assertTrustedRenderer(event); return workspaceFileSuggestions.list(cwdSchema.parse(rootPath), z.string().max(256).parse(query)); });
   ipcMain.handle('task.list', async (event, workspaceId?: unknown) => { assertTrustedRenderer(event); return tasks.list(workspaceId === undefined ? undefined : idSchema.parse(workspaceId)); });
   ipcMain.handle('task.create', async (event, input: unknown) => {
     assertTrustedRenderer(event);
@@ -108,6 +130,7 @@ export function registerIpc(services: DesktopIpcServices): void {
   ipcMain.handle('task.artifacts', async (event, taskId: unknown) => { assertTrustedRenderer(event); return artifacts.list(idSchema.parse(taskId)); });
   ipcMain.handle('task.pickArtifact', async (event, taskId: unknown) => { assertTrustedRenderer(event); const selected = await dialog.showOpenDialog({ properties: ['openFile'] }); if (selected.canceled || selected.filePaths[0] === undefined) return null; return artifacts.importFile(idSchema.parse(taskId), selected.filePaths[0], artifactKind(selected.filePaths[0])); });
   ipcMain.handle('task.createTextArtifact', async (event, taskId: unknown, name: unknown, content: unknown, kind?: unknown) => { assertTrustedRenderer(event); return artifacts.createText(idSchema.parse(taskId), z.string().min(1).max(200).parse(name), z.string().max(8 * 1024 * 1024).parse(content), kind === undefined ? 'text' : z.enum(['text', 'markdown', 'patch', 'json']).parse(kind)); });
+  ipcMain.handle('task.createImageArtifact', async (event, taskId: unknown, name: unknown, bytes: unknown) => { assertTrustedRenderer(event); if (!(bytes instanceof Uint8Array)) throw new Error('Invalid image bytes.'); return artifacts.createImage(idSchema.parse(taskId), z.string().min(1).max(200).parse(name), bytes); });
   ipcMain.handle('task.deleteArtifact', async (event, taskId: unknown, artifactId: unknown, confirmed: unknown) => { assertTrustedRenderer(event); return artifacts.delete(idSchema.parse(taskId), idSchema.parse(artifactId), z.boolean().parse(confirmed)); });
   ipcMain.handle('task.previewArtifact', async (event, taskId: unknown, artifactId: unknown) => { assertTrustedRenderer(event); return artifacts.preview(idSchema.parse(taskId), idSchema.parse(artifactId)); });
   ipcMain.handle('task.openArtifact', async (event, taskId: unknown, artifactId: unknown) => { assertTrustedRenderer(event); const path = await artifacts.path(idSchema.parse(taskId), idSchema.parse(artifactId)); return shell.openPath(path); });
@@ -152,4 +175,4 @@ export function registerIpc(services: DesktopIpcServices): void {
 
 const idSchema = z.string().min(1).max(256);
 const objectSchema = z.record(z.string(), z.unknown());
-function artifactKind(path: string): 'markdown' | 'text' | 'image' | 'audio' | 'video' | 'patch' | 'json' | 'binary' { const extension = path.split('.').pop()?.toLowerCase(); if (extension === 'md' || extension === 'markdown') return 'markdown'; if (extension === 'json') return 'json'; if (extension === 'patch' || extension === 'diff') return 'patch'; if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(extension ?? '')) return 'image'; if (['mp3', 'wav', 'm4a'].includes(extension ?? '')) return 'audio'; if (['mp4', 'webm', 'mov'].includes(extension ?? '')) return 'video'; if (['txt', 'log', 'csv'].includes(extension ?? '')) return 'text'; return 'binary'; }
+function artifactKind(path: string): 'markdown' | 'text' | 'image' | 'audio' | 'video' | 'patch' | 'json' | 'binary' { const extension = path.split('.').pop()?.toLowerCase(); if (extension === 'md' || extension === 'markdown') return 'markdown'; if (extension === 'json') return 'json'; if (extension === 'patch' || extension === 'diff') return 'patch'; if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(extension ?? '')) return 'image'; if (['mp3', 'wav', 'm4a'].includes(extension ?? '')) return 'audio'; if (['mp4', 'webm', 'mov'].includes(extension ?? '')) return 'video'; if (['txt', 'log', 'csv'].includes(extension ?? '')) return 'text'; return 'binary'; }

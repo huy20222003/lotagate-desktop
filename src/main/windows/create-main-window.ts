@@ -6,12 +6,15 @@ export function createMainWindow(): BrowserWindow {
   const mainDirectory = join(appRoot, '.vite', 'build');
   const preload = join(mainDirectory, 'bridge.js');
   const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
+  const icon = join(app.getAppPath(), 'resources', 'icons', 'lotagate.ico');
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 960,
     minHeight: 640,
     backgroundColor: '#10151c',
+    icon,
+    title: 'LotaGate Agent Workspace',
     webPreferences: {
       preload,
       contextIsolation: true,

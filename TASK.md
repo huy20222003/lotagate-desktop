@@ -48,7 +48,8 @@ implementation dependency.
   desktop-owned File commands through versioned typed preload IPC.
 - [x] Add a reusable UI foundation: Button, Label, Input, Textarea, Checkbox,
   Radio, Tooltip, Modal, Dropdown, Avatar, Card, Spinner/Loading, Table,
-  Tabs, Badge, Field, Divider, EmptyState, safe links, and focus behavior.
+  Tabs, Badge, Field, Divider, EmptyState, Icon, Scrollbar, Toast, safe links,
+  and focus behavior.
 - [x] Define CLI-brand semantic tokens and the quiet Codex-like conversation
   layout; keep approval in the composer instead of a permanent sidebar item.
 
@@ -73,6 +74,8 @@ implementation dependency.
 - [x] Enforce the user API allowlist for crypto session, login, refresh, logout,
   me, own profile, organizations, permitted workspaces, and workspace models.
   Admin routes are rejected before network access.
+- [x] Add the read-only organization wallet route to the desktop allowlist for
+  the Settings > Billing view; no admin billing route is exposed.
 - [x] Build the dedicated login screen with validation, loading, invalid
   credentials, unsupported additional-auth response, API unavailable, and
   missing configuration states.
@@ -81,6 +84,19 @@ implementation dependency.
 - [x] Implement confirmed logout with a modal; cancel leaves all state intact,
   confirm calls server logout, clears cookies/crypto/profile/agent state, and
   returns to login.
+
+## Latest workspace UX completion
+
+- [x] Make the account menu close on outside pointer interaction, rotate its
+  disclosure icon, and fall back to deterministic initials when avatar loading
+  fails.
+- [x] Remove the unused CLI-ready and Artifacts header controls and their
+  renderer-only dead paths; disable the composer until a trusted workspace is
+  selected.
+- [x] Add a focused Settings page containing Profile and read-only Billing,
+  while keeping the account action named Settings.
+- [x] Show workspace hover metadata and a new-chat action; the action creates a
+  local task and starts the existing CLI JSONL `session.create` protocol.
 
 ## CLI agent runtime and lifecycle
 
@@ -149,7 +165,7 @@ implementation dependency.
 - [x] `npm run typecheck` passed.
 - [x] `npm run lint` passed with no unexplained suppressions.
 - [x] `npm run check:file-size` passed.
-- [x] `npm test` passed: 7 test files, 16 tests.
+- [x] `npm test` passed: 9 test files, 20 tests.
 - [x] `npm run build` passed for main, preload, and renderer bundles.
 - [x] `npm run package:smoke` passed; renderer presence in `app.asar` and the
   installed CLI binary at `resources/lotagate.exe` were verified.

@@ -44,6 +44,7 @@ export interface AuthErrorPayload {
 
 export interface DesktopAuthApi {
   getCurrentUser(): Promise<UserProfile | null>;
+  restoreSession(): Promise<UserProfile | null>;
   login(input: LoginInput): Promise<UserProfile>;
   logout(): Promise<void>;
 }

@@ -7,6 +7,13 @@ export const API_PATHS = {
   profile: '/users/profile',
   changePassword: '/users/change-password',
   organizations: '/organizations',
+  organizationWallet: (organizationCode: string) => `/organizations/${encodeURIComponent(organizationCode)}/wallet`,
+  organizationUsage: (organizationCode: string, workspaceCode?: string) => workspaceCode === undefined
+    ? `/organizations/${encodeURIComponent(organizationCode)}/usage`
+    : `/organizations/${encodeURIComponent(organizationCode)}/workspaces/${encodeURIComponent(workspaceCode)}/usage`,
+  organizationDashboardStats: (organizationCode: string, workspaceCode?: string) => workspaceCode === undefined
+    ? `/organizations/${encodeURIComponent(organizationCode)}/dashboard-stats`
+    : `/organizations/${encodeURIComponent(organizationCode)}/workspaces/${encodeURIComponent(workspaceCode)}/dashboard-stats`,
 } as const;
 
 export const API_CRYPTO = {
@@ -24,6 +31,11 @@ export const API_CRYPTO = {
   csrfHeaderName: 'x-lg-csrf',
 } as const;
 
+export const API_AUTH_COOKIES = {
+  access: 'lg_access_token',
+  refresh: 'lg_refresh_token',
+} as const;
+
 export const DESKTOP_ALLOWED_API_PATHS = new Set<string>([
   API_PATHS.cryptoSession,
   API_PATHS.login,
@@ -39,7 +51,12 @@ export function isDesktopApiPathAllowed(path: string): boolean {
   if (DESKTOP_ALLOWED_API_PATHS.has(path)) return true;
   const segments = path.split('/').slice(1);
   if (segments.length === 2 && segments[0] === 'organizations' && safePathSegment(segments[1])) return true;
+  if (segments.length === 3 && segments[0] === 'organizations' && safePathSegment(segments[1]) && segments[2] === 'wallet') return true;
   if (segments.length === 3 && segments[0] === 'organizations' && safePathSegment(segments[1]) && segments[2] === 'workspaces') return true;
+  if (segments.length === 3 && segments[0] === 'organizations' && safePathSegment(segments[1]) && segments[2] === 'usage') return true;
+  if (segments.length === 3 && segments[0] === 'organizations' && safePathSegment(segments[1]) && segments[2] === 'dashboard-stats') return true;
+  if (segments.length === 5 && segments[0] === 'organizations' && safePathSegment(segments[1]) && segments[2] === 'workspaces' && safePathSegment(segments[3]) && segments[4] === 'usage') return true;
+  if (segments.length === 5 && segments[0] === 'organizations' && safePathSegment(segments[1]) && segments[2] === 'workspaces' && safePathSegment(segments[3]) && segments[4] === 'dashboard-stats') return true;
   return segments.length === 5 && segments[0] === 'organizations' && safePathSegment(segments[1]) && segments[2] === 'workspaces' && safePathSegment(segments[3]) && segments[4] === 'models';
 }
 
