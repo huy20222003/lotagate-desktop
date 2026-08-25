@@ -92,6 +92,10 @@ export class ApiTransport {
     const headers: Record<string, string> = {
       Accept: 'application/json',
       Origin: this.config.trustedOrigin,
+      Referer: `${new URL(this.config.trustedOrigin).origin}/`,
+      'Sec-Fetch-Site': resolveFetchSite(this.config.baseUrl, this.config.trustedOrigin),
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Dest': 'empty',
     };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (context) {
@@ -155,4 +159,11 @@ function parseResponse(text: string): unknown {
   } catch {
     throw new DesktopApiError(502, 'The API returned an invalid JSON response.', true);
   }
+}
+
+function resolveFetchSite(apiBaseUrl: string, trustedOrigin: string): 'same-site' | 'cross-site' {
+  const apiHost = new URL(apiBaseUrl).hostname.toLowerCase();
+  const trustedHost = new URL(trustedOrigin).hostname.toLowerCase();
+  const sameSite = apiHost === trustedHost || apiHost.endsWith(`.${trustedHost}`) || trustedHost.endsWith(`.${apiHost}`);
+  return sameSite ? 'same-site' : 'cross-site';
 }

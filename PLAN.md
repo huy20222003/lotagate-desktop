@@ -199,6 +199,12 @@ Electron's `net.request` path to reject an Origin-bearing response. `Session.fet
 preserves the Chromium session cookie jar and credentialed Origin/CORS behavior
 without changing the server security headers.
 
+For the same unchanged edge-security policy, desktop API requests also provide
+the standard browser Fetch Metadata headers (`Referer`, `Sec-Fetch-Site`,
+`Sec-Fetch-Mode`, and `Sec-Fetch-Dest`). The site value is derived from the
+configured API and trusted origins; no User-Agent spoofing or security bypass is
+used.
+
 The desktop transport must match the web client's production crypto behavior:
 
 - Bootstrap with ECDH P-256 using `POST /auth/crypto-session`.

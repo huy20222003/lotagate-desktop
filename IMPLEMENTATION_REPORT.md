@@ -40,6 +40,10 @@ The runtime now includes:
 - replaced `net.request` with Electron `Session.fetch` after reproducing that
   the server's unchanged `Cross-Origin-Resource-Policy: same-origin` blocks
   the former Origin-bearing request path;
+- added standard Fetch Metadata headers (`Referer`, `Sec-Fetch-Site`,
+  `Sec-Fetch-Mode`, and `Sec-Fetch-Dest`) after reproducing the production edge
+  challenge on native login requests; the site value is derived from the
+  configured origins and no User-Agent spoofing is used;
 - aligned response crypto validation with the existing web client/server:
   response timestamp and sequence are independently authenticated, while
   request id and key id remain bound;

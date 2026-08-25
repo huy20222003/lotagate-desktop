@@ -60,6 +60,9 @@ implementation dependency.
 - [x] Use Electron `Session.fetch` for Origin-bearing API requests so the
   unchanged server `Cross-Origin-Resource-Policy` does not block desktop
   responses; keep credentials and CSRF headers in the main-process boundary.
+- [x] Send the standard browser Fetch Metadata headers required by the
+  unchanged production edge policy, deriving `same-site` or `cross-site` from
+  configured origins and without spoofing User-Agent.
 - [x] Reproduce the existing client crypto boundary: ECDH P-256 bootstrap,
   HKDF-SHA-256 request/response keys, AES-256-GCM envelopes, metadata headers,
   sequence/request-id/timestamp/key-id validation, rotation, tamper failure,
