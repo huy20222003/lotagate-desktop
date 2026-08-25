@@ -7,7 +7,7 @@ export class DesktopAuthService {
 
   async getCurrentUser(): Promise<UserProfile | null> {
     try {
-      const response = await this.transport.request<unknown>(API_PATHS.me, 'GET');
+      const response = await this.transport.request<unknown>(API_PATHS.me, 'GET', undefined, { retryOnUnauthorized: false });
       return userProfileSchema.parse(response);
     } catch (error) {
       if (error instanceof DesktopApiError && error.status === 401) return null;
@@ -26,7 +26,10 @@ export class DesktopAuthService {
     } catch (error) {
       if (error instanceof DesktopAuthError) throw error;
       if (error instanceof DesktopApiError && error.status === 401) throw new DesktopAuthError('AUTH_FAILED', 'The username or password is incorrect.', false);
-      if (error instanceof DesktopApiError && error.status === 0) throw new DesktopAuthError('API_NOT_CONFIGURED', error.message, false);
+      if (error instanceof DesktopApiError && error.status === 0) {
+        const configuredError = error.message.includes('must be configured');
+        throw new DesktopAuthError(configuredError ? 'API_NOT_CONFIGURED' : 'API_UNAVAILABLE', configuredError ? error.message : 'Unable to connect to the LotaGate API.', true);
+      }
       if (error instanceof DesktopApiError && error.status === 429) throw new DesktopAuthError('AUTH_FAILED', 'Too many sign-in attempts. Please wait and try again.', true);
       if (error instanceof DesktopApiError && error.status >= 500) throw new DesktopAuthError('API_UNAVAILABLE', 'The LotaGate API is temporarily unavailable.', true);
       throw new DesktopAuthError('API_PROTOCOL_ERROR', 'The desktop could not validate the API response.', true);

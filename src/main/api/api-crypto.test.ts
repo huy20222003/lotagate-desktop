@@ -39,17 +39,20 @@ describe('desktop API crypto boundary', () => {
     expect(isEnvelope({ ...envelope, v: 2 })).toBe(false);
   });
 
-  it('rejects a response envelope whose sequence or request id was tampered', async () => {
+  it('rejects a response envelope whose request id was tampered', async () => {
     const current = session();
     const context = nextContext(current, 'GET', '/auth/me');
-    await expect(decryptJson({ encrypted: true, v: 1, kid: context.kid, alg: 'A256GCM', iv: '', ciphertext: '', tag: '', ts: context.ts, seq: context.seq + 1, rid: context.rid }, current, context)).rejects.toThrow('does not match');
+    await expect(decryptJson({ encrypted: true, v: 1, kid: context.kid, alg: 'A256GCM', iv: '', ciphertext: '', tag: '', ts: context.ts, seq: context.seq + 1, rid: 'tampered' }, current, context)).rejects.toThrow('does not match');
   });
 
   it('round-trips a response with authenticated protocol metadata', async () => {
     const responseKey = await webcrypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
     const current = session({ responseKey: responseKey as CryptoKey });
     const context = nextContext(current, 'GET', '/auth/me');
-    const envelope = await encryptResponseJson({ user: { id: 'user-1' } }, current, context);
+    const responseContext = { ...context, ts: context.ts + 1_000, seq: context.seq + 7 };
+    const envelope = await encryptResponseJson({ user: { id: 'user-1' } }, current, responseContext);
+    expect(envelope.ts).not.toBe(context.ts);
+    expect(envelope.seq).not.toBe(context.seq);
     await expect(decryptJson(envelope, current, context)).resolves.toEqual({ user: { id: 'user-1' } });
     await expect(decryptJson({ ...envelope, tag: `${envelope.tag}tampered` }, current, context)).rejects.toBeTruthy();
   });

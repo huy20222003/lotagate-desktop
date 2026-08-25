@@ -14,6 +14,7 @@ import type { AutomationService } from '../automation/automation-service.js';
 import type { Automation } from '../automation/automation-service.js';
 import type { DesktopOperations } from '../operations/desktop-operations.js';
 import { assertTrustedRenderer } from './sender-policy.js';
+import type { DesktopMenuContext } from '../windows/application-menu.js';
 
 const cwdSchema = z.string().min(1).max(4_096);
 
@@ -31,10 +32,15 @@ export interface DesktopIpcServices {
   automations: AutomationService;
   operations: DesktopOperations;
   runAutomation(id: string): Promise<Automation>;
+  setMenuContext(context: DesktopMenuContext): void;
 }
 
 export function registerIpc(services: DesktopIpcServices): void {
-  const { auth, userContext, agents, workspaces, tasks, git, terminal, settings, artifacts, browser, automations, operations, runAutomation } = services;
+  const { auth, userContext, agents, workspaces, tasks, git, terminal, settings, artifacts, browser, automations, operations, runAutomation, setMenuContext } = services;
+  ipcMain.handle('menu.setContext', async (event, context: unknown) => {
+    assertTrustedRenderer(event);
+    setMenuContext(z.enum(['login', 'workspace']).parse(context));
+  });
   ipcMain.handle('auth.getCurrentUser', async (event) => {
     assertTrustedRenderer(event);
     return auth.getCurrentUser();

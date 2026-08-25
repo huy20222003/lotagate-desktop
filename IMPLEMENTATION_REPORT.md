@@ -13,6 +13,9 @@ The runtime now includes:
 - normal password login through the existing user API, with no OAuth or 2FA;
 - checked-in public runtime endpoints in `.env`, loaded natively in development
   and copied into packaged resources;
+- corrected the API endpoint to the versioned backend base
+  `https://api.lotagate.com/api/v1` and made blank inherited environment
+  variables fall back to the desktop `.env` values;
 - main-process API transport, cookies, CSRF, crypto bootstrap, encrypted
   request/response envelopes, rotation, refresh retry, logout reset, and an
   explicit non-admin route allowlist;
@@ -34,6 +37,17 @@ The runtime now includes:
 - added native File/Edit/View/Window/Help menus, including New Task, Open
   Workspace, Settings, and standard editing/debugging/window commands through
   typed preload IPC;
+- replaced `net.request` with Electron `Session.fetch` after reproducing that
+  the server's unchanged `Cross-Origin-Resource-Policy: same-origin` blocks
+  the former Origin-bearing request path;
+- aligned response crypto validation with the existing web client/server:
+  response timestamp and sequence are independently authenticated, while
+  request id and key id remain bound;
+- treated an unauthenticated startup `401 /auth/me` as the normal login state
+  without attempting a failing refresh, and kept refresh retry for protected
+  requests after a valid session expires;
+- kept the native application menu hidden on login and enabled it only after
+  successful session resolution/login;
 - removed the obsolete renderer console diagnostic listener after tracing the
   blank screen, while retaining a concise `did-fail-load` diagnostic for real
   navigation failures.
@@ -52,6 +66,8 @@ Passed:
 - `npm run package` — renderer verified inside `app.asar`
 - `npx playwright test --reporter=line` — 1 packaged Windows cold-start test
   passed
+- packaged cold-start E2E also verified that the login window has no native
+  application menu;
 - real CLI fixture: `initialize` returned protocol version 1 and the expected
   capability catalog
 - packaged `resources/lotagate.exe`: real JSONL `initialize` and graceful

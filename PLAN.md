@@ -193,6 +193,12 @@ explicitly approved native-client policy. It must never disable web security,
 allow wildcard credentialed CORS, accept an arbitrary `file://`/`null` origin,
 or expose raw cookies to the renderer.
 
+The implementation uses `Session.fetch` rather than `net.request` because the
+server's existing `Cross-Origin-Resource-Policy: same-origin` header causes
+Electron's `net.request` path to reject an Origin-bearing response. `Session.fetch`
+preserves the Chromium session cookie jar and credentialed Origin/CORS behavior
+without changing the server security headers.
+
 The desktop transport must match the web client's production crypto behavior:
 
 - Bootstrap with ECDH P-256 using `POST /auth/crypto-session`.
@@ -264,6 +270,10 @@ browser evidence, and agent progress are task context panels—not a full IDE.
   native `process.loadEnvFile`; it contains only public API endpoints, while
   credentials and session material remain runtime/user-owned. Forge copies the
   same non-secret `.env` into packaged resources.
+- The configured API base URL is the server's versioned backend base
+  (`https://api.lotagate.com/api/v1` in the current production deployment),
+  while route constants remain relative to that base. Empty inherited runtime
+  variables do not override a valid desktop `.env` value.
 - Packaging: Electron Forge with platform makers and signed release artifacts;
   use the repository's release infrastructure when it is introduced.
 - State: Zustand for UI/session presentation state. Do not store the source of
@@ -802,6 +812,9 @@ changing CLI, Agent SDK, or SDK.
 - Cold start without a valid server session opens `/login` and does not start a
   CLI process; successful normal password login transitions to the workspace
   shell.
+- Cold start treats a normal unauthenticated `401` from `/auth/me` as the login
+  state without an eager refresh failure; refresh remains available for an
+  authenticated session that expires.
 - `/auth/me` profile projection renders the correct name, avatar, email,
   organization, and workspace at the bottom of the sidebar without secrets.
 - Logout opens a confirmation modal, cancel leaves state unchanged, and confirm

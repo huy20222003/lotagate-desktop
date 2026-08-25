@@ -94,7 +94,7 @@ async function encryptEnvelope(data: unknown, key: CryptoKey, context: ApiCrypto
 }
 
 export async function decryptJson<T>(envelope: EncryptedEnvelope, session: ApiCryptoSession, context: ApiCryptoRequestContext): Promise<T> {
-  if (envelope.kid !== context.kid || envelope.rid !== context.rid || envelope.ts !== context.ts || envelope.seq !== context.seq || envelope.v !== API_CRYPTO.version || envelope.alg !== API_CRYPTO.algorithm) {
+  if (envelope.kid !== context.kid || envelope.rid !== context.rid || envelope.v !== API_CRYPTO.version || envelope.alg !== API_CRYPTO.algorithm) {
     throw new Error('Encrypted API response does not match the originating request.');
   }
   const ciphertext = fromBase64Url(envelope.ciphertext);

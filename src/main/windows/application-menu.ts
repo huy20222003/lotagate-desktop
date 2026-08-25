@@ -1,8 +1,13 @@
 import { BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
 
 export type DesktopMenuCommand = 'newTask' | 'openWorkspace' | 'settings' | 'activity';
+export type DesktopMenuContext = 'login' | 'workspace';
 
-export function installApplicationMenu(): void {
+export function setApplicationMenu(context: DesktopMenuContext): void {
+  if (context === 'login') {
+    Menu.setApplicationMenu(null);
+    return;
+  }
   const sendCommand = (command: DesktopMenuCommand) => {
     BrowserWindow.getFocusedWindow()?.webContents.send('menu.command', command);
   };

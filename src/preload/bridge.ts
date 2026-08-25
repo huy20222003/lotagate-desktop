@@ -4,6 +4,7 @@ import type { AgentEventEnvelope } from '../contracts/ipc/v1/workspace.js';
 
 const bridge: DesktopBridge = {
   menu: {
+    setContext: context => ipcRenderer.invoke('menu.setContext', context),
     onCommand: listener => {
       const handler = (_event: Electron.IpcRendererEvent, command: 'newTask' | 'openWorkspace' | 'settings' | 'activity') => listener(command);
       ipcRenderer.on('menu.command', handler);

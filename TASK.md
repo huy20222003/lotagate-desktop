@@ -18,6 +18,9 @@ implementation dependency.
 - [x] Add the desktop `.env` runtime configuration with the verified public API
   base URL and trusted web origin; load it with the Node runtime API in both
   development and packaged resources.
+- [x] Correct the public API base URL to include the server global prefix
+  (`/api/v1`) and make blank inherited environment variables fall back to the
+  checked-in desktop `.env` values.
 - [x] No package logic was moved, no external package version was changed, and
   no package README update was needed because the desktop-owned adapter was
   sufficient.
@@ -54,10 +57,16 @@ implementation dependency.
 - [x] Implement main-process native API transport with persistent Electron
   cookies, credential isolation, trusted Origin, CSRF cookie/header handling,
   safe errors, timeout/retry boundaries, and renderer profile projection only.
+- [x] Use Electron `Session.fetch` for Origin-bearing API requests so the
+  unchanged server `Cross-Origin-Resource-Policy` does not block desktop
+  responses; keep credentials and CSRF headers in the main-process boundary.
 - [x] Reproduce the existing client crypto boundary: ECDH P-256 bootstrap,
   HKDF-SHA-256 request/response keys, AES-256-GCM envelopes, metadata headers,
   sequence/request-id/timestamp/key-id validation, rotation, tamper failure,
   reset after refresh/logout/failure, and encrypted response handling.
+- [x] Match the client/server response metadata contract: response `ts` and
+  `seq` are authenticated with response AAD and may differ from request
+  `ts`/`seq`; `kid` and `rid` remain bound to the originating request.
 - [x] Enforce the user API allowlist for crypto session, login, refresh, logout,
   me, own profile, organizations, permitted workspaces, and workspace models.
   Admin routes are rejected before network access.
@@ -152,6 +161,9 @@ implementation dependency.
 - [x] The current `tsconfig.json` contains no unused `@desktop/*` TypeScript
   path mapping, so the historical `baseUrl` warning is not present in this
   checkout.
+- [x] Packaged cold-start E2E verified the login screen with no native menu;
+  the workspace menu is enabled only after the renderer reports an
+  authenticated user context.
 - [x] Real fixture `lotagate agent desktop` returned protocol version 1 and
   the expected sessions/streaming/approval/trust/models/auth/commands catalog.
 - [x] The packaged `resources/lotagate.exe` completed a real JSONL initialize

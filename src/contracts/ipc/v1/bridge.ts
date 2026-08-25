@@ -5,6 +5,7 @@ import type { DesktopWorkspaceApi, DesktopTaskApi, AgentEventEnvelope, DesktopGi
 export interface DesktopBridge {
   menu: {
     onCommand(listener: (command: 'newTask' | 'openWorkspace' | 'settings' | 'activity') => void): () => void;
+    setContext(context: 'login' | 'workspace'): Promise<void>;
   };
   auth: DesktopRendererAuthApi;
   userContext: {
