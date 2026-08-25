@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Copy, FileText, Folder, Paperclip, Send, ShieldCheck, Square, X } from 'lucide-react';
+import { Check, Copy, FileText, Folder, Minus, Paperclip, Plus, Send, ShieldCheck, Square, X } from 'lucide-react';
 import { WorkspaceSidebar } from './WorkspaceSidebar.js';
 import { SettingsPage } from '../settings/SettingsPage.js';
-import type { Activity, ApprovalRequest, Task, TrustRequest, Workspace, WorkspaceFileSuggestion } from '../../../contracts/ipc/v1/workspace.js';
+import type { Activity, ApprovalRequest, FileChangeDiff, FileChangeSummary, Task, TrustRequest, Workspace, WorkspaceFileSuggestion } from '../../../contracts/ipc/v1/workspace.js';
 import type { UserProfile } from '../../../contracts/ipc/v1/auth.js';
 import { Button, Card, Dropdown, EmptyState, Icon, Modal, Skeleton, Spinner, TextInput, TextArea, Tooltip, useToast } from '../../components/ui.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
@@ -11,6 +11,8 @@ import { AgentMarkdown } from './markdown-renderer.js';
 import { PromptMarkup } from './prompt-markup.js';
 import type { AttachmentPreview } from './use-workspace-controller.js';
 import type { ApprovalMode } from './approval-policy.js';
+import { formatDuration, formatTime } from '../../utils/time.js';
+import { OrchestrationPanel } from './OrchestrationPanel.js';
 
 export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLoggedOut: () => void }) {
   const controller = useWorkspaceController();
@@ -25,6 +27,7 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   const [pendingWorkspacePath, setPendingWorkspacePath] = useState<string | undefined>();
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceActionBusy, setWorkspaceActionBusy] = useState(false);
+  const [changesOpen, setChangesOpen] = useState(false);
   const threadViewportRef = useRef<HTMLDivElement>(null);
   const hasRenderedActivities = useRef(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -90,7 +93,10 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
     <main className="conversation">
       <ConversationHeader task={controller.task} workspace={controller.workspace} />
       <Scrollbar className="thread-scrollbar" viewportRef={threadViewportRef}><div className="thread-content">{controller.loading || controller.activitiesLoading ? <ChatLoadingSkeleton /> : <TaskConversation task={controller.task} activities={controller.activities} statusText={controller.agentStatus} thinking={controller.thinking} turnTimings={controller.turnTimings} trust={controller.trust} onTrust={controller.respondTrust} />}</div></Scrollbar>
+      <OrchestrationPanel plan={controller.plan} subagents={controller.subagents} />
+      {controller.fileChanges.files.length > 0 ? <ChangeSummaryChip summary={controller.fileChanges} onClick={() => setChangesOpen(true)} /> : null}
       <Composer disabled={controller.workspace === undefined} workspace={controller.workspace} thinking={controller.thinking} task={controller.task} attachments={controller.attachments} models={controller.models} selectedModel={controller.selectedModel} onModel={controller.setSelectedModel} busy={controller.busy} error={controller.error} onSend={controller.sendPrompt} onCancel={controller.cancelTask} onDraft={controller.updateDraft} onAttach={controller.pickArtifact} onAttachImage={controller.attachImage} onRemoveAttachment={controller.removeAttachment} approval={controller.approval} approvalMode={controller.approvalMode} onApprovalMode={controller.setApprovalMode} onApproval={controller.respondApproval} />
+      {changesOpen ? <FileChangesDrawer summary={controller.fileChanges} onClose={() => setChangesOpen(false)} /> : null}
     </main>
     {logoutOpen ? <Modal title="Sign out of LotaGate" onClose={() => setLogoutOpen(false)}><p className="modal-copy">Your server session will be cleared. Local task records remain available.</p><div className="modal-actions"><Button variant="secondary" onClick={() => setLogoutOpen(false)}>Cancel</Button><Button variant="danger" onClick={confirmLogout} disabled={loggingOut}>{loggingOut ? 'Signing out…' : 'Sign out'}</Button></div></Modal> : null}
     {renameTarget ? <Modal title="Edit workspace" onClose={() => setRenameTarget(undefined)}><div className="modal-form"><label className="field"><span className="field-label">Display name</span><TextInput value={workspaceName} onChange={event => setWorkspaceName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void saveWorkspaceName(); }} autoFocus /></label></div><div className="modal-actions"><Button variant="secondary" onClick={() => setRenameTarget(undefined)}>Cancel</Button><Button variant="primary" onClick={() => void saveWorkspaceName()} disabled={workspaceActionBusy || !workspaceName.trim()}>{workspaceActionBusy ? 'Saving…' : 'Save'}</Button></div></Modal> : null}
@@ -139,7 +145,7 @@ function AgentMessage({ activity, timing }: { activity: Activity; timing?: { sta
       setCopied(false);
     }
   };
-  return <article className="message agent-message"><div className="message-body"><ElapsedTime {...(timing === undefined ? {} : { timing })} fallback={activity.createdAt} /><AgentMarkdown content={activity.text} /><Tooltip label={copied ? 'Copied' : 'Copy response'}><button type="button" className="agent-copy-button" aria-label="Copy response" onClick={() => void copyRawContent()}>{copied ? <Check size={13} /> : <Copy size={13} />}</button></Tooltip></div></article>;
+  return <article className="message agent-message"><div className="message-body"><ElapsedTime {...(timing === undefined ? {} : { timing })} fallback={activity.createdAt} /><AgentMarkdown content={activity.text} /><div className="agent-message-meta"><Tooltip label={copied ? 'Copied' : 'Copy response'}><button type="button" className="agent-copy-button" aria-label="Copy response" onClick={() => void copyRawContent()}>{copied ? <Check size={13} /> : <Copy size={13} />}</button></Tooltip><time dateTime={activity.createdAt}>{formatTime(activity.createdAt)}</time></div></div></article>;
 }
 
 function UserMessage({ activity }: { activity: Activity }) {
@@ -202,6 +208,17 @@ function Composer({ disabled, workspace, thinking, task, attachments, models, se
 }
 
 function TypingIndicator() { const [dots, setDots] = useState(1); useEffect(() => { const timer = window.setInterval(() => setDots(current => current === 3 ? 1 : current + 1), 420); return () => window.clearInterval(timer); }, []); return <div className="typing-indicator" aria-live="polite"><span>Thinking</span><strong>{'.'.repeat(dots)}</strong></div>; }
-function ElapsedTime({ timing, fallback }: { timing?: { startedAt: number; endedAt?: number }; fallback: string }) { const startedAt = timing?.startedAt ?? Date.parse(fallback); const [now, setNow] = useState(Date.now()); useEffect(() => { if (timing?.endedAt !== undefined) return; const timer = window.setInterval(() => setNow(Date.now()), 1_000); return () => window.clearInterval(timer); }, [timing?.endedAt]); const end = timing?.endedAt ?? (timing ? now : startedAt); return <div className="worked-time">Worked for {formatElapsed(Math.max(0, end - startedAt))}</div>; }
-function formatElapsed(milliseconds: number): string { const seconds = Math.floor(milliseconds / 1_000); const minutes = Math.floor(seconds / 60); const remainingSeconds = seconds % 60; return minutes > 0 ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`; }
+function ElapsedTime({ timing, fallback }: { timing?: { startedAt: number; endedAt?: number }; fallback: string }) { const startedAt = timing?.startedAt ?? Date.parse(fallback); const [now, setNow] = useState(Date.now()); useEffect(() => { if (timing?.endedAt !== undefined) return; const timer = window.setInterval(() => setNow(Date.now()), 1_000); return () => window.clearInterval(timer); }, [timing?.endedAt]); const end = timing?.endedAt ?? (timing ? now : startedAt); return <div className="worked-time">Worked for {formatDuration(Math.max(0, end - startedAt))}</div>; }
+
+function ChangeSummaryChip({ summary, onClick }: { summary: FileChangeSummary; onClick: () => void }) {
+  return <button type="button" className="change-summary-chip" onClick={onClick}><span className="change-summary-step" aria-hidden="true" /><span>{summary.files.length} {summary.files.length === 1 ? 'file' : 'files'} changed</span><span className="change-additions">+{summary.additions}</span><span className="change-deletions">-{summary.deletions}</span></button>;
+}
+
+function FileChangesDrawer({ summary, onClose }: { summary: FileChangeSummary; onClose: () => void }) {
+  return <aside className="file-changes-drawer" aria-label="Changed files"><header><div><strong>Changed files</strong><span>{summary.files.length} files · +{summary.additions} -{summary.deletions}</span></div><button type="button" className="icon-button" aria-label="Close changed files" onClick={onClose}><X size={16} /></button></header><div className="file-changes-list">{summary.files.map(change => <FileChangeItem key={change.path} change={change} />)}</div></aside>;
+}
+
+function FileChangeItem({ change }: { change: FileChangeDiff }) {
+  return <section className="file-change-item"><header><strong title={change.path}>{change.path}</strong><span><Plus size={12} />{change.additions}<Minus size={12} />{change.deletions}</span></header><pre>{change.lines.map((line, index) => <code className={`diff-line diff-${line.kind}`} key={`${change.path}:${index}`}><span className="diff-line-number">{line.newLine ?? line.oldLine ?? ''}</span><span>{line.kind === 'addition' ? '+' : line.kind === 'deletion' ? '-' : ' '}{line.text}</span></code>)}{change.truncated ? <code className="diff-truncated">… diff truncated …</code> : null}</pre></section>;
+}
 function toMessage(reason: unknown): string { return reason instanceof Error ? reason.message : 'The workspace operation failed.'; }

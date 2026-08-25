@@ -8,7 +8,7 @@ import { desktopDataPath } from '../persistence/app-data-paths.js';
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 export class ArtifactService {
-  private readonly store = new JsonFileStore<Artifact[]>(desktopDataPath('artifacts.json'), []);
+  private readonly store = new JsonFileStore<Artifact[]>(desktopDataPath('artifacts.json'), [], value => artifactSchema.array().parse(value));
 
   async list(taskId: string): Promise<Artifact[]> { return (await this.store.read()).filter(artifact => artifact.taskId === taskId && artifact.deletedAt === undefined); }
 

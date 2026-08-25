@@ -14,7 +14,7 @@ export const settingsSchema = z.object({
 export type DesktopSettings = z.infer<typeof settingsSchema>;
 
 export class SettingsService {
-  private readonly store = new JsonFileStore<DesktopSettings>(desktopDataPath('settings.json'), settingsSchema.parse({}));
+  private readonly store = new JsonFileStore<DesktopSettings>(desktopDataPath('settings.json'), settingsSchema.parse({}), value => settingsSchema.parse(value));
   async get(): Promise<DesktopSettings> { return settingsSchema.parse(await this.store.read()); }
   async update(patch: Partial<DesktopSettings>): Promise<DesktopSettings> { return this.store.update(current => settingsSchema.parse({ ...current, ...patch })); }
 }

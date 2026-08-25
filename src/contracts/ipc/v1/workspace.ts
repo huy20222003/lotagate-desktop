@@ -90,6 +90,16 @@ export type TrustRequest = z.infer<typeof trustRequestSchema>;
 export type AgentEventEnvelope = z.infer<typeof agentEventEnvelopeSchema>;
 export type AgentEvent = DesktopEvent;
 
+export type FileDiffLineKind = 'context' | 'addition' | 'deletion';
+export interface FileDiffLine { kind: FileDiffLineKind; text: string; oldLine?: number; newLine?: number }
+export interface FileChangeDiff { path: string; lines: FileDiffLine[]; additions: number; deletions: number; truncated: boolean }
+export interface FileChangeSummary { files: FileChangeDiff[]; additions: number; deletions: number }
+export type SubagentStatus = 'queued' | 'running' | 'completed' | 'completed_with_warning' | 'failed' | 'cancelled';
+export interface SubagentHandoff { summary: string; filesInspected: string[]; filesChanged: string[]; commandsRun: string[]; verification: string[]; warnings: string[] }
+export interface SubagentSnapshot { id: string; displayName: string; task: string; mode: 'research' | 'worker'; model: string; status: SubagentStatus; background: boolean; timestamp: number; durationMs?: number; summary?: string; lastAction?: { kind: string; label: string }; handoff?: SubagentHandoff }
+export interface PlanStepSnapshot { index: number; id: string; title: string; description: string; status: 'queued' | 'started' | 'completed' }
+export interface PlanSnapshot { id: string; goal: string; totalSteps: number; steps: PlanStepSnapshot[]; status: 'started' | 'completed' | 'failed'; currentStep?: number; error?: string }
+
 export interface DesktopWorkspaceApi {
   list(): Promise<Workspace[]>;
   pickFolder(): Promise<string | null>;
@@ -141,9 +151,19 @@ export interface DesktopGitApi {
 }
 
 export interface DesktopTerminalApi {
-  execute(input: { cwd: string; command: string; args: string[]; timeoutMs?: number | undefined; taskId?: string | undefined }): Promise<Record<string, unknown>>;
+  execute(input: TerminalExecutionInput): Promise<Record<string, unknown>>;
   list(taskId?: string): Promise<Record<string, unknown>[]>;
 }
+
+export const terminalExecutionInputSchema = z.object({
+  cwd: z.string().min(1).max(4_096),
+  command: z.string().trim().min(1).max(512),
+  args: z.array(z.string().max(16_384)).max(128),
+  timeoutMs: z.number().int().min(100).max(10 * 60 * 1_000).optional(),
+  taskId: z.string().min(1),
+  approved: z.boolean().default(false),
+});
+export type TerminalExecutionInput = z.infer<typeof terminalExecutionInputSchema>;
 
 export interface DesktopSettingsApi {
   get(): Promise<Record<string, unknown>>;

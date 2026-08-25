@@ -4,8 +4,8 @@ import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 
 export class TaskStore {
-  private readonly taskStore = new JsonFileStore<Task[]>(desktopDataPath('tasks.json'), []);
-  private readonly activityStore = new JsonFileStore<Activity[]>(desktopDataPath('activities.json'), []);
+  private readonly taskStore = new JsonFileStore<Task[]>(desktopDataPath('tasks.json'), [], value => taskSchema.array().parse(value));
+  private readonly activityStore = new JsonFileStore<Activity[]>(desktopDataPath('activities.json'), [], value => activitySchema.array().parse(value));
 
   async list(workspaceId?: string): Promise<Task[]> {
     const tasks = (await this.taskStore.read()).map(item => taskSchema.parse(item));
@@ -32,6 +32,12 @@ export class TaskStore {
   async resume(taskId: string): Promise<Task> { return this.setStatus(taskId, 'queued'); }
   async archive(taskId: string, archived: boolean): Promise<Task> { return this.update(taskId, { archived }); }
   async pin(taskId: string, pinned: boolean): Promise<Task> { return this.update(taskId, { pinned }); }
+
+  async require(taskId: string): Promise<Task> {
+    const task = (await this.taskStore.read()).find(item => item.id === taskId);
+    if (task === undefined) throw new Error('Task was not found.');
+    return task;
+  }
 
   async findByCwd(cwd: string): Promise<Task | undefined> { return (await this.taskStore.read()).filter(task => !task.archived && task.cwd === cwd).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]; }
   async findBySession(sessionId: string): Promise<Task | undefined> { return (await this.taskStore.read()).find(task => !task.archived && task.sessionId === sessionId); }

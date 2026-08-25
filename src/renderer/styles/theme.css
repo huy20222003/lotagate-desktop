@@ -162,6 +162,39 @@ h1, h2, p { margin-top: 0; }
 .typing-indicator strong { font-weight: 500; }
 @keyframes typing-shimmer { to { background-position: -220% center; } }
 .worked-time { margin-bottom: 12px; border-bottom: 1px solid #202832; padding-bottom: 10px; color: #8b949e; font-size: 12px; }
+.change-summary-chip { display: inline-flex; align-items: center; gap: 8px; align-self: center; margin: 0 auto 10px; border: 1px solid #303b48; border-radius: 999px; padding: 7px 12px; background: #202832; color: #c3ccd5; font-size: 12px; }
+.change-summary-chip:hover { border-color: #5ba7d8; color: #fff; }
+.change-summary-step { width: 10px; height: 10px; border: 2px solid #2f82b7; border-radius: 50%; }
+.change-additions { color: #86c991; }
+.change-deletions { color: #e06c75; }
+.orchestration-panel { width: min(860px, calc(100% - 96px)); max-height: 190px; margin: 0 auto 8px; overflow: auto; border: 1px solid #303b48; border-radius: 9px; background: #171e27; }
+.plan-progress > summary, .subagent-row > summary { display: flex; min-height: 34px; align-items: center; gap: 8px; cursor: pointer; list-style: none; padding: 0 11px; color: #c3ccd5; font-size: 12px; }
+.plan-progress > summary::-webkit-details-marker, .subagent-row > summary::-webkit-details-marker { display: none; }
+.plan-progress > summary > svg:last-child, .subagent-row > summary > svg:last-child { margin-left: auto; color: #8b949e; }
+.plan-progress-icon { display: grid; place-items: center; color: #5ba7d8; }
+.plan-progress-label { min-width: 0; overflow: hidden; color: #8b949e; text-overflow: ellipsis; white-space: nowrap; }
+.plan-step-list { display: grid; gap: 6px; border-top: 1px solid #303b48; padding: 9px 11px; }
+.plan-step { display: flex; align-items: flex-start; gap: 8px; color: #8b949e; font-size: 11px; }
+.plan-step > svg { flex: 0 0 auto; margin-top: 1px; }
+.plan-step-started { color: #d6dee7; }
+.plan-step-completed { color: #86c991; }
+.plan-step > span { display: grid; gap: 2px; }
+.plan-step small { color: #8b949e; }
+.subagent-list { display: grid; border-top: 1px solid #303b48; }
+.subagent-row { border-bottom: 1px solid #202832; }
+.subagent-row:last-child { border-bottom: 0; }
+.subagent-row > summary { min-height: 32px; }
+.subagent-row > summary > strong { color: #e6edf3; }
+.subagent-status { margin-left: auto; color: #8b949e; font-size: 10px; text-transform: capitalize; }
+.subagent-status-running, .subagent-status-queued { color: #5ba7d8; }
+.subagent-status-completed { color: #86c991; }
+.subagent-status-failed, .subagent-status-cancelled { color: #e06c75; }
+.subagent-detail { display: grid; gap: 4px; padding: 0 36px 10px; color: #c3ccd5; font-size: 11px; }
+.subagent-detail p { margin: 0; overflow-wrap: anywhere; }
+.subagent-detail small { color: #8b949e; }
+.orchestration-error { margin: 2px 0 0; color: #e06c75; font-size: 11px; }
+.spin { animation: orchestration-spin 1s linear infinite; }
+@keyframes orchestration-spin { to { transform: rotate(360deg); } }
 .composer { position: relative; z-index: 1; width: min(860px, calc(100% - 96px)); flex: 0 0 auto; margin: 0 auto 24px; border: 1px solid #3b424b; border-radius: 11px; background: #171e27; box-shadow: 0 18px 50px rgb(0 0 0 / 24%); }
 .prompt-input-wrap { position: relative; min-height: 62px; max-height: 220px; overflow: hidden; }
 .prompt-highlight-layer { position: absolute; inset: 0; overflow: hidden; padding: 11px; color: #e6edf3; font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; }
@@ -240,6 +273,25 @@ h1, h2, p { margin-top: 0; }
 .message-body a { color: #75b7e7; }
 .agent-copy-button { display: grid; width: 24px; height: 24px; place-items: center; margin-top: 9px; border: 0; border-radius: 5px; padding: 0; background: transparent; color: #8b949e; }
 .agent-copy-button:hover { color: #e6edf3; }
+.agent-message-meta { display: flex; align-items: center; gap: 6px; margin-top: 5px !important; color: #8b949e !important; font-size: 11px !important; line-height: 1 !important; }
+.agent-message-meta .agent-copy-button { margin-top: 0; }
+.file-changes-drawer { position: absolute; top: 64px; right: 0; bottom: 0; z-index: 3; display: flex; width: min(620px, 82%); flex-direction: column; border-left: 1px solid #3b424b; background: #121820; box-shadow: -20px 0 45px rgb(0 0 0 / 25%); }
+.file-changes-drawer > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; border-bottom: 1px solid #3b424b; padding: 16px 18px; }
+.file-changes-drawer > header > div { display: grid; gap: 4px; min-width: 0; }
+.file-changes-drawer > header strong { color: #e6edf3; font-size: 14px; }
+.file-changes-drawer > header span { color: #8b949e; font-size: 11px; }
+.file-changes-list { overflow: auto; padding: 12px; }
+.file-change-item { overflow: hidden; margin-bottom: 12px; border: 1px solid #303b48; border-radius: 8px; background: #171e27; }
+.file-change-item > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid #303b48; padding: 9px 11px; }
+.file-change-item > header strong { min-width: 0; overflow: hidden; color: #d6dee7; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.file-change-item > header span { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 3px; color: #86c991; font-size: 11px; }
+.file-change-item > header span svg:last-of-type { margin-left: 5px; color: #e06c75; }
+.file-change-item pre { max-height: 320px; overflow: auto; margin: 0; padding: 7px 0; background: #10151c; color: #c3ccd5; font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.diff-line { display: grid; grid-template-columns: 42px minmax(0, 1fr); padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff-line-number { color: #536174; text-align: right; user-select: none; }
+.diff-addition { background: rgb(55 145 82 / 18%); color: #b7e3bd; }
+.diff-deletion { background: rgb(198 75 85 / 18%); color: #f0b1b5; }
+.diff-truncated { display: block; padding: 5px 10px; color: #8b949e; }
 .chat-loading-skeleton { display: grid; gap: 14px; margin-top: 28px; }
 .skeleton-chat-line, .skeleton-chat-block { display: block; border-radius: 6px; }
 .skeleton-chat-line { width: 72%; height: 14px; }

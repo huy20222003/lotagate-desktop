@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 export class JsonFileStore<T> {
   private writeChain: Promise<void> = Promise.resolve();
 
-  constructor(private readonly filePath: string, private readonly fallback: T) {}
+  constructor(private readonly filePath: string, private readonly fallback: T, private readonly parse: (value: unknown) => T = value => value as T) {}
 
   async read(): Promise<T> {
     await this.writeChain;
@@ -34,7 +34,7 @@ export class JsonFileStore<T> {
   private async readFromDisk(): Promise<T> {
     try {
       const raw = await readFile(this.filePath, 'utf8');
-      return JSON.parse(raw) as T;
+      return this.parse(JSON.parse(raw));
     } catch (error) {
       if (isMissingFile(error)) return this.fallback;
       throw error;

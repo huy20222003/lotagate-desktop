@@ -3,6 +3,7 @@ import { ArrowLeft, CreditCard, UserRound } from 'lucide-react';
 import type { UserProfile } from '../../../contracts/ipc/v1/auth.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
 import { Avatar, Button, Card, Icon, Skeleton, Tooltip } from '../../components/ui.js';
+import { formatTime } from '../../utils/time.js';
 
 type SettingsSection = 'profile' | 'billing';
 
@@ -143,7 +144,7 @@ function BillingPanel({ organizationCode }: { organizationCode?: string }) {
   if (loading) return <BillingSkeleton />;
   if (error) return <EmptyBilling detail={error} />;
   if (!wallet) return <EmptyBilling detail="No wallet information is available." />;
-  return <div className="billing-panel"><p className="settings-muted">Current organization wallet</p><div className="billing-grid"><Metric label="Balance" value={`${wallet.balance} ${wallet.currency}`} /><Metric label="Bonus" value={`${wallet.bonus} ${wallet.currency}`} /><Metric label="Outstanding debt" value={`${wallet.outstandingDebt} ${wallet.currency}`} /></div>{wallet.updatedAt ? <p className="settings-muted">Updated {new Date(wallet.updatedAt).toLocaleString()}</p> : null}</div>;
+  return <div className="billing-panel"><p className="settings-muted">Current organization wallet</p><div className="billing-grid"><Metric label="Balance" value={`${wallet.balance} ${wallet.currency}`} /><Metric label="Bonus" value={`${wallet.bonus} ${wallet.currency}`} /><Metric label="Outstanding debt" value={`${wallet.outstandingDebt} ${wallet.currency}`} /></div>{wallet.updatedAt ? <p className="settings-muted">Updated {formatTime(wallet.updatedAt, { dateStyle: 'medium', timeStyle: 'short' })}</p> : null}</div>;
 }
 
 function BillingSkeleton() { return <div className="billing-panel"><p className="settings-muted">Current organization wallet</p><div className="billing-grid"><Metric label="Balance" value="0 USD" loading /><Metric label="Bonus" value="0 USD" loading /><Metric label="Outstanding debt" value="0 USD" loading /></div></div>; }

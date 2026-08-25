@@ -16,6 +16,7 @@ import type { DesktopOperations } from '../operations/desktop-operations.js';
 import { assertTrustedRenderer } from './sender-policy.js';
 import type { DesktopMenuContext } from '../windows/application-menu.js';
 import type { WorkspaceFileSuggestions } from '../workspaces/workspace-file-suggestions.js';
+import { terminalExecutionInputSchema } from '../../contracts/ipc/v1/workspace.js';
 
 const cwdSchema = z.string().min(1).max(4_096);
 
@@ -147,7 +148,7 @@ export function registerIpc(services: DesktopIpcServices): void {
   ipcMain.handle('git.restore', async (event, cwd: unknown, path: unknown, confirmed: unknown) => { assertTrustedRenderer(event); return git.restore(cwdSchema.parse(cwd), cwdSchema.parse(path), z.boolean().parse(confirmed)); });
   ipcMain.handle('terminal.execute', async (event, input: unknown) => {
     assertTrustedRenderer(event);
-    const value = objectSchema.parse(input) as { cwd: string; command: string; args: string[]; timeoutMs?: number; taskId?: string };
+    const value = terminalExecutionInputSchema.parse(input);
     const result = await terminal.execute(value);
     if (value.taskId) await tasks.appendActivity(value.taskId, 'verification', `${value.command} ${value.args.join(' ')}`.trim(), { cwd: result.cwd, exitCode: result.exitCode, durationMs: result.durationMs, truncated: result.truncated, evidenceId: result.id, output: `${result.stdout}\n${result.stderr}`.slice(0, 4_096) });
     return result;

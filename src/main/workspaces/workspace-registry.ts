@@ -7,7 +7,7 @@ import { requireDirectory } from '../security/path-policy.js';
 import { runGit } from '../git/git-process.js';
 
 export class WorkspaceRegistry {
-  private readonly store = new JsonFileStore<Workspace[]>(desktopDataPath('workspaces.json'), []);
+  private readonly store = new JsonFileStore<Workspace[]>(desktopDataPath('workspaces.json'), [], value => workspaceSchema.array().parse(value));
 
   async list(): Promise<Workspace[]> { return (await this.store.read()).map(item => workspaceSchema.parse(item)); }
 
