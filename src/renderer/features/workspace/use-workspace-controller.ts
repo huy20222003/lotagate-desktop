@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Activity, ApprovalRequest, Artifact, FileChangeSummary, PlanSnapshot, SubagentSnapshot, Task, TrustRequest, Workspace } from '../../../contracts/ipc/v1/workspace.js';
 import { sessionSlugFromPrompt } from './task-title.js';
 import { shouldAutoApprove, type ApprovalMode } from './approval-policy.js';
-import { EMPTY_FILE_CHANGE_SUMMARY, fileChangesFromActivities, mergeFileChange } from './file-changes.js';
+import { EMPTY_FILE_CHANGE_SUMMARIES, EMPTY_FILE_CHANGE_SUMMARY, fileChangeSummariesFromActivities, fileChangesFromActivities, mergeFileChange, mergeFileChangeForTurn } from './file-changes.js';
 import { applyPlanEvent, applySubagentEvent } from './orchestration-events.js';
 
 export function useWorkspaceController() {
@@ -13,6 +13,7 @@ export function useWorkspaceController() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [fileChanges, setFileChanges] = useState<FileChangeSummary>(EMPTY_FILE_CHANGE_SUMMARY);
+  const [fileChangesByTurn, setFileChangesByTurn] = useState(EMPTY_FILE_CHANGE_SUMMARIES);
   const [plan, setPlan] = useState<PlanSnapshot | undefined>();
   const [subagents, setSubagents] = useState<SubagentSnapshot[]>([]);
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
@@ -94,7 +95,7 @@ export function useWorkspaceController() {
   const loadActivities = useCallback(async (taskId: string): Promise<void> => {
     const requestId = ++activityRequestRef.current;
     const next = await window.lotagate.tasks.activities(taskId);
-    if (requestId === activityRequestRef.current) { setActivities(next); setFileChanges(fileChangesFromActivities(next)); }
+    if (requestId === activityRequestRef.current) { setActivities(next); setFileChanges(fileChangesFromActivities(next)); setFileChangesByTurn(fileChangeSummariesFromActivities(next)); }
   }, []);
 
   const scheduleActivityRefresh = useCallback((taskId: string) => {
@@ -108,7 +109,7 @@ export function useWorkspaceController() {
   useEffect(() => {
     let mounted = true;
     activityRequestRef.current += 1;
-    if (!task) { setActivities([]); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); return; }
+    if (!task) { setActivities([]); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); return; }
     setActivitiesLoading(true);
     void loadActivities(task.id).catch(reason => { if (mounted) setError(toMessage(reason)); }).finally(() => { if (mounted) setActivitiesLoading(false); });
     void loadAttachmentPreviews(task.id, task.draftAttachmentIds).then(next => { if (mounted) setAttachments(next); }).catch(() => { if (mounted) setAttachments([]); });
@@ -127,10 +128,10 @@ export function useWorkspaceController() {
     const data = envelope.event.data;
     const terminal = envelope.event.event === 'turn.completed' || envelope.event.event === 'turn.failed' || envelope.event.event === 'turn.cancelled';
     const eventSessionId = typeof data['sessionId'] === 'string' ? data['sessionId'] : undefined;
+    const turnId = typeof data['turnId'] === 'string' ? data['turnId'] : undefined;
     const currentTaskId = task?.id ?? draftTaskRef.current?.id;
     const eventTask = tasks.find(item => eventSessionId !== undefined && item.sessionId === eventSessionId) ?? (task?.sessionId === eventSessionId ? task : undefined) ?? (draftTaskRef.current?.sessionId === eventSessionId ? draftTaskRef.current : undefined) ?? (tasks.length === 1 ? tasks[0] : undefined);
     if (eventTask !== undefined && eventTask.id === currentTaskId) {
-      const turnId = typeof data['turnId'] === 'string' ? data['turnId'] : undefined;
       if (turnId && envelope.event.event === 'turn.started') setTurnTimings(current => ({ ...current, [turnId]: { startedAt: Date.now() } }));
       if (turnId && terminal) setTurnTimings(current => ({ ...current, [turnId]: { startedAt: current[turnId]?.startedAt ?? Date.now(), endedAt: Date.now() } }));
       if (turnId && envelope.event.event === 'turn.started') activeTurnRef.current = { taskId: eventTask.id, cwd: workspace.rootPath, turnId };
@@ -148,7 +149,10 @@ export function useWorkspaceController() {
         else setApproval(request);
       }
       if (envelope.event.event === 'trust.requested') setTrust({ trustRequestId: String(data['trustRequestId']), taskId: eventTask.id, sessionId: String(data['sessionId']), path: String(data['path']) });
-      if (envelope.event.event === 'file.changed') setFileChanges(current => mergeFileChange(current, data['change']));
+      if (envelope.event.event === 'file.changed') {
+        setFileChanges(current => mergeFileChange(current, data['change']));
+        if (turnId !== undefined) setFileChangesByTurn(current => mergeFileChangeForTurn(current, turnId, data['change']));
+      }
       if (envelope.event.event.startsWith('subagent.')) setSubagents(current => applySubagentEvent(current, envelope.event.event, data));
       if (envelope.event.event.startsWith('plan.')) setPlan(current => applyPlanEvent(current, envelope.event.event, data));
     }
@@ -161,14 +165,14 @@ export function useWorkspaceController() {
     const nextTask = tasks.find(item => item.workspaceId === next.id && !item.archived);
     draftTaskRef.current = nextTask;
     setTask(current => current?.workspaceId === next.id ? current : nextTask);
-    setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setPlan(undefined); setSubagents([]);
+    setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES);
   }, [tasks]);
   const selectTask = useCallback((next: Task) => {
     setWorkspace(current => workspaces.find(item => item.id === next.workspaceId) ?? current);
     draftTaskRef.current = next;
     setTask(next);
     setApproval(undefined);
-    setTrust(undefined); setAgentStatus(undefined); setPlan(undefined); setSubagents([]);
+    setTrust(undefined); setAgentStatus(undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES);
     if (next.sessionId) void window.lotagate.agent.sessionResume(next.cwd, next.sessionId).catch(reason => setError(toMessage(reason)));
   }, [workspaces]);
   const newTask = useCallback(async (targetWorkspace?: Workspace) => {
@@ -336,7 +340,7 @@ export function useWorkspaceController() {
     setTask(current => current?.id === updated.id ? updated : current);
   }, []);
 
-  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activitiesLoading, fileChanges, plan, subagents, attachments, approval, approvalMode, setApprovalMode, trust, models, selectedModel, setSelectedModel, loading, busy, thinking, agentStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, removeWorkspace, sendPrompt, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, cancelTask, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activitiesLoading, fileChanges, plan, subagents, attachments, approval, approvalMode, trust, models, selectedModel, loading, busy, thinking, agentStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, removeWorkspace, sendPrompt, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, cancelTask, retryTask, archiveTask, pinTask, pinTaskById]);
+  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activitiesLoading, fileChanges, fileChangesByTurn, plan, subagents, attachments, approval, approvalMode, setApprovalMode, trust, models, selectedModel, setSelectedModel, loading, busy, thinking, agentStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, removeWorkspace, sendPrompt, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, cancelTask, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activitiesLoading, fileChanges, fileChangesByTurn, plan, subagents, attachments, approval, approvalMode, trust, models, selectedModel, loading, busy, thinking, agentStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, removeWorkspace, sendPrompt, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, cancelTask, retryTask, archiveTask, pinTask, pinTaskById]);
 }
 
 export interface AttachmentPreview {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fileChangesFromActivities, mergeFileChange } from './file-changes.js';
+import { fileChangeSummariesFromActivities, fileChangesFromActivities, mergeFileChange } from './file-changes.js';
 
 describe('file change projection', () => {
   it('keeps the latest change for each file and totals its lines', () => {
@@ -11,4 +11,13 @@ describe('file change projection', () => {
   });
 
   it('ignores malformed changes', () => expect(mergeFileChange({ files: [], additions: 0, deletions: 0 }, { path: '', lines: [] })).toEqual({ files: [], additions: 0, deletions: 0 }));
+
+  it('groups changes by the response turn', () => {
+    const summaries = fileChangeSummariesFromActivities([
+      { id: '1', taskId: 'task', kind: 'file', text: 'changed', metadata: { turnId: 'turn-1', change: { path: 'test.md', additions: 1, deletions: 0, lines: [] } }, createdAt: new Date().toISOString() },
+      { id: '2', taskId: 'task', kind: 'file', text: 'changed', metadata: { turnId: 'turn-2', change: { path: 'other.md', additions: 2, deletions: 1, lines: [] } }, createdAt: new Date().toISOString() },
+    ]);
+    expect(summaries['turn-1']).toMatchObject({ additions: 1, deletions: 0, files: [{ path: 'test.md' }] });
+    expect(summaries['turn-2']).toMatchObject({ additions: 2, deletions: 1, files: [{ path: 'other.md' }] });
+  });
 });

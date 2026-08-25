@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Copy, FileText, Folder, Minus, Paperclip, Plus, Send, ShieldCheck, Square, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, FileText, Folder, Minus, Paperclip, Plus, Send, ShieldCheck, Square, X } from 'lucide-react';
 import { WorkspaceSidebar } from './WorkspaceSidebar.js';
 import { SettingsPage } from '../settings/SettingsPage.js';
 import type { Activity, ApprovalRequest, FileChangeDiff, FileChangeSummary, Task, TrustRequest, Workspace, WorkspaceFileSuggestion } from '../../../contracts/ipc/v1/workspace.js';
@@ -10,6 +10,7 @@ import { useWorkspaceController } from './use-workspace-controller.js';
 import { AgentMarkdown } from './markdown-renderer.js';
 import { PromptMarkup } from './prompt-markup.js';
 import type { AttachmentPreview } from './use-workspace-controller.js';
+import type { FileChangeSummariesByTurn } from './file-changes.js';
 import type { ApprovalMode } from './approval-policy.js';
 import { formatDuration, formatTime } from '../../utils/time.js';
 import { OrchestrationPanel } from './OrchestrationPanel.js';
@@ -92,9 +93,9 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
     <WorkspaceSidebar accountName={accountName} avatarProps={avatarProps} workspaces={controller.workspaces} activeWorkspace={controller.workspace} tasks={controller.tasks} activeTask={controller.task} loading={controller.loading} accountOpen={accountOpen} onAccount={() => setAccountOpen(open => !open)} onCloseAccount={() => setAccountOpen(false)} onSettings={() => { setSettingsOpen(true); setAccountOpen(false); }} onLogout={() => { setLogoutOpen(true); setAccountOpen(false); }} onNewChat={startNewChat} onWorkspace={controller.selectWorkspace} onTask={controller.selectTask} onAddWorkspace={() => void openWorkspacePicker()} onRenameWorkspace={startRename} onRemoveWorkspace={startRemove} onArchiveTask={setArchiveTarget} onPinTask={(target, pinned) => { void controller.pinTaskById(target.id, pinned).catch(reason => showError('Unable to update session pin', toMessage(reason))); }} />
     <main className="conversation">
       <ConversationHeader task={controller.task} workspace={controller.workspace} />
-      <Scrollbar className="thread-scrollbar" viewportRef={threadViewportRef}><div className="thread-content">{controller.loading || controller.activitiesLoading ? <ChatLoadingSkeleton /> : <TaskConversation task={controller.task} activities={controller.activities} statusText={controller.agentStatus} thinking={controller.thinking} turnTimings={controller.turnTimings} trust={controller.trust} onTrust={controller.respondTrust} />}</div></Scrollbar>
+      <Scrollbar className="thread-scrollbar" viewportRef={threadViewportRef}><div className="thread-content">{controller.loading || controller.activitiesLoading ? <ChatLoadingSkeleton /> : <TaskConversation task={controller.task} activities={controller.activities} fileChangesByTurn={controller.fileChangesByTurn} statusText={controller.agentStatus} thinking={controller.thinking} turnTimings={controller.turnTimings} trust={controller.trust} onTrust={controller.respondTrust} />}</div></Scrollbar>
       <OrchestrationPanel plan={controller.plan} subagents={controller.subagents} />
-      {controller.fileChanges.files.length > 0 ? <ChangeSummaryChip summary={controller.fileChanges} onClick={() => setChangesOpen(true)} /> : null}
+      {controller.thinking && controller.fileChanges.files.length > 0 ? <ChangeSummaryChip summary={controller.fileChanges} onClick={() => setChangesOpen(true)} /> : null}
       <Composer disabled={controller.workspace === undefined} workspace={controller.workspace} thinking={controller.thinking} task={controller.task} attachments={controller.attachments} models={controller.models} selectedModel={controller.selectedModel} onModel={controller.setSelectedModel} busy={controller.busy} error={controller.error} onSend={controller.sendPrompt} onCancel={controller.cancelTask} onDraft={controller.updateDraft} onAttach={controller.pickArtifact} onAttachImage={controller.attachImage} onRemoveAttachment={controller.removeAttachment} approval={controller.approval} approvalMode={controller.approvalMode} onApprovalMode={controller.setApprovalMode} onApproval={controller.respondApproval} />
       {changesOpen ? <FileChangesDrawer summary={controller.fileChanges} onClose={() => setChangesOpen(false)} /> : null}
     </main>
@@ -114,10 +115,10 @@ function ChatLoadingSkeleton() {
   return <div className="chat-loading-skeleton" aria-label="Loading chat"><Skeleton className="skeleton-chat-line skeleton-chat-short" /><Skeleton className="skeleton-chat-line" /><Skeleton className="skeleton-chat-line skeleton-chat-medium" /><Skeleton className="skeleton-chat-block" /></div>;
 }
 
-function TaskConversation({ task, activities, statusText, thinking, turnTimings, trust, onTrust }: { task?: Task | undefined; activities: Activity[]; statusText?: string | undefined; thinking: boolean; turnTimings: Record<string, { startedAt: number; endedAt?: number }>; trust?: TrustRequest | undefined; onTrust: (trusted: boolean) => Promise<void> }) {
+function TaskConversation({ task, activities, fileChangesByTurn, statusText, thinking, turnTimings, trust, onTrust }: { task?: Task | undefined; activities: Activity[]; fileChangesByTurn: FileChangeSummariesByTurn; statusText?: string | undefined; thinking: boolean; turnTimings: Record<string, { startedAt: number; endedAt?: number }>; trust?: TrustRequest | undefined; onTrust: (trusted: boolean) => Promise<void> }) {
   if (!task) return <EmptyState title="Create your first agent task" detail="Choose a workspace, then enter a prompt below." />;
   const transcript = mergeChatActivities(activities);
-  return <><div className="activity-list">{transcript.map(activity => <ChatMessage key={activity.id} activity={activity} {...messageTiming(activity, turnTimings)} />)}</div>{statusText ? <div className="agent-status" aria-live="polite">{statusText}</div> : thinking ? <TypingIndicator /> : null}{trust ? <TrustCard request={trust} onDecision={onTrust} /> : null}</>;
+  return <><div className="activity-list">{transcript.map(activity => { const fileChangeSummary = fileChangesByTurn[String(activity.metadata['turnId'] ?? '')]; return <ChatMessage key={activity.id} activity={activity} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...messageTiming(activity, turnTimings)} />; })}</div>{statusText ? <div className="agent-status" aria-live="polite">{statusText}</div> : thinking ? <TypingIndicator /> : null}{trust ? <TrustCard request={trust} onDecision={onTrust} /> : null}</>;
 }
 
 function messageTiming(activity: Activity, turnTimings: Record<string, { startedAt: number; endedAt?: number }>): { timing?: { startedAt: number; endedAt?: number } } {
@@ -126,12 +127,12 @@ function messageTiming(activity: Activity, turnTimings: Record<string, { started
   return timing === undefined ? {} : { timing };
 }
 
-function ChatMessage({ activity, timing }: { activity: Activity; timing?: { startedAt: number; endedAt?: number } }) {
+function ChatMessage({ activity, timing, fileChangeSummary }: { activity: Activity; timing?: { startedAt: number; endedAt?: number }; fileChangeSummary?: FileChangeSummary }) {
   if (activity.kind === 'user') return <UserMessage activity={activity} />;
-  return <AgentMessage activity={activity} {...(timing === undefined ? {} : { timing })} />;
+  return <AgentMessage activity={activity} {...(timing === undefined ? {} : { timing })} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} />;
 }
 
-function AgentMessage({ activity, timing }: { activity: Activity; timing?: { startedAt: number; endedAt?: number } }) {
+function AgentMessage({ activity, timing, fileChangeSummary }: { activity: Activity; timing?: { startedAt: number; endedAt?: number }; fileChangeSummary?: FileChangeSummary }) {
   const [copied, setCopied] = useState(false);
   const resetTimer = useRef<number | undefined>();
   useEffect(() => () => { if (resetTimer.current !== undefined) window.clearTimeout(resetTimer.current); }, []);
@@ -145,7 +146,7 @@ function AgentMessage({ activity, timing }: { activity: Activity; timing?: { sta
       setCopied(false);
     }
   };
-  return <article className="message agent-message"><div className="message-body"><ElapsedTime {...(timing === undefined ? {} : { timing })} fallback={activity.createdAt} /><AgentMarkdown content={activity.text} /><div className="agent-message-meta"><Tooltip label={copied ? 'Copied' : 'Copy response'}><button type="button" className="agent-copy-button" aria-label="Copy response" onClick={() => void copyRawContent()}>{copied ? <Check size={13} /> : <Copy size={13} />}</button></Tooltip><time dateTime={activity.createdAt}>{formatTime(activity.createdAt)}</time></div></div></article>;
+  return <article className="message agent-message"><div className="message-body"><ElapsedTime {...(timing === undefined ? {} : { timing })} fallback={activity.createdAt} /><AgentMarkdown content={activity.text} />{fileChangeSummary && fileChangeSummary.files.length > 0 ? <FileChangeCard summary={fileChangeSummary} /> : null}<div className="agent-message-meta"><Tooltip label={copied ? 'Copied' : 'Copy response'}><button type="button" className="agent-copy-button" aria-label="Copy response" onClick={() => void copyRawContent()}>{copied ? <Check size={13} /> : <Copy size={13} />}</button></Tooltip><time dateTime={activity.createdAt}>{formatTime(activity.createdAt)}</time></div></div></article>;
 }
 
 function UserMessage({ activity }: { activity: Activity }) {
@@ -218,7 +219,12 @@ function FileChangesDrawer({ summary, onClose }: { summary: FileChangeSummary; o
   return <aside className="file-changes-drawer" aria-label="Changed files"><header><div><strong>Changed files</strong><span>{summary.files.length} files · +{summary.additions} -{summary.deletions}</span></div><button type="button" className="icon-button" aria-label="Close changed files" onClick={onClose}><X size={16} /></button></header><div className="file-changes-list">{summary.files.map(change => <FileChangeItem key={change.path} change={change} />)}</div></aside>;
 }
 
+function FileChangeCard({ summary }: { summary: FileChangeSummary }) {
+  return <section className="file-change-card" aria-label="Edited files"><header><div><strong>Edited {summary.files.length} {summary.files.length === 1 ? 'file' : 'files'}</strong><span><b className="change-additions">+{summary.additions}</b><b className="change-deletions">-{summary.deletions}</b></span></div></header><div className="file-change-card-list">{summary.files.map(change => <FileChangeItem key={change.path} change={change} />)}</div></section>;
+}
+
 function FileChangeItem({ change }: { change: FileChangeDiff }) {
-  return <section className="file-change-item"><header><strong title={change.path}>{change.path}</strong><span><Plus size={12} />{change.additions}<Minus size={12} />{change.deletions}</span></header><pre>{change.lines.map((line, index) => <code className={`diff-line diff-${line.kind}`} key={`${change.path}:${index}`}><span className="diff-line-number">{line.newLine ?? line.oldLine ?? ''}</span><span>{line.kind === 'addition' ? '+' : line.kind === 'deletion' ? '-' : ' '}{line.text}</span></code>)}{change.truncated ? <code className="diff-truncated">… diff truncated …</code> : null}</pre></section>;
+  const [expanded, setExpanded] = useState(true);
+  return <section className="file-change-item"><header><button type="button" className="file-change-toggle" aria-label={`${expanded ? 'Collapse' : 'Expand'} changes for ${change.path}`} aria-expanded={expanded} onClick={() => setExpanded(current => !current)}>{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button><strong title={change.path}>{change.path}</strong><span><Plus size={12} />{change.additions}<Minus size={12} />{change.deletions}</span></header>{expanded ? <pre>{change.lines.map((line, index) => <code className={`diff-line diff-${line.kind}`} key={`${change.path}:${index}`}><span className="diff-line-number">{line.newLine ?? line.oldLine ?? ''}</span><span>{line.kind === 'addition' ? '+' : line.kind === 'deletion' ? '-' : ' '}{line.text}</span></code>)}{change.truncated ? <code className="diff-truncated">… diff truncated …</code> : null}</pre> : null}</section>;
 }
 function toMessage(reason: unknown): string { return reason instanceof Error ? reason.message : 'The workspace operation failed.'; }

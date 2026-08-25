@@ -1,6 +1,8 @@
 import type { Activity, FileChangeDiff, FileChangeSummary, FileDiffLine, FileDiffLineKind } from '../../../contracts/ipc/v1/workspace.js';
 
 export const EMPTY_FILE_CHANGE_SUMMARY: FileChangeSummary = { files: [], additions: 0, deletions: 0 };
+export type FileChangeSummariesByTurn = Record<string, FileChangeSummary>;
+export const EMPTY_FILE_CHANGE_SUMMARIES: FileChangeSummariesByTurn = {};
 
 export function fileChangesFromActivities(activities: readonly Activity[]): FileChangeSummary {
   const changes = new Map<string, FileChangeDiff>();
@@ -18,6 +20,27 @@ export function mergeFileChange(summary: FileChangeSummary, value: unknown): Fil
   const changes = new Map(summary.files.map(item => [item.path, item]));
   changes.set(change.path, change);
   return summarize(changes);
+}
+
+export function fileChangeSummariesFromActivities(activities: readonly Activity[]): FileChangeSummariesByTurn {
+  const changesByTurn = new Map<string, Map<string, FileChangeDiff>>();
+  for (const activity of activities) {
+    if (activity.kind !== 'file') continue;
+    const turnId = readString(activity.metadata['turnId']);
+    const change = parseFileChange(activity.metadata['change']);
+    if (turnId === undefined || change === undefined) continue;
+    const changes = changesByTurn.get(turnId) ?? new Map<string, FileChangeDiff>();
+    changes.set(change.path, change);
+    changesByTurn.set(turnId, changes);
+  }
+  return Object.fromEntries([...changesByTurn.entries()].map(([turnId, changes]) => [turnId, summarize(changes)]));
+}
+
+export function mergeFileChangeForTurn(summaries: FileChangeSummariesByTurn, turnId: string, value: unknown): FileChangeSummariesByTurn {
+  const next = parseFileChange(value);
+  if (next === undefined) return summaries;
+  const current = summaries[turnId] ?? EMPTY_FILE_CHANGE_SUMMARY;
+  return { ...summaries, [turnId]: mergeFileChange(current, next) };
 }
 
 function summarize(changes: ReadonlyMap<string, FileChangeDiff>): FileChangeSummary {
@@ -51,3 +74,4 @@ function readLineNumber(value: unknown, key: 'oldLine' | 'newLine'): Partial<Pic
 
 function isLineKind(value: unknown): value is FileDiffLineKind { return value === 'context' || value === 'addition' || value === 'deletion'; }
 function readCount(value: unknown, lines: readonly FileDiffLine[], kind: FileDiffLineKind): number { return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : lines.filter(line => line.kind === kind).length; }
+function readString(value: unknown): string | undefined { return typeof value === 'string' && value.trim() ? value : undefined; }
