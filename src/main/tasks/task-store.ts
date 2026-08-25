@@ -28,7 +28,7 @@ export class TaskStore {
 
   async setStatus(taskId: string, status: TaskStatus): Promise<Task> { return this.withExclusive(() => this.mutate(taskId, current => ({ ...current, status, updatedAt: new Date().toISOString() }))); }
   async retry(taskId: string): Promise<Task> { return this.setStatus(taskId, 'queued'); }
-  async cancel(taskId: string): Promise<Task> { return this.setStatus(taskId, 'cancelled'); }
+  async cancel(taskId: string): Promise<Task> { return this.withExclusive(() => this.mutate(taskId, current => ({ ...current, status: 'cancelled', turnId: undefined, updatedAt: new Date().toISOString() }))); }
   async resume(taskId: string): Promise<Task> { return this.setStatus(taskId, 'queued'); }
   async archive(taskId: string, archived: boolean): Promise<Task> { return this.update(taskId, { archived }); }
   async pin(taskId: string, pinned: boolean): Promise<Task> { return this.update(taskId, { pinned }); }

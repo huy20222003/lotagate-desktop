@@ -24,11 +24,15 @@ export class TaskEventProjector {
       if (event.event === 'assistant.delta') await this.tasks.appendAssistantDelta(task.id, text, metadata);
       else await this.tasks.appendEvent(task.id, activityKind(event.event), text, metadata);
     }
-    if (event.event === 'turn.started') await this.tasks.setStatus(task.id, 'active');
+    if (event.event === 'turn.started') {
+      await this.tasks.setStatus(task.id, 'active');
+      const turnId = typeof data['turnId'] === 'string' ? data['turnId'] : undefined;
+      if (turnId !== undefined) await this.tasks.update(task.id, { turnId });
+    }
     if (event.event === 'turn.completed') { await this.tasks.setStatus(task.id, 'completed'); await this.tasks.update(task.id, { turnId: undefined, interruptedReason: undefined }); }
     if (event.event === 'turn.failed') await this.tasks.setStatus(task.id, 'failed');
+    if (event.event === 'turn.failed') await this.tasks.update(task.id, { turnId: undefined, interruptedReason: typeof data['error'] === 'string' ? data['error'] : 'The CLI reported a failed turn.' });
     if (event.event === 'turn.cancelled') { await this.tasks.setStatus(task.id, 'cancelled'); await this.tasks.update(task.id, { turnId: undefined }); }
-    if (event.event === 'turn.failed') await this.tasks.update(task.id, { interruptedReason: typeof data['error'] === 'string' ? data['error'] : 'The CLI reported a failed turn.' });
   }
 }
 

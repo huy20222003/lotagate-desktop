@@ -27,7 +27,7 @@ export function EmptyState({ title, detail, action }: { title: string; detail?: 
 export function Tooltip({ label, children }: PropsWithChildren<{ label: string }>) { return <span className="tooltip-wrap"><span className="tooltip-bubble" role="tooltip">{label}</span>{children}</span>; }
 export function Skeleton({ children, className = '' }: PropsWithChildren<{ className?: string }>) { return <span className={`skeleton ${className}`} aria-hidden="true">{children}</span>; }
 
-export function Dropdown({ label, value, options, onChange, disabled = false }: { label?: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void; disabled?: boolean }) {
+export function Dropdown({ label, value, options, onChange, disabled = false, className = '' }: { label?: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void; disabled?: boolean; className?: string }) {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const selected = options.find(option => option.value === value)?.label ?? value;
@@ -37,7 +37,7 @@ export function Dropdown({ label, value, options, onChange, disabled = false }: 
     document.addEventListener('pointerdown', closeOnOutsideClick);
     return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
   }, [open]);
-  return <div ref={dropdownRef} className={`dropdown ${open ? 'open' : ''}`}>{label ? <span className="field-label">{label}</span> : null}<button type="button" className="model-select" aria-label={label ?? 'Select option'} aria-expanded={open} disabled={disabled} onClick={() => setOpen(current => !current)}><span>{selected}</span><ChevronDown size={14} /></button>{open ? <div className="dropdown-menu"><Scrollbar><div className="dropdown-options">{options.map(option => <button type="button" key={option.value} className={option.value === value ? 'dropdown-option selected' : 'dropdown-option'} onClick={() => { onChange(option.value); setOpen(false); }}>{option.label}</button>)}</div></Scrollbar></div> : null}</div>;
+  return <div ref={dropdownRef} className={`dropdown ${className} ${open ? 'open' : ''}`}>{label ? <span className="field-label">{label}</span> : null}<button type="button" className="model-select" aria-label={label ?? 'Select option'} aria-expanded={open} disabled={disabled} onClick={() => setOpen(current => !current)}><span>{selected}</span><ChevronDown size={14} /></button>{open ? <div className="dropdown-menu"><Scrollbar><div className="dropdown-options">{options.map(option => <button type="button" key={option.value} className={option.value === value ? 'dropdown-option selected' : 'dropdown-option'} onClick={() => { onChange(option.value); setOpen(false); }}>{option.label}</button>)}</div></Scrollbar></div> : null}</div>;
 }
 
 export function Tabs({ value, items, onChange }: { value: string; items: Array<{ value: string; label: string }>; onChange: (value: string) => void }) { return <div className="tabs" role="tablist" aria-label="Views">{items.map(item => <button key={item.value} role="tab" aria-selected={value === item.value} className={`tab ${value === item.value ? 'selected' : ''}`} onClick={() => onChange(item.value)}>{item.label}</button>)}</div>; }

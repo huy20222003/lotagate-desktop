@@ -231,6 +231,8 @@ h1, h2, p { margin-top: 0; }
 .composer-spacer { flex: 1; }
 .model-label { color: #8b949e; font-size: 11px; }
 .model-select { display: flex; width: 220px; min-height: 34px; align-items: center; justify-content: space-between; gap: 8px; border: 0; border-radius: 7px; padding: 0 9px; background: transparent; color: #e6edf3; font-size: 11px; text-align: left; }
+.composer-model-dropdown .model-select { width: max-content; max-width: min(320px, 36vw); justify-content: flex-start; gap: 6px; }
+.composer-model-dropdown .model-select span { max-width: min(280px, 31vw); }
 .model-select:hover, .dropdown.open .model-select { background: #202a36; }
 .model-select span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dropdown { position: relative; display: block; }

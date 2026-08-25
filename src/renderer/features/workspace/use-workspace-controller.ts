@@ -34,6 +34,7 @@ export function useWorkspaceController() {
   const initialTasksLoadedRef = useRef(false);
   const activityRequestRef = useRef(0);
   const activityRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
+  const activeTurnRef = useRef<{ taskId: string; cwd: string; turnId: string } | undefined>();
   useEffect(() => { draftTaskRef.current = task; }, [task]);
 
   const reloadTasks = useCallback(async (workspaceId: string) => {
@@ -126,18 +127,21 @@ export function useWorkspaceController() {
     const data = envelope.event.data;
     const terminal = envelope.event.event === 'turn.completed' || envelope.event.event === 'turn.failed' || envelope.event.event === 'turn.cancelled';
     const eventSessionId = typeof data['sessionId'] === 'string' ? data['sessionId'] : undefined;
-    const eventTask = tasks.find(item => eventSessionId !== undefined && item.sessionId === eventSessionId) ?? (task?.sessionId === eventSessionId ? task : undefined) ?? (tasks.length === 1 ? tasks[0] : undefined);
-    if (eventTask?.id === task?.id) {
+    const currentTaskId = task?.id ?? draftTaskRef.current?.id;
+    const eventTask = tasks.find(item => eventSessionId !== undefined && item.sessionId === eventSessionId) ?? (task?.sessionId === eventSessionId ? task : undefined) ?? (draftTaskRef.current?.sessionId === eventSessionId ? draftTaskRef.current : undefined) ?? (tasks.length === 1 ? tasks[0] : undefined);
+    if (eventTask !== undefined && eventTask.id === currentTaskId) {
       const turnId = typeof data['turnId'] === 'string' ? data['turnId'] : undefined;
       if (turnId && envelope.event.event === 'turn.started') setTurnTimings(current => ({ ...current, [turnId]: { startedAt: Date.now() } }));
       if (turnId && terminal) setTurnTimings(current => ({ ...current, [turnId]: { startedAt: current[turnId]?.startedAt ?? Date.now(), endedAt: Date.now() } }));
+      if (turnId && envelope.event.event === 'turn.started') activeTurnRef.current = { taskId: eventTask.id, cwd: workspace.rootPath, turnId };
+      if (terminal && (turnId === undefined || activeTurnRef.current?.turnId === turnId)) activeTurnRef.current = undefined;
       const status = eventStatus(envelope.event.event, data);
       if (status !== undefined) setAgentStatus(status);
       else if (terminal || envelope.event.event === 'tool.completed') setAgentStatus(undefined);
       if (envelope.event.event === 'turn.started') setThinking(true);
       if (terminal) { setThinking(false); setAgentStatus(undefined); }
     }
-    if (eventTask !== undefined && eventTask.id === task?.id) {
+    if (eventTask !== undefined && eventTask.id === currentTaskId) {
       if (envelope.event.event === 'approval.requested') {
         const request: ApprovalRequest = { approvalId: String(data['approvalId']), taskId: eventTask.id, turnId: String(data['turnId']), toolName: String(data['toolName'] ?? 'tool'), displayName: String(data['displayName'] ?? data['toolName'] ?? 'Tool'), kind: String(data['kind'] ?? 'action'), detail: (data['detail'] as Record<string, unknown> | undefined) ?? {} };
         if (shouldAutoApprove(request, approvalMode)) void window.lotagate.agent.approvalRespond(workspace.rootPath, { approvalId: request.approvalId, approved: true }).catch(reason => setError(toMessage(reason)));
@@ -148,17 +152,20 @@ export function useWorkspaceController() {
       if (envelope.event.event.startsWith('subagent.')) setSubagents(current => applySubagentEvent(current, envelope.event.event, data));
       if (envelope.event.event.startsWith('plan.')) setPlan(current => applyPlanEvent(current, envelope.event.event, data));
     }
-    if (eventTask !== undefined && task !== undefined && eventTask.id === task.id) scheduleActivityRefresh(task.id);
+    if (eventTask !== undefined && eventTask.id === currentTaskId) scheduleActivityRefresh(eventTask.id);
     if (eventTask !== undefined) scheduleTaskReload(workspace.id);
   }), [approvalMode, scheduleActivityRefresh, scheduleTaskReload, workspace, task, tasks]);
 
   const selectWorkspace = useCallback((next: Workspace) => {
     setWorkspace(next);
-    setTask(current => current?.workspaceId === next.id ? current : tasks.find(item => item.workspaceId === next.id && !item.archived));
+    const nextTask = tasks.find(item => item.workspaceId === next.id && !item.archived);
+    draftTaskRef.current = nextTask;
+    setTask(current => current?.workspaceId === next.id ? current : nextTask);
     setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setPlan(undefined); setSubagents([]);
   }, [tasks]);
   const selectTask = useCallback((next: Task) => {
     setWorkspace(current => workspaces.find(item => item.id === next.workspaceId) ?? current);
+    draftTaskRef.current = next;
     setTask(next);
     setApproval(undefined);
     setTrust(undefined); setAgentStatus(undefined); setPlan(undefined); setSubagents([]);
@@ -218,6 +225,7 @@ export function useWorkspaceController() {
       const isNewTask = task === undefined;
       let activeTask = task ?? await createTask(prompt);
       failedTaskId = activeTask.id;
+      draftTaskRef.current = activeTask;
       if (!isNewTask) await window.lotagate.tasks.addActivity(activeTask.id, 'user', prompt);
       const attachmentIds = activeTask.draftAttachmentIds;
       const patch: { draft: string; draftAttachmentIds: string[]; title?: string } = { draft: '', draftAttachmentIds: [] };
@@ -233,6 +241,7 @@ export function useWorkspaceController() {
       const sessionId = activeTask.sessionId ?? extractSessionId(session);
       if (sessionId === undefined) throw new Error('CLI did not return a session id.');
       activeTask = await window.lotagate.tasks.update(activeTask.id, { sessionId });
+      draftTaskRef.current = activeTask;
       setTask(activeTask);
       setTasks(current => current.map(item => item.id === activeTask.id ? activeTask : item));
       const model = selectedModel || activeTask.model;
@@ -240,10 +249,23 @@ export function useWorkspaceController() {
       setThinking(true); setAgentStatus(undefined);
       const turn = await window.lotagate.agent.turnStart(activeTask.cwd, { sessionId, prompt, taskId: activeTask.id, ...(model ? { model } : {}), ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
       const turnId = extractTurnId(turn);
-      if (turnId) { setTurnTimings(current => ({ ...current, [turnId]: { startedAt: current[turnId]?.startedAt ?? Date.now() } })); setTask(await window.lotagate.tasks.update(activeTask.id, { turnId })); }
+      if (turnId) {
+        activeTurnRef.current = { taskId: activeTask.id, cwd: activeTask.cwd, turnId };
+        setTurnTimings(current => ({ ...current, [turnId]: { startedAt: current[turnId]?.startedAt ?? Date.now() } }));
+        const updatedTask = await window.lotagate.tasks.update(activeTask.id, { turnId });
+        draftTaskRef.current = updatedTask;
+        setTask(updatedTask);
+        setTasks(current => current.map(item => item.id === updatedTask.id ? updatedTask : item));
+      }
       if (!handshake) throw new Error('CLI handshake failed.');
       await reloadTasks(workspace.id);
-    } catch (reason) { setThinking(false); setAgentStatus(undefined); setError(toMessage(reason)); if (failedTaskId) await window.lotagate.tasks.setStatus(failedTaskId, 'failed'); }
+    } catch (reason) {
+      setThinking(false); setAgentStatus(undefined); setError(toMessage(reason));
+      if (failedTaskId) {
+        if (activeTurnRef.current?.taskId === failedTaskId) activeTurnRef.current = undefined;
+        await window.lotagate.tasks.setStatus(failedTaskId, 'failed');
+      }
+    }
     finally { setBusy(false); }
   }, [createTask, reloadTasks, selectedModel, task, workspace]);
 
@@ -275,7 +297,36 @@ export function useWorkspaceController() {
   const pickArtifact = useCallback(async () => { const activeTask = await ensureDraftTask(); if (!activeTask) return; const artifact = await window.lotagate.tasks.pickArtifact(activeTask.id); if (artifact) await appendDraftAttachment(artifact); }, [appendDraftAttachment, ensureDraftTask]);
   const attachImage = useCallback(async (name: string, bytes: Uint8Array) => { const activeTask = await ensureDraftTask(); if (!activeTask) return; const artifact = await window.lotagate.tasks.createImageArtifact(activeTask.id, name, bytes); await appendDraftAttachment(artifact); }, [appendDraftAttachment, ensureDraftTask]);
   const removeAttachment = useCallback(async (attachmentId: string) => { const activeTask = draftTaskRef.current ?? task; if (!activeTask || !activeTask.draftAttachmentIds.includes(attachmentId)) return; await window.lotagate.tasks.deleteArtifact(activeTask.id, attachmentId, true); const next = await window.lotagate.tasks.update(activeTask.id, { draftAttachmentIds: activeTask.draftAttachmentIds.filter(id => id !== attachmentId) }); draftTaskRef.current = next; setTask(next); setAttachments(current => current.filter(item => item.id !== attachmentId)); }, [task]);
-  const cancelTask = useCallback(async () => { if (!task || !workspace) return; if (task.turnId) await window.lotagate.agent.turnCancel(workspace.rootPath, task.turnId).catch(() => undefined); setThinking(false); setAgentStatus(undefined); await window.lotagate.tasks.cancel(task.id); await reloadTasks(workspace.id); }, [reloadTasks, task, workspace]);
+  const cancelTask = useCallback(async () => {
+    if (!task || !workspace) return;
+    const activeTurn = activeTurnRef.current?.taskId === task.id && activeTurnRef.current.cwd === workspace.rootPath ? activeTurnRef.current : undefined;
+    const turnId = activeTurn?.turnId ?? task.turnId;
+    setError(undefined);
+    try {
+      if (turnId !== undefined) await window.lotagate.agent.turnCancel(workspace.rootPath, turnId);
+      const cancelled = await window.lotagate.tasks.cancel(task.id);
+      activeTurnRef.current = undefined;
+      setTask(cancelled);
+      setTasks(current => current.map(item => item.id === cancelled.id ? cancelled : item));
+      setThinking(false);
+      setAgentStatus(undefined);
+      await reloadTasks(workspace.id);
+    } catch (reason) {
+      const refreshed = await window.lotagate.tasks.list(workspace.id).catch(() => [] as Task[]);
+      const refreshedTask = refreshed.find(item => item.id === task.id);
+      if (refreshedTask?.turnId === undefined && refreshedTask?.status !== 'active') {
+        activeTurnRef.current = undefined;
+        setThinking(false);
+        setAgentStatus(undefined);
+        if (refreshedTask !== undefined) {
+          setTasks(items => items.map(item => item.id === refreshedTask.id ? refreshedTask : item));
+          setTask(refreshedTask);
+        }
+        return;
+      }
+      setError(toMessage(reason));
+    }
+  }, [reloadTasks, task, workspace]);
   const retryTask = useCallback(async () => { if (!task) return; const history = await window.lotagate.tasks.activities(task.id); const prompt = [...history].reverse().find(item => item.kind === 'user')?.text; if (prompt) await window.lotagate.tasks.retry(task.id); if (prompt) await sendPrompt(prompt); }, [sendPrompt, task]);
   const archiveTask = useCallback(async (taskId: string, archived: boolean) => { if (!workspace) return; await window.lotagate.tasks.archive(taskId, archived); await reloadTasks(workspace.id); }, [reloadTasks, workspace]);
   const pinTask = useCallback(async (pinned: boolean) => { if (!task || !workspace) return; await window.lotagate.tasks.pin(task.id, pinned); await reloadTasks(workspace.id); }, [reloadTasks, task, workspace]);
