@@ -6,6 +6,7 @@ import { DesktopUserContextService } from './api/desktop-user-context-service.js
 import { loadRuntimeEnvironment, readRuntimeConfig } from './config/runtime-config.js';
 import { registerIpc } from './ipc/register-ipc.js';
 import { createMainWindow } from './windows/create-main-window.js';
+import { installApplicationMenu } from './windows/application-menu.js';
 import { WorkspaceRegistry } from './workspaces/workspace-registry.js';
 import { TaskStore } from './tasks/task-store.js';
 import { TaskEventProjector } from './tasks/task-event-projector.js';
@@ -75,6 +76,7 @@ app.whenReady().then(() => {
   const runAutomation = (id: string): Promise<Automation> => automations.run(id, executeAutomation);
   registerIpc({ auth: new DesktopAuthService(transport), userContext: new DesktopUserContextService(transport), agents, workspaces, tasks, git: new GitService(), terminal: new TerminalService(), settings: new SettingsService(), artifacts: new ArtifactService(), browser, automations, operations, runAutomation });
   automations.start(executeAutomation, 15_000);
+  installApplicationMenu();
   createMainWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

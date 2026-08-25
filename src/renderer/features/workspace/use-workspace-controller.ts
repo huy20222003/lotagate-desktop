@@ -58,6 +58,7 @@ export function useWorkspaceController() {
 
   const selectWorkspace = useCallback((next: Workspace) => { setWorkspace(next); setTask(undefined); setApproval(undefined); setTrust(undefined); }, []);
   const selectTask = useCallback((next: Task) => { setTask(next); setApproval(undefined); setTrust(undefined); }, []);
+  const newTask = useCallback(() => { setTask(undefined); setApproval(undefined); setTrust(undefined); }, []);
 
   const addWorkspace = useCallback(async (rootPath: string) => { const next = await window.lotagate.workspaces.add(rootPath); setWorkspaces(current => [...current.filter(item => item.id !== next.id), next]); setWorkspace(next); }, []);
   const createTask = useCallback(async (prompt: string) => {
@@ -105,7 +106,7 @@ export function useWorkspaceController() {
   const archiveTask = useCallback(async (archived: boolean) => { if (!task || !workspace) return; await window.lotagate.tasks.archive(task.id, archived); await reloadTasks(workspace.id); }, [reloadTasks, task, workspace]);
   const pinTask = useCallback(async (pinned: boolean) => { if (!task || !workspace) return; await window.lotagate.tasks.pin(task.id, pinned); await reloadTasks(workspace.id); }, [reloadTasks, task, workspace]);
 
-  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, approval, trust, models, commands, selectedModel, setSelectedModel, loading, busy, error, selectWorkspace, selectTask, addWorkspace, sendPrompt, respondApproval, respondTrust, updateDraft, pickArtifact, runCommand, cancelTask, retryTask, archiveTask, pinTask }), [workspaces, workspace, tasks, task, activities, approval, trust, models, commands, selectedModel, loading, busy, error, selectWorkspace, selectTask, addWorkspace, sendPrompt, respondApproval, respondTrust, updateDraft, pickArtifact, runCommand, cancelTask, retryTask, archiveTask, pinTask]);
+  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, approval, trust, models, commands, selectedModel, setSelectedModel, loading, busy, error, selectWorkspace, selectTask, newTask, addWorkspace, sendPrompt, respondApproval, respondTrust, updateDraft, pickArtifact, runCommand, cancelTask, retryTask, archiveTask, pinTask }), [workspaces, workspace, tasks, task, activities, approval, trust, models, commands, selectedModel, loading, busy, error, selectWorkspace, selectTask, newTask, addWorkspace, sendPrompt, respondApproval, respondTrust, updateDraft, pickArtifact, runCommand, cancelTask, retryTask, archiveTask, pinTask]);
 }
 
 function extractSessionId(value: unknown): string | undefined { if (typeof value !== 'object' || value === null) return undefined; const session = (value as Record<string, unknown>)['session']; if (typeof session !== 'object' || session === null) return undefined; const id = (session as Record<string, unknown>)['id']; return typeof id === 'string' ? id : undefined; }

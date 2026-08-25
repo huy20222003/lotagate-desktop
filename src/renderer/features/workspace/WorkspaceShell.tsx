@@ -13,11 +13,18 @@ type WorkspaceView = 'tasks' | 'activity' | 'artifacts' | 'terminal' | 'browser'
 
 export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLoggedOut: () => void }) {
   const controller = useWorkspaceController();
+  const { newTask } = controller;
   const [accountOpen, setAccountOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [addWorkspaceOpen, setAddWorkspaceOpen] = useState(false);
   const [view, setView] = useState<WorkspaceView>('tasks');
+  useEffect(() => window.lotagate.menu.onCommand(command => {
+    if (command === 'newTask') { newTask(); setView('tasks'); }
+    if (command === 'openWorkspace') setAddWorkspaceOpen(true);
+    if (command === 'settings') setView('settings');
+    if (command === 'activity') setView('activity');
+  }), [newTask]);
   async function confirmLogout() { setLoggingOut(true); try { await window.lotagate.auth.logout(); onLoggedOut(); } finally { setLoggingOut(false); setLogoutOpen(false); } }
   const accountName = user.fullName ?? user.username ?? user.email;
   const avatarProps = user.avatarUrl === undefined || user.avatarUrl === null ? { name: accountName } : { name: accountName, src: user.avatarUrl };

@@ -3,6 +3,13 @@ import type { DesktopBridge } from '../contracts/ipc/v1/bridge.js';
 import type { AgentEventEnvelope } from '../contracts/ipc/v1/workspace.js';
 
 const bridge: DesktopBridge = {
+  menu: {
+    onCommand: listener => {
+      const handler = (_event: Electron.IpcRendererEvent, command: 'newTask' | 'openWorkspace' | 'settings' | 'activity') => listener(command);
+      ipcRenderer.on('menu.command', handler);
+      return () => ipcRenderer.removeListener('menu.command', handler);
+    },
+  },
   auth: {
     getCurrentUser: () => ipcRenderer.invoke('auth.getCurrentUser'),
     login: (input) => ipcRenderer.invoke('auth.login', input),

@@ -3,6 +3,9 @@ import type { DesktopAgentResult } from '../../agent-protocol/v1/desktop.js';
 import type { DesktopWorkspaceApi, DesktopTaskApi, AgentEventEnvelope, DesktopGitApi, DesktopTerminalApi, DesktopSettingsApi, DesktopAutomationApi, DesktopBrowserApi } from './workspace.js';
 
 export interface DesktopBridge {
+  menu: {
+    onCommand(listener: (command: 'newTask' | 'openWorkspace' | 'settings' | 'activity') => void): () => void;
+  };
   auth: DesktopRendererAuthApi;
   userContext: {
     organizations(): Promise<unknown>;

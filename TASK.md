@@ -38,6 +38,11 @@ implementation dependency.
   at trust boundaries and narrow typed preload methods.
 - [x] Add deterministic renderer build output to the packaged `app.asar` and
   align the CommonJS Electron host bundle with electron-vite output.
+- [x] Align development main/preload output with `package.json` by emitting
+  both bundles to `.vite/build`; preserve the main bundle during preload build
+  and load the renderer through the Vite development URL when available.
+- [x] Add native File/Edit/View/Window/Help application menus and route the
+  desktop-owned File commands through versioned typed preload IPC.
 - [x] Add a reusable UI foundation: Button, Label, Input, Textarea, Checkbox,
   Radio, Tooltip, Modal, Dropdown, Avatar, Card, Spinner/Loading, Table,
   Tabs, Badge, Field, Divider, EmptyState, safe links, and focus behavior.
@@ -140,6 +145,13 @@ implementation dependency.
   RELEASES metadata, and ZIP artifacts under `out/make`.
 - [x] `npx playwright test --reporter=line` passed the packaged Windows
   cold-start/login E2E.
+- [x] Development cold-start was manually verified through Electron
+  accessibility state: the login heading, email field, password field, Sign in
+  action, and File/Edit/View/Window/Help menu groups were present; no black
+  renderer remained.
+- [x] The current `tsconfig.json` contains no unused `@desktop/*` TypeScript
+  path mapping, so the historical `baseUrl` warning is not present in this
+  checkout.
 - [x] Real fixture `lotagate agent desktop` returned protocol version 1 and
   the expected sessions/streaming/approval/trust/models/auth/commands catalog.
 - [x] The packaged `resources/lotagate.exe` completed a real JSONL initialize

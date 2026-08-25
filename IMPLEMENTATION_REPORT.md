@@ -29,6 +29,14 @@ The runtime now includes:
   console/error/screenshot/recording evidence, and Windows tray/notification/
   diagnostic/update/deep-link operations;
 - reusable typed UI primitives and a 600-line executable source/test guard.
+- corrected Electron development startup so main and preload bundles are
+  emitted to the `.vite/build` path used by the CommonJS host entry;
+- added native File/Edit/View/Window/Help menus, including New Task, Open
+  Workspace, Settings, and standard editing/debugging/window commands through
+  typed preload IPC;
+- removed the obsolete renderer console diagnostic listener after tracing the
+  blank screen, while retaining a concise `did-fail-load` diagnostic for real
+  navigation failures.
 
 ## Verification results
 
@@ -50,6 +58,9 @@ Passed:
   `shutdown` handshake passed
 - `npm audit --omit=dev` — 0 production vulnerabilities
 - `npm run make` — Windows Squirrel package and ZIP created
+- development Electron cold start — accessibility state confirmed the login
+  screen and File/Edit/View/Window/Help menus; the renderer no longer opens
+  blank
 
 Generated Windows artifacts are under `desktop/out/make/`:
 
@@ -86,3 +97,6 @@ npm run make
 - Full dependency audit retains development-only Forge-chain advisories. The
   production dependency audit is clean; no forced breaking upgrade was run.
 - `server/`, `sdk/`, `agent-sdk/`, and `cli/` were not modified.
+- The historical `@desktop/*` TypeScript warning belongs to an older checkout;
+  the pushed `tsconfig.json` has no unused path mapping. Pull the latest
+  desktop commit before rerunning development mode.

@@ -253,6 +253,12 @@ browser evidence, and agent progress are task context panels—not a full IDE.
   time.
 - UI: React with TypeScript and strict compiler settings.
 - Build: Vite through the Electron ecosystem's Vite integration.
+- Electron development build contract: the CommonJS main entry in
+  `package.json` is `.vite/build/index.js`; electron-vite must emit both the
+  main bundle and `bridge.js` preload bundle into `.vite/build`. The preload
+  build must preserve the main bundle (`emptyOutDir: false`), while the
+  renderer continues to use `ELECTRON_RENDERER_URL` for HMR and the packaged
+  renderer remains under `out/renderer`.
 - Package manager: npm, matching the repository and external package metadata.
 - Runtime configuration: the desktop-owned `.env` file is loaded by Node's
   native `process.loadEnvFile`; it contains only public API endpoints, while
@@ -606,6 +612,10 @@ because the current `runDesktopAgentCommand()` binds a process to one cwd.
 ### Desktop operations
 - Tray/menu-bar presence, notifications, deep links, single-instance locking,
   safe shutdown, crash reporting, diagnostics export, and update checks.
+- Native application menus must provide File, Edit, View, Window, and Help
+  groups. File commands dispatch through typed preload IPC for New Task, Open
+  Workspace, Settings, and Exit; renderer features remain the owners of the
+  corresponding state changes.
 - Settings for appearance, language, keybindings, default model, execution
   policy, storage, network, notifications, and telemetry.
 - Accessibility: keyboard navigation, screen-reader labels, focus traps,

@@ -3,7 +3,9 @@ import { join } from 'node:path';
 
 export function createMainWindow(): BrowserWindow {
   const appRoot = app.getAppPath();
-  const mainDirectory = app.isPackaged ? join(appRoot, '.vite', 'build') : join(appRoot, 'src', 'main');
+  const mainDirectory = join(appRoot, '.vite', 'build');
+  const preload = join(mainDirectory, 'bridge.js');
+  const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -11,18 +13,20 @@ export function createMainWindow(): BrowserWindow {
     minHeight: 640,
     backgroundColor: '#10151c',
     webPreferences: {
-      preload: app.isPackaged ? join(mainDirectory, 'bridge.js') : join(mainDirectory, '..', 'preload', 'bridge.mjs'),
+      preload,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   });
-
-  if (process.env['ELECTRON_RENDERER_URL']) {
-    void window.loadURL(process.env['ELECTRON_RENDERER_URL']);
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`[renderer-load] ${errorCode} ${errorDescription}: ${validatedURL}`);
+  });
+  if (rendererUrl !== undefined) {
+    void window.loadURL(rendererUrl).catch(error => console.error('[renderer-load]', error));
   } else {
     const renderer = app.isPackaged ? join(appRoot, '.vite', 'renderer', 'main_window', 'index.html') : join(appRoot, 'src', 'renderer', 'index.html');
-    void window.loadFile(renderer);
+    void window.loadFile(renderer).catch(error => console.error('[renderer-load]', error));
   }
   return window;
 }
