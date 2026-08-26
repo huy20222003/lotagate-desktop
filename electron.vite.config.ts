@@ -1,5 +1,6 @@
 import { defineConfig } from 'electron-vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 
 const sourceDirectory = fileURLToPath(new URL('./src', import.meta.url));
@@ -20,6 +21,6 @@ export default defineConfig({
   renderer: {
     ...shared,
     root: fileURLToPath(new URL('./src/renderer', import.meta.url)),
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
   },
 });

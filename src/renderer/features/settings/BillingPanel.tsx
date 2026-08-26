@@ -13,11 +13,13 @@ export function BillingPanel({ organizationCode }: { organizationCode?: string }
   const [paymentsLoading, setPaymentsLoading] = useState(true);
   const [paymentsError, setPaymentsError] = useState<string | undefined>();
   const [paymentPage, setPaymentPage] = useState(1);
+  const pageSize = 10;
   useEffect(() => {
     let mounted = true;
     setWalletLoading(Boolean(organizationCode)); setWalletError(undefined); setPaymentsLoading(true); setPaymentsError(undefined); setPaymentPage(1);
     const walletRequest = organizationCode === undefined ? Promise.resolve(null) : window.lotagate.userContext.wallet(organizationCode);
-    void Promise.allSettled([walletRequest, window.lotagate.userContext.paymentHistory()]).then(([walletResult, paymentsResult]) => {
+    const paymentsRequest = organizationCode === undefined ? Promise.resolve([]) : window.lotagate.userContext.paymentHistory(organizationCode, 1, pageSize);
+    void Promise.allSettled([walletRequest, paymentsRequest]).then(([walletResult, paymentsResult]) => {
       if (!mounted) return;
       if (walletResult.status === 'fulfilled') setWallet(normalizeWallet(walletResult.value)); else setWalletError(toUserErrorMessage(walletResult.reason, 'Unable to load billing information.'));
       if (paymentsResult.status === 'fulfilled') setPayments(normalizePaymentHistory(paymentsResult.value)); else setPaymentsError(toUserErrorMessage(paymentsResult.reason, 'Unable to load payment history.'));
@@ -25,7 +27,6 @@ export function BillingPanel({ organizationCode }: { organizationCode?: string }
     });
     return () => { mounted = false; };
   }, [organizationCode]);
-  const pageSize = 8;
   const visiblePayments = payments.slice((paymentPage - 1) * pageSize, paymentPage * pageSize);
   const paymentColumns = [{ key: 'date', label: 'Date', render: (row: PaymentRecord) => formatPaymentDate(row.date) }, { key: 'description', label: 'Description' }, { key: 'amount', label: 'Amount', render: (row: PaymentRecord) => `${row.amount} ${row.currency}` }, { key: 'status', label: 'Status' }];
   return <div className="billing-panel">{organizationCode ? walletLoading ? <BillingSkeleton /> : walletError ? <EmptyBilling detail={walletError} /> : wallet ? <div><p className="settings-muted">Current organization wallet</p><div className="billing-grid"><Metric label="Balance" value={`${wallet.balance} ${wallet.currency}`} /><Metric label="Bonus" value={`${wallet.bonus} ${wallet.currency}`} /><Metric label="Outstanding debt" value={`${wallet.outstandingDebt} ${wallet.currency}`} /></div>{wallet.updatedAt ? <p className="settings-muted">Updated {formatTime(wallet.updatedAt, { dateStyle: 'medium', timeStyle: 'short' })}</p> : null}</div> : <EmptyBilling detail="No wallet information is available." /> : null}<section className="billing-history"><div className="billing-history-heading"><div><h2>Payment history</h2><p className="settings-muted">Payments made by this account.</p></div></div>{paymentsError ? <EmptyBilling detail={paymentsError} /> : paymentsLoading ? <PaymentHistorySkeleton /> : payments.length === 0 ? <EmptyBilling detail="No payments have been recorded yet." /> : <><Table columns={paymentColumns} rows={visiblePayments} /><Pagination page={paymentPage} pageSize={pageSize} total={payments.length} onPageChange={setPaymentPage} /></>}</section></div>;

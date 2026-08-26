@@ -1,0 +1,233 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-ui-canvas: var(--color-canvas);
+  --color-ui-surface: var(--color-surface);
+  --color-ui-surface-elevated: var(--color-surface-elevated);
+  --color-ui-surface-hover: var(--color-surface-hover);
+  --color-ui-border: var(--color-border);
+  --color-ui-text: var(--color-text);
+  --color-ui-text-secondary: var(--color-text-secondary);
+  --color-ui-text-tertiary: var(--color-text-tertiary);
+  --color-ui-accent: var(--color-accent);
+  --color-ui-danger: var(--color-danger);
+  --color-ui-success: var(--color-success);
+  --radius-ui-sm: 0.375rem;
+  --radius-ui-md: 0.5rem;
+  --radius-ui-lg: 0.6875rem;
+}
+
+/* Shared component primitives. Feature-specific layout remains in theme.css. */
+.ui-button {
+  @apply inline-flex min-h-[34px] items-center justify-center gap-2 rounded-[var(--radius-ui-sm)] border border-transparent px-[13px] text-[13px] font-medium text-ui-text outline-none transition-colors duration-150;
+}
+
+.ui-button:focus-visible,
+.ui-input:focus-visible,
+.ui-checkbox:focus-visible,
+.ui-radio:focus-visible,
+.ui-select-trigger:focus-visible,
+.ui-tab:focus-visible,
+.ui-icon-button:focus-visible {
+  @apply outline-2 outline-offset-2 outline-ui-accent;
+}
+
+.ui-button:disabled,
+.ui-icon-button:disabled,
+.ui-select-trigger:disabled {
+  @apply cursor-not-allowed opacity-50;
+}
+
+.ui-button-primary {
+  @apply border-[var(--color-accent)] bg-[var(--color-accent-bg)];
+}
+
+.ui-button-primary:hover:not(:disabled) {
+  @apply bg-[var(--color-accent-bg-hover)];
+}
+
+.ui-button-secondary {
+  @apply border-[var(--color-border)] bg-[var(--color-surface-elevated)];
+}
+
+.ui-button-secondary:hover:not(:disabled),
+.ui-icon-button:hover:not(:disabled) {
+  @apply bg-[var(--color-surface-action-hover)];
+}
+
+.ui-button-ghost {
+  @apply bg-transparent text-[var(--color-text-tertiary)];
+}
+
+.ui-button-ghost:hover:not(:disabled) {
+  @apply bg-[var(--color-surface-action-hover)] text-[var(--color-text)];
+}
+
+.ui-button.settings-back {
+  @apply w-full justify-start;
+}
+
+.ui-button-danger {
+  @apply border-[var(--color-danger)] bg-[var(--color-danger-bg-strong)];
+}
+
+.ui-button-danger:hover:not(:disabled) {
+  @apply bg-[var(--color-danger-bg-hover)];
+}
+
+.ui-input {
+  @apply min-h-[38px] w-full rounded-[var(--radius-ui-sm)] border border-[var(--color-border)] bg-[var(--color-input-surface)] px-[11px] text-[13px] text-ui-text outline-none;
+}
+
+.ui-input:focus {
+  @apply border-[var(--color-accent)] shadow-[0_0_0_2px_var(--color-focus-ring)];
+}
+
+/* The prompt textarea is the input surface of the surrounding composer. */
+.ui-input.prompt-input {
+  @apply min-h-[62px] max-h-[220px] rounded-none border-0 bg-transparent px-[11px] py-[11px] leading-[1.45];
+  box-shadow: none;
+}
+
+.ui-input.prompt-input:focus {
+  @apply border-0;
+  box-shadow: none;
+}
+
+.ui-input[data-invalid='true'] {
+  @apply border-[var(--color-danger)];
+}
+
+.ui-checkbox,
+.ui-radio {
+  @apply m-0 h-4 w-4 shrink-0 accent-[var(--color-accent)];
+}
+
+.ui-checkbox-root {
+  @apply grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border border-[var(--color-border)] bg-[var(--color-input-surface)] text-[var(--color-on-accent)] outline-none transition-colors;
+}
+
+.ui-checkbox-root[data-state='checked'] {
+  @apply border-[var(--color-accent)] bg-[var(--color-accent)];
+}
+
+.ui-checkbox-root:focus-visible {
+  @apply shadow-[0_0_0_2px_var(--color-focus-ring)];
+}
+
+.ui-check-control {
+  @apply inline-flex items-center gap-2 text-[12px] text-[var(--color-text-secondary)];
+}
+
+.ui-label {
+  @apply text-[12px] text-[var(--color-text-tertiary)];
+}
+
+.ui-field-error {
+  @apply text-[12px] leading-[1.4] text-[var(--color-danger)];
+}
+
+.ui-card {
+  @apply rounded-[var(--radius-ui-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] text-ui-text;
+}
+
+.ui-badge {
+  @apply inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium;
+}
+
+.ui-badge-neutral {
+  @apply border-[var(--color-border)] bg-[var(--color-surface-elevated)] text-[var(--color-text-secondary)];
+}
+
+.ui-badge-success {
+  @apply border-[var(--color-success)] bg-[var(--color-success-bg)] text-[var(--color-success)];
+}
+
+.ui-badge-warning {
+  @apply border-[var(--color-warning)] bg-[var(--color-warning-bg)] text-[var(--color-warning)];
+}
+
+.ui-badge-danger {
+  @apply border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] text-[var(--color-danger)];
+}
+
+.ui-icon-button {
+  @apply inline-grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-ui-sm)] border border-transparent bg-transparent text-[var(--color-text-tertiary)] outline-none transition-colors;
+}
+
+/* Keep legacy feature controls on the same primitive contract during migration. */
+.icon-button {
+  @apply inline-grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-ui-sm)] border border-transparent bg-transparent text-[var(--color-text-tertiary)] outline-none transition-colors;
+}
+
+.icon-button:focus-visible {
+  @apply outline-2 outline-offset-2 outline-ui-accent;
+}
+
+.icon-button:disabled {
+  @apply cursor-not-allowed opacity-50;
+}
+
+.ui-select-trigger {
+  @apply inline-flex min-h-[38px] w-full items-center justify-between gap-2 rounded-[var(--radius-ui-sm)] border border-[var(--color-border)] bg-[var(--color-input-surface)] px-[11px] text-left text-[13px] text-ui-text outline-none transition-colors;
+}
+
+.ui-select-trigger:hover:not(:disabled),
+.ui-select-trigger[data-state='open'] {
+  @apply border-[var(--color-accent)];
+}
+
+.ui-menu-content {
+  @apply z-[120] max-h-[min(320px,calc(100vh-120px))] min-w-[180px] overflow-y-auto rounded-[var(--radius-ui-md)] border border-[var(--color-border)] bg-[var(--color-surface-popover)] p-1 text-ui-text shadow-[0_15px_35px_var(--shadow-menu)];
+}
+
+.ui-menu-item {
+  @apply flex min-h-[32px] cursor-default items-center rounded-[4px] px-2 text-[12px] text-[var(--color-text-secondary)] outline-none;
+}
+
+.ui-menu-item[data-highlighted],
+.ui-menu-item[data-state='checked'] {
+  @apply bg-[var(--color-surface-hover)] text-ui-text;
+}
+
+.ui-menu-indicator {
+  @apply mr-2 inline-flex w-4 justify-center text-[var(--color-accent)];
+}
+
+.ui-tabs {
+  @apply flex gap-1 border-b border-[var(--color-border)];
+}
+
+.ui-tab {
+  @apply min-h-[34px] rounded-t-[var(--radius-ui-sm)] border-b-2 border-transparent px-2.5 text-[12px] text-[var(--color-text-tertiary)] outline-none transition-colors;
+}
+
+.ui-tab:hover,
+.ui-tab[data-state='active'] {
+  @apply border-[var(--color-accent)] text-ui-text;
+}
+
+.ui-dialog-overlay {
+  @apply fixed inset-0 z-[100] bg-[var(--color-overlay)] backdrop-blur-[2px];
+}
+
+.ui-dialog-content {
+  @apply fixed left-1/2 top-1/2 z-[101] w-[min(520px,calc(100vw-40px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[var(--radius-ui-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] text-ui-text shadow-[0_24px_80px_var(--shadow-modal)] outline-none;
+}
+
+.ui-dialog-content.slash-command-dialog,
+.ui-dialog-content.extension-detail-dialog {
+  @apply w-[min(760px,calc(100vw-40px))];
+}
+
+.ui-tooltip-content {
+  @apply z-[130] max-w-[220px] rounded-[5px] border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-2 py-1 text-[11px] leading-[1.3] text-ui-text shadow-[0_8px_20px_var(--shadow-soft)];
+}
+
+.ui-skeleton {
+  @apply inline-block overflow-hidden rounded-[4px] bg-[linear-gradient(100deg,var(--color-surface-elevated)_25%,var(--color-surface-skeleton-highlight)_45%,var(--color-surface-elevated)_65%)] bg-[length:220%_100%] text-transparent motion-safe:animate-[skeleton-shimmer_1.35s_ease-in-out_infinite];
+}
+
+@keyframes skeleton-shimmer {
+  to { background-position: -220% center; }
+}

@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { describe, expect, it, vi } from 'vitest';
-import { Avatar, Button, CopyTextButton, Label, Modal, Skeleton, TextArea, TextInput, Tooltip } from './ui.js';
+import { Avatar, Button, Checkbox, CopyTextButton, Dropdown, Label, Modal, Skeleton, Tabs, TextArea, TextInput, Tooltip } from './ui.js';
 
 describe('desktop UI primitives', () => {
   it('renders a semantic button variant and interaction', () => {
@@ -21,11 +21,32 @@ describe('desktop UI primitives', () => {
     expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveAccessibleDescription('Notes are too long.');
   });
 
+  it('preserves controlled checkbox, dropdown, and tabs contracts', async () => {
+    const onCheckedChange = vi.fn();
+    const onDropdownChange = vi.fn();
+    const onTabChange = vi.fn();
+    render(<><Checkbox label="Enable feature" checked={false} onChange={onCheckedChange} /><Dropdown value="one" options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]} onChange={onDropdownChange} /><Tabs value="first" items={[{ value: 'first', label: 'First' }, { value: 'second', label: 'Second' }]} onChange={onTabChange} /></>);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable feature' }));
+    expect(onCheckedChange).toHaveBeenCalledWith(true);
+    const dropdownTrigger = screen.getByRole('button', { name: 'Select option' });
+    fireEvent.keyDown(dropdownTrigger, { key: 'Enter' });
+    await waitFor(() => expect(dropdownTrigger).toHaveAttribute('aria-expanded', 'true'));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Two' }));
+    expect(onDropdownChange).toHaveBeenCalledWith('two');
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Second' }));
+    expect(onTabChange).toHaveBeenCalledWith('second');
+  });
+
   it('keeps modal close action explicit', () => {
-    const onClose = () => undefined;
+    const onClose = vi.fn();
     render(<Modal title="Confirm" onClose={onClose}>Body</Modal>);
     expect(screen.getByRole('dialog', { name: 'Confirm' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled();
+    fireEvent.mouseDown(document.body);
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('does not steal focus when a modal parent rerenders', () => {
@@ -55,8 +76,9 @@ describe('desktop UI primitives', () => {
 
   it('renders reusable tooltip and skeleton content', () => {
     render(<Tooltip label="Copy response"><Skeleton>42</Skeleton></Tooltip>);
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Copy response');
     expect(screen.getByText('42')).toHaveClass('skeleton');
+    fireEvent.pointerMove(screen.getByText('42'), { pointerType: 'mouse' });
+    return waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('Copy response'));
   });
 
   it('copies text through the shared clipboard action', async () => {
@@ -67,7 +89,8 @@ describe('desktop UI primitives', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy response' }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('response text'));
-    expect(screen.getAllByRole('tooltip').some(tooltip => tooltip.textContent === 'Copied')).toBe(true);
+    fireEvent.pointerMove(screen.getByRole('button', { name: 'Copy response' }), { pointerType: 'mouse' });
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('Copied'));
   });
 
   it('falls back to the document copy command when clipboard API fails', async () => {
@@ -80,7 +103,8 @@ describe('desktop UI primitives', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy message' }));
 
     await waitFor(() => expect(execCommand).toHaveBeenCalledWith('copy'));
-    expect(screen.getAllByRole('tooltip').some(tooltip => tooltip.textContent === 'Copied')).toBe(true);
+    fireEvent.pointerMove(screen.getByRole('button', { name: 'Copy message' }), { pointerType: 'mouse' });
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('Copied'));
     delete (document as { execCommand?: unknown }).execCommand;
   });
 });

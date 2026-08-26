@@ -2,6 +2,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App.js';
 import './styles/theme.css';
+import './styles/feature-layout.css';
+import './styles/ui.css';
 import { LocaleProvider } from './i18n/locale.js';
 import { ToastProvider } from './components/ui.js';
 import { ThemeProvider } from './theme/theme.js';

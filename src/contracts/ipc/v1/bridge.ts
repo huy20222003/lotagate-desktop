@@ -15,7 +15,7 @@ export interface DesktopBridge {
     wallet(code: string): Promise<unknown>;
     usage(organizationCode: string, workspaceCode?: string): Promise<unknown>;
     dashboardStats(organizationCode: string, workspaceCode?: string): Promise<unknown>;
-    paymentHistory(): Promise<unknown>;
+    paymentHistory(organizationCode: string, page?: number, limit?: number): Promise<unknown>;
     workspaces(code: string): Promise<unknown>;
     models(organizationCode: string, workspaceCode: string): Promise<unknown>;
   };

@@ -28,7 +28,7 @@ const bridge: DesktopBridge = {
     wallet: code => ipcRenderer.invoke('userContext.wallet', code),
     usage: (organizationCode, workspaceCode) => ipcRenderer.invoke('userContext.usage', organizationCode, workspaceCode),
     dashboardStats: (organizationCode, workspaceCode) => ipcRenderer.invoke('userContext.dashboardStats', organizationCode, workspaceCode),
-    paymentHistory: () => ipcRenderer.invoke('userContext.paymentHistory'),
+    paymentHistory: (organizationCode, page = 1, limit = 10) => ipcRenderer.invoke('userContext.paymentHistory', organizationCode, page, limit),
     workspaces: code => ipcRenderer.invoke('userContext.workspaces', code),
     models: (organizationCode, workspaceCode) => ipcRenderer.invoke('userContext.models', organizationCode, workspaceCode),
   },

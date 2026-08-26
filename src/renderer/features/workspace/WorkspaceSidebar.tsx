@@ -29,7 +29,7 @@ export function WorkspaceSidebar({ accountName, avatarProps, workspaces, activeW
     <header className="sidebar-header"><div className="brand-mark"><BrandLogo /><span>LotaGate</span></div></header>
     <Button variant="secondary" className="new-task" onClick={() => onNewChat(activeWorkspace)} disabled={activeWorkspace === undefined}><Icon icon={CirclePlus} size={16} /> New Chat</Button>
     <Scrollbar className="workspace-scrollbar sidebar-section">
-      <div className="section-heading"><span>Workspaces</span><button className="icon-button" aria-label="Add workspace" onClick={onAddWorkspace}><Icon icon={CirclePlus} size={14} /></button></div>
+      <div className="section-heading"><span>Workspaces</span><button className="icon-button ui-icon-button" aria-label="Add workspace" onClick={onAddWorkspace}><Icon icon={CirclePlus} size={14} /></button></div>
       {loading ? <SidebarLoadingSkeleton /> : workspaces.length === 0 ? <button className="workspace-row" onClick={onAddWorkspace}><Icon icon={Folder} size={15} /><span>Add a workspace</span></button> : workspaces.map(workspace => <WorkspaceGroup key={workspace.id} workspace={workspace} tasks={tasks.filter(task => task.workspaceId === workspace.id && !task.archived)} activeTask={activeTask} onWorkspace={onWorkspace} onTask={onTask} onNewChat={onNewChat} onRename={onRenameWorkspace} onRemove={onRemoveWorkspace} onArchive={onArchiveTask} onPin={onPinTask} />)}
     </Scrollbar>
     <div ref={accountRef} className="account-area">

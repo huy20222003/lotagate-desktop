@@ -89,7 +89,7 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('userContext.wallet', async (event, code: unknown) => { assertTrustedRenderer(event); return userContext.wallet(idSchema.parse(code)); });
   handle('userContext.usage', async (event, organizationCode: unknown, workspaceCode?: unknown) => { assertTrustedRenderer(event); return userContext.usage(idSchema.parse(organizationCode), workspaceCode === undefined ? undefined : idSchema.parse(workspaceCode)); });
   handle('userContext.dashboardStats', async (event, organizationCode: unknown, workspaceCode?: unknown) => { assertTrustedRenderer(event); return userContext.dashboardStats(idSchema.parse(organizationCode), workspaceCode === undefined ? undefined : idSchema.parse(workspaceCode)); });
-  handle('userContext.paymentHistory', async event => { assertTrustedRenderer(event); return userContext.paymentHistory(); });
+  handle('userContext.paymentHistory', async (event, organizationCode: unknown, page?: unknown, limit?: unknown) => { assertTrustedRenderer(event); return userContext.paymentHistory(idSchema.parse(organizationCode), page === undefined ? 1 : paginationPageSchema.parse(page), limit === undefined ? 10 : paginationLimitSchema.parse(limit)); });
   handle('userContext.workspaces', async (event, code: unknown) => { assertTrustedRenderer(event); return userContext.workspaces(idSchema.parse(code)); });
   handle('userContext.models', async (event, organizationCode: unknown, workspaceCode: unknown) => { assertTrustedRenderer(event); return userContext.models(idSchema.parse(organizationCode), idSchema.parse(workspaceCode)); });
   handle('runtime.getVersion', async (event) => {
@@ -242,5 +242,7 @@ export function registerIpc(services: DesktopIpcServices): void {
 }
 
 const idSchema = z.string().min(1).max(256);
+const paginationPageSchema = z.number().int().min(1);
+const paginationLimitSchema = z.number().int().min(1).max(100);
 const objectSchema = z.record(z.string(), z.unknown());
 function artifactKind(path: string): 'markdown' | 'text' | 'image' | 'audio' | 'video' | 'patch' | 'json' | 'binary' { const extension = path.split('.').pop()?.toLowerCase(); if (extension === 'md' || extension === 'markdown') return 'markdown'; if (extension === 'json') return 'json'; if (extension === 'patch' || extension === 'diff') return 'patch'; if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(extension ?? '')) return 'image'; if (['mp3', 'wav', 'm4a'].includes(extension ?? '')) return 'audio'; if (['mp4', 'webm', 'mov'].includes(extension ?? '')) return 'video'; if (['txt', 'log', 'csv'].includes(extension ?? '')) return 'text'; return 'binary'; }
