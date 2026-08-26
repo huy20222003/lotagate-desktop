@@ -1,4 +1,7 @@
 import { dialog, shell } from 'electron';
+import { stat } from 'node:fs/promises';
+import { extname, isAbsolute, relative } from 'node:path';
+import { realpath } from 'node:fs/promises';
 import { z } from 'zod';
 import type { DesktopAuthApi, LoginInput } from '../../contracts/ipc/v1/auth.js';
 import type { DesktopUserContextService } from '../api/desktop-user-context-service.js';
@@ -21,6 +24,7 @@ import { registerLoggedIpcHandler } from './logged-ipc.js';
 import type { DesktopLogger } from '../observability/desktop-logger.js';
 import type { ExtensionFileService } from '../extensions/extension-file-service.js';
 import { extensionDetailInputSchema, extensionDetailWriteInputSchema, hookCreateInputSchema, hookRemoveInputSchema } from '../../contracts/ipc/v1/extensions-schema.js';
+import { requireDirectory, requireExistingPath } from '../security/path-policy.js';
 
 const cwdSchema = z.string().min(1).max(4_096);
 
@@ -72,6 +76,7 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('userContext.wallet', async (event, code: unknown) => { assertTrustedRenderer(event); return userContext.wallet(idSchema.parse(code)); });
   handle('userContext.usage', async (event, organizationCode: unknown, workspaceCode?: unknown) => { assertTrustedRenderer(event); return userContext.usage(idSchema.parse(organizationCode), workspaceCode === undefined ? undefined : idSchema.parse(workspaceCode)); });
   handle('userContext.dashboardStats', async (event, organizationCode: unknown, workspaceCode?: unknown) => { assertTrustedRenderer(event); return userContext.dashboardStats(idSchema.parse(organizationCode), workspaceCode === undefined ? undefined : idSchema.parse(workspaceCode)); });
+  handle('userContext.paymentHistory', async event => { assertTrustedRenderer(event); return userContext.paymentHistory(); });
   handle('userContext.workspaces', async (event, code: unknown) => { assertTrustedRenderer(event); return userContext.workspaces(idSchema.parse(code)); });
   handle('userContext.models', async (event, organizationCode: unknown, workspaceCode: unknown) => { assertTrustedRenderer(event); return userContext.models(idSchema.parse(organizationCode), idSchema.parse(workspaceCode)); });
   handle('runtime.getVersion', async (event) => {
@@ -105,10 +110,43 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('agent.commandExecute', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.commandExecute(cwdSchema.parse(cwd), objectSchema.parse(input)); });
   handle('agent.commandCancel', async (event, cwd: unknown, commandId: unknown) => { assertTrustedRenderer(event); return agents.commandCancel(cwdSchema.parse(cwd), idSchema.parse(commandId)); });
   handle('workspace.list', async event => { assertTrustedRenderer(event); return workspaces.list(); });
-  handle('workspace.pickFolder', async event => {
+  handle('workspace.pickFolder', async (event, rootPath?: unknown) => {
     assertTrustedRenderer(event);
-    const selected = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
-    return selected.canceled ? null : selected.filePaths[0] ?? null;
+    const scope = rootPath === undefined ? undefined : await requireDirectory(cwdSchema.parse(rootPath));
+    const selected = await dialog.showOpenDialog({ ...(scope === undefined ? {} : { defaultPath: scope }), properties: ['openDirectory', 'createDirectory'] });
+    if (selected.canceled || selected.filePaths[0] === undefined) return null;
+    return scope === undefined ? selected.filePaths[0] : relative(scope, await requireExistingPath(selected.filePaths[0], scope)) || '.';
+  });
+  const parseFileExtensions = (extensions: unknown): string[] => extensions === undefined ? [] : z.array(z.string().regex(/^[a-z0-9]+$/iu).max(16)).max(32).parse(extensions).map(extension => extension.toLowerCase());
+  const resolvePickedFile = async (filePath: string, scope: string | undefined): Promise<string> => {
+    const file = scope === undefined
+      ? await realpath(isAbsolute(filePath) ? filePath : (() => { throw new Error('Selected file must use an absolute path.'); })())
+      : await requireExistingPath(filePath, scope);
+    const details = await stat(file);
+    if (!details.isFile()) throw new Error('Selected path must be a file.');
+    return file;
+  };
+  const pickFiles = async (event: Electron.IpcMainInvokeEvent, rootPath: unknown, extensions: unknown, multiSelections: boolean): Promise<string[]> => {
+    assertTrustedRenderer(event);
+    const scope = rootPath === undefined ? undefined : await requireDirectory(cwdSchema.parse(rootPath));
+    const allowedExtensions = parseFileExtensions(extensions);
+    const properties: Array<'openFile' | 'multiSelections'> = multiSelections ? ['openFile', 'multiSelections'] : ['openFile'];
+    const selected = await dialog.showOpenDialog({ ...(scope === undefined ? {} : { defaultPath: scope }), properties, ...(allowedExtensions.length === 0 ? {} : { filters: [{ name: 'Supported files', extensions: allowedExtensions }] }) });
+    if (selected.canceled) return [];
+    const files = await Promise.all(selected.filePaths.map(filePath => resolvePickedFile(filePath, scope)));
+    for (const file of files) {
+      const extension = extname(file).slice(1).toLowerCase();
+      if (allowedExtensions.length > 0 && !allowedExtensions.includes(extension)) throw new Error(`Select a file with one of these extensions: ${allowedExtensions.join(', ')}.`);
+    }
+    return scope === undefined ? files : files.map(file => relative(scope, file));
+  };
+  handle('workspace.pickFile', async (event, rootPath?: unknown, extensions?: unknown) => { const files = await pickFiles(event, rootPath, extensions, false); return files[0] ?? null; });
+  handle('workspace.pickMultipleFile', async (event, rootPath?: unknown, extensions?: unknown) => pickFiles(event, rootPath, extensions, true));
+  handle('workspace.fileSize', async (event, rootPath: unknown, filePath: unknown) => {
+    assertTrustedRenderer(event);
+    const scope = rootPath === undefined ? undefined : await requireDirectory(cwdSchema.parse(rootPath));
+    const file = await resolvePickedFile(z.string().min(1).max(4_096).parse(filePath), scope);
+    return (await stat(file)).size;
   });
   handle('workspace.add', async (event, rootPath: unknown) => { assertTrustedRenderer(event); return workspaces.add(cwdSchema.parse(rootPath)); });
   handle('workspace.addRoot', async (event, workspaceId: unknown, rootPath: unknown) => { assertTrustedRenderer(event); return workspaces.addRoot(idSchema.parse(workspaceId), cwdSchema.parse(rootPath)); });

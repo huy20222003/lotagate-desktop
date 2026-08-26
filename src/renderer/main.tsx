@@ -4,12 +4,13 @@ import { App } from './app/App.js';
 import './styles/theme.css';
 import { LocaleProvider } from './i18n/locale.js';
 import { ToastProvider } from './components/ui.js';
+import { ThemeProvider } from './theme/theme.js';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Desktop renderer root is missing.');
 
 createRoot(root).render(
   <StrictMode>
-    <LocaleProvider><ToastProvider><App /></ToastProvider></LocaleProvider>
+    <ThemeProvider><LocaleProvider><ToastProvider><App /></ToastProvider></LocaleProvider></ThemeProvider>
   </StrictMode>,
 );

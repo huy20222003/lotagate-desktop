@@ -22,6 +22,7 @@ export interface ExtensionDetailWriteInput extends ExtensionDetailInput {
 
 export interface HookCreateInput {
   cwd: string;
+  name: string;
   event: DesktopHookEvent;
   command: string;
   args: string[];

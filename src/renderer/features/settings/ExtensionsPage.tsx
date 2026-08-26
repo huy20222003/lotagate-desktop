@@ -5,6 +5,11 @@ import { ExtensionCommandClient, type CommandInvocation, type ExtensionKind, typ
 import type { DesktopHookEvent, ExtensionDetail } from '../../../contracts/ipc/v1/extensions.js';
 import { Pagination } from '../../components/Pagination.js';
 import { AgentMarkdown } from '../workspace/markdown-renderer.js';
+import { Scrollbar } from '../../components/Scrollbar.js';
+import { z } from 'zod';
+import { extensionNameSchema, hookNameSchema, httpUrlSchema, maxUtf8Bytes } from '../../validation/shared.js';
+import { isRecord, readString } from '../../utils/data.js';
+import { toUserErrorMessage as toMessage } from '../../utils/errors.js';
 
 const EXTENSIONS_PAGE_SIZE = 10;
 
@@ -123,7 +128,10 @@ function ExtensionDetailModal({ kind, cwd, row, detail, onClose, onSaved }: { ki
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const editable = detail.editable;
+  const validationErrors: ValidationErrors = !editable ? {} : kind === 'hook' ? validateHookFields(hookCommand, hookArgs, hookTimeout) : kind === 'mcp' ? validateMcpFields(mcpType, mcpUrl) : kind === 'skill' && detail.format === 'markdown' ? validateContent(content) : {};
   const save = async () => {
+    const validationError = firstValidationError(validationErrors);
+    if (validationError !== undefined) { setError(validationError); return; }
     setSaving(true); setError(undefined);
     try {
       const nextContent = kind === 'mcp'
@@ -139,35 +147,37 @@ function ExtensionDetailModal({ kind, cwd, row, detail, onClose, onSaved }: { ki
     finally { setSaving(false); }
   };
   const subtitle = detail.fileName === undefined ? {} : { subtitle: detail.fileName };
-  return <Modal title={row.name} {...subtitle} className="extension-detail-dialog" onClose={onClose}><div className="extension-detail-modal">{kind === 'mcp' ? <McpDetailFields type={mcpType} url={mcpUrl} editable={editable} onType={setMcpType} onUrl={setMcpUrl} {...(row.scope === undefined ? {} : { scope: row.scope })} /> : kind === 'plugin' ? <PluginDetailFields version={pluginVersion} description={pluginDescription} editable={editable} onVersion={setPluginVersion} onDescription={setPluginDescription} /> : kind === 'hook' ? <HookDetailFields event={hookEvent} command={hookCommand} args={hookArgs} timeoutMs={hookTimeout} editable={editable} onEvent={setHookEvent} onCommand={setHookCommand} onArgs={setHookArgs} onTimeout={setHookTimeout} /> : kind === 'skill' && detail.format === 'markdown' ? editable ? <Field label="Skill content (Markdown)"><TextArea className="extension-detail-editor" value={content} onChange={event => setContent(event.target.value)} spellCheck={false} /></Field> : <div className="extension-markdown-preview"><AgentMarkdown content={content} /></div> : <pre className="extension-text-preview">{content}</pre>}{error ? <p className="field-error">{error}</p> : null}</div><div className="modal-actions"><Button variant="secondary" onClick={onClose}>Close</Button>{editable ? <Button variant="primary" disabled={saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save changes'}</Button> : null}</div></Modal>;
+  return <Modal title={row.name} {...subtitle} className="extension-detail-dialog" onClose={onClose}><Scrollbar className="extension-detail-scrollbar"><div className="extension-detail-modal">{kind === 'mcp' ? <McpDetailFields type={mcpType} url={mcpUrl} errors={validationErrors} editable={editable} onType={setMcpType} onUrl={setMcpUrl} {...(row.scope === undefined ? {} : { scope: row.scope })} /> : kind === 'plugin' ? <PluginDetailFields version={pluginVersion} description={pluginDescription} editable={editable} onVersion={setPluginVersion} onDescription={setPluginDescription} /> : kind === 'hook' ? <HookDetailFields event={hookEvent} command={hookCommand} args={hookArgs} timeoutMs={hookTimeout} errors={validationErrors} editable={editable} onEvent={setHookEvent} onCommand={setHookCommand} onArgs={setHookArgs} onTimeout={setHookTimeout} /> : kind === 'skill' && detail.format === 'markdown' ? editable ? <Field label="Skill content (Markdown)" error={validationErrors['content']}><TextArea className="extension-detail-editor" value={content} onChange={event => setContent(event.target.value)} spellCheck={false} /></Field> : <div className="extension-markdown-preview"><AgentMarkdown content={content} /></div> : <pre className="extension-text-preview">{content}</pre>}{error ? <p className="field-error">{error}</p> : null}</div></Scrollbar><div className="modal-actions"><Button variant="secondary" onClick={onClose}>Close</Button>{editable ? <Button variant="primary" disabled={saving || firstValidationError(validationErrors) !== undefined} onClick={() => void save()}>{saving ? 'Saving…' : 'Save changes'}</Button> : null}</div></Modal>;
 }
 
-function HookDetailFields({ event, command, args, timeoutMs, editable, onEvent, onCommand, onArgs, onTimeout }: { event: DesktopHookEvent; command: string; args: string; timeoutMs: string; editable: boolean; onEvent: (value: DesktopHookEvent) => void; onCommand: (value: string) => void; onArgs: (value: string) => void; onTimeout: (value: string) => void }) {
-  return <div className="extension-detail-fields extension-detail-hook-fields"><Field label="Event"><Dropdown value={event} options={hookEventOptions} disabled={!editable} onChange={value => onEvent(value as DesktopHookEvent)} /></Field><Field label="Command"><TextInput value={command} readOnly={!editable} placeholder="node" onChange={eventValue => onCommand(eventValue.target.value)} /></Field><Field label="Args (comma-separated)"><TextInput value={args} readOnly={!editable} placeholder="script.js, --check" onChange={eventValue => onArgs(eventValue.target.value)} /></Field><Field label="Timeout (ms)"><TextInput type="number" min={100} max={120000} step={1} value={timeoutMs} readOnly={!editable} onChange={eventValue => onTimeout(eventValue.target.value)} /></Field></div>;
+function HookDetailFields({ event, command, args, timeoutMs, errors, editable, onEvent, onCommand, onArgs, onTimeout }: { event: DesktopHookEvent; command: string; args: string; timeoutMs: string; errors: ValidationErrors; editable: boolean; onEvent: (value: DesktopHookEvent) => void; onCommand: (value: string) => void; onArgs: (value: string) => void; onTimeout: (value: string) => void }) {
+  return <div className="extension-detail-fields extension-detail-hook-fields"><Field label="Event"><Dropdown value={event} options={hookEventOptions} disabled={!editable} onChange={value => onEvent(value as DesktopHookEvent)} /></Field><Field label="Command" required error={errors['command']}><TextInput value={command} readOnly={!editable} placeholder="node" onChange={eventValue => onCommand(eventValue.target.value)} /></Field><Field label="Args (comma-separated)" error={errors['args']}><TextInput value={args} readOnly={!editable} placeholder="script.js, --check" onChange={eventValue => onArgs(eventValue.target.value)} /></Field><Field label="Timeout (ms)" required error={errors['timeoutMs']}><TextInput type="number" min={100} max={120000} step={1} value={timeoutMs} readOnly={!editable} onChange={eventValue => onTimeout(eventValue.target.value)} /></Field></div>;
 }
 
-function McpDetailFields({ type, url, scope, editable, onType, onUrl }: { type: string; url: string; scope?: ExtensionScope; editable: boolean; onType: (value: string) => void; onUrl: (value: string) => void }) {
+function McpDetailFields({ type, url, scope, errors, editable, onType, onUrl }: { type: string; url: string; scope?: ExtensionScope; errors: ValidationErrors; editable: boolean; onType: (value: string) => void; onUrl: (value: string) => void }) {
   const typeOptions = [...new Set(['http', 'sse', type])].map(value => ({ value, label: value.toUpperCase() }));
-  return <div className="extension-detail-fields extension-detail-mcp-fields"><Field label="Type"><Dropdown value={type} options={typeOptions} disabled={!editable} onChange={onType} /></Field><Field label="Scope"><span className="extension-detail-static">{scope ?? 'workspace'}</span></Field><Field label="Server URL"><TextInput value={url} readOnly={!editable} onChange={event => onUrl(event.target.value)} /></Field></div>;
+  return <div className="extension-detail-fields extension-detail-mcp-fields"><Field label="Type"><Dropdown value={type} options={typeOptions} disabled={!editable} onChange={onType} /></Field><Field label="Scope"><span className="extension-detail-static">{scope ?? 'workspace'}</span></Field><Field label="Server URL" required error={errors['url']}><TextInput value={url} readOnly={!editable} onChange={event => onUrl(event.target.value)} /></Field></div>;
 }
 
 function PluginDetailFields({ version, description, editable, onVersion, onDescription }: { version: string; description: string; editable: boolean; onVersion: (value: string) => void; onDescription: (value: string) => void }) {
   return <div className="extension-detail-fields"><Field label="Version"><TextInput value={version} readOnly={!editable} onChange={event => onVersion(event.target.value)} /></Field><Field label="Description"><TextInput value={description} readOnly={!editable} onChange={event => onDescription(event.target.value)} /></Field></div>;
 }
 
-function HookAddModal({ busy, onClose, onSubmit }: { busy: boolean; onClose: () => void; onSubmit: (value: { event: DesktopHookEvent; command: string; args: string[]; timeoutMs: number }) => void }) {
+function HookAddModal({ busy, onClose, onSubmit }: { busy: boolean; onClose: () => void; onSubmit: (value: { name: string; event: DesktopHookEvent; command: string; args: string[]; timeoutMs: number }) => void }) {
+  const [name, setName] = useState('');
   const [event, setEvent] = useState<DesktopHookEvent>('session.start');
   const [command, setCommand] = useState('');
   const [args, setArgs] = useState('');
   const [timeoutMs, setTimeoutMs] = useState('10000');
-  const submit = () => { if (!command.trim()) return; onSubmit({ event, command: command.trim(), args: parseArgs(args), timeoutMs: Number(timeoutMs) }); };
-  const valid = command.trim().length > 0 && Number.isInteger(Number(timeoutMs)) && Number(timeoutMs) >= 100 && Number(timeoutMs) <= 120000;
-  return <Modal title="Add hook" onClose={onClose}><div className="modal-form"><Field label="Event"><Dropdown value={event} options={hookEventOptions} onChange={value => setEvent(value as DesktopHookEvent)} /></Field><Field label="Command"><TextInput value={command} onChange={eventValue => setCommand(eventValue.target.value)} placeholder="node" autoFocus /></Field><Field label="Args (comma-separated)"><TextInput value={args} onChange={eventValue => setArgs(eventValue.target.value)} placeholder="script.js, --check" /></Field><Field label="Timeout (ms)"><TextInput type="number" min={100} max={120000} step={1} value={timeoutMs} onChange={eventValue => setTimeoutMs(eventValue.target.value)} /></Field></div><div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={busy || !valid} onClick={submit}>{busy ? 'Adding…' : 'Add'}</Button></div></Modal>;
+  const [submitted, setSubmitted] = useState(false);
+  const errors: ValidationErrors = { name: validateHookName(name), ...validateHookFields(command, args, timeoutMs) };
+  const valid = firstValidationError(errors) === undefined;
+  const submit = () => { setSubmitted(true); if (!valid) return; onSubmit({ name: name.trim(), event, command: command.trim(), args: parseArgs(args), timeoutMs: Number(timeoutMs) }); };
+  const visibleErrors = submitted ? errors : { name: name.trim() ? errors['name'] : undefined, command: command.trim() ? errors['command'] : undefined, args: args.trim() ? errors['args'] : undefined, timeoutMs: timeoutMs.trim() ? errors['timeoutMs'] : undefined };
+  return <Modal title="Add hook" onClose={onClose}><div className="modal-form"><Field label="Name" required error={visibleErrors['name']}><TextInput value={name} onChange={eventValue => setName(eventValue.target.value)} placeholder="audit-hook" autoFocus /></Field><HookDetailFields event={event} command={command} args={args} timeoutMs={timeoutMs} errors={visibleErrors} editable onEvent={setEvent} onCommand={setCommand} onArgs={setArgs} onTimeout={setTimeoutMs} /></div><div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={busy || !valid} onClick={submit}>{busy ? 'Adding…' : 'Add'}</Button></div></Modal>;
 }
 
 function parseObject(content: string): Record<string, unknown> | undefined { try { const value: unknown = JSON.parse(content); return isRecord(value) ? value : undefined; } catch { return undefined; } }
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
-function readString(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined; }
 const hookEventOptions = ['session.start', 'prompt.before', 'tool.before', 'tool.after', 'response.after', 'session.end'].map(value => ({ value, label: value }));
 function parseHook(value: Record<string, unknown> | undefined): { event: DesktopHookEvent; command: string; args: string[]; timeoutMs: number } {
   const event = hookEventOptions.some(option => option.value === value?.['event']) ? value?.['event'] as DesktopHookEvent : 'session.start';
@@ -187,19 +197,66 @@ function ExtensionAddModal({ kind, busy, onClose, onSubmit }: { kind: Exclude<Ex
   const [scope, setScope] = useState<ExtensionScope>('user');
   const [type, setType] = useState<'http' | 'sse'>('http');
   const [url, setUrl] = useState('');
+  const [submitted, setSubmitted] = useState(false);
   const title = kind === 'mcp' ? 'Add MCP server' : kind === 'plugin' ? 'Add plugin' : 'Add skill';
+  const errors: ValidationErrors = kind === 'mcp' ? { name: validateExtensionName(name), url: validateMcpFields(type, url)['url'] } : { source: validateExtensionSource(source) };
+  const valid = firstValidationError(errors) === undefined;
   const submit = () => {
+    setSubmitted(true);
+    if (!valid) return;
     if (kind === 'mcp') {
-      if (!name.trim() || !url.trim()) return;
       onSubmit({ invocation: { actionId: 'mcp.add', positionals: [name.trim()], options: { type, url: url.trim(), scope } }, message: `Added MCP server ${name.trim()}` });
       return;
     }
-    if (!source.trim()) return;
     onSubmit({ invocation: { actionId: 'plugin.install', positionals: [source.trim()], options: { scope } }, message: `Added ${kind} from ${source.trim()}` });
   };
-  return <Modal title={title} onClose={onClose}><div className="modal-form">{kind === 'mcp' ? <><Field label="Name"><TextInput value={name} onChange={event => setName(event.target.value)} placeholder="my-mcp-server" autoFocus /></Field><Field label="Type"><Dropdown value={type} options={[{ value: 'http', label: 'HTTP' }, { value: 'sse', label: 'SSE' }]} onChange={value => setType(value as 'http' | 'sse')} /></Field><Field label="Scope"><Dropdown value={scope} options={scopeOptions} onChange={value => setScope(value as ExtensionScope)} /></Field><Field label="Server URL"><TextInput value={url} onChange={event => setUrl(event.target.value)} placeholder="https://example.com/mcp" /></Field></> : <><Field label="Source"><TextInput value={source} onChange={event => setSource(event.target.value)} placeholder="Path or URL" autoFocus /></Field><Field label="Scope"><Dropdown value={scope} options={scopeOptions} onChange={value => setScope(value as ExtensionScope)} /></Field></>}</div><div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={busy || (kind === 'mcp' ? !name.trim() || !url.trim() : !source.trim())} onClick={submit}>{busy ? 'Adding…' : 'Add'}</Button></div></Modal>;
+  return <Modal title={title} onClose={onClose}><div className="modal-form">{kind === 'mcp' ? <><Field label="Name" required error={submitted ? errors['name'] : undefined}><TextInput value={name} onChange={event => setName(event.target.value)} placeholder="my-mcp-server" autoFocus /></Field><Field label="Type"><Dropdown value={type} options={[{ value: 'http', label: 'HTTP' }, { value: 'sse', label: 'SSE' }]} onChange={value => setType(value as 'http' | 'sse')} /></Field><Field label="Scope"><Dropdown value={scope} options={scopeOptions} onChange={value => setScope(value as ExtensionScope)} /></Field><Field label="Server URL" required error={submitted ? errors['url'] : undefined}><TextInput value={url} onChange={event => setUrl(event.target.value)} placeholder="https://example.com/mcp" /></Field></> : <><Field label="Source" required error={submitted ? errors['source'] : undefined}><TextInput value={source} onChange={event => setSource(event.target.value)} placeholder="Path or URL" autoFocus /></Field><Field label="Scope"><Dropdown value={scope} options={scopeOptions} onChange={value => setScope(value as ExtensionScope)} /></Field></>}</div><div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={busy || !valid} onClick={submit}>{busy ? 'Adding…' : 'Add'}</Button></div></Modal>;
 }
 
 const scopeOptions = [{ value: 'user', label: 'User' }, { value: 'project', label: 'Project' }];
 function hasActionsForAdd(kind: ExtensionKind, actions: Set<string>): boolean { const action = ACTIONS[kind].add; return action !== undefined && actions.has(action); }
-function toMessage(reason: unknown): string { return reason instanceof Error ? reason.message : 'The extension operation failed.'; }
+
+type ValidationErrors = Record<string, string | undefined>;
+
+function validateHookName(value: string): string | undefined {
+  const name = value.trim();
+  const result = hookNameSchema.safeParse(name);
+  return result.success ? undefined : result.error.issues[0]?.message;
+}
+
+function validateHookFields(command: string, args: string, timeoutMs: string): ValidationErrors {
+  const result: ValidationErrors = {};
+  const normalizedCommand = command.trim();
+  const commandResult = z.string().min(1).max(512).safeParse(normalizedCommand);
+  if (!commandResult.success) result['command'] = normalizedCommand ? 'Command must not exceed 512 characters.' : 'Command is required.';
+  const parsedArgs = parseArgs(args);
+  const argsResult = z.array(z.string().max(16_384)).max(128).safeParse(parsedArgs);
+  if (!argsResult.success) result['args'] = parsedArgs.length > 128 ? 'Args must contain no more than 128 values.' : 'Each argument must not exceed 16,384 characters.';
+  const timeoutResult = z.string().regex(/^\d+$/u).refine(value => Number.isSafeInteger(Number(value)) && Number(value) >= 100 && Number(value) <= 120_000).safeParse(timeoutMs.trim());
+  if (!timeoutResult.success) result['timeoutMs'] = 'Timeout must be an integer between 100 and 120,000 ms.';
+  return result;
+}
+
+function validateMcpFields(type: string, url: string): ValidationErrors {
+  const normalized = url.trim();
+  if (!z.string().min(1).safeParse(normalized).success) return { url: 'Server URL is required.' };
+  return httpUrlSchema.safeParse(normalized).success ? {} : { url: 'Server URL must use HTTP or HTTPS.' };
+}
+
+function validateExtensionName(value: string): string | undefined {
+  const name = value.trim().toLowerCase();
+  const result = extensionNameSchema.safeParse(name);
+  return result.success ? undefined : result.error.issues[0]?.message;
+}
+
+function validateExtensionSource(value: string): string | undefined {
+  const source = value.trim();
+  return z.string().min(1).max(4_096).safeParse(source).success ? undefined : source.length === 0 ? 'Source is required.' : 'Source must not exceed 4,096 characters.';
+}
+
+function validateContent(value: string): ValidationErrors {
+  const result = maxUtf8Bytes(2 * 1024 * 1024).safeParse(value);
+  return result.success ? {} : { content: 'Content must not exceed 2 MB.' };
+}
+
+function firstValidationError(errors: ValidationErrors): string | undefined { return Object.values(errors).find((value): value is string => value !== undefined); }

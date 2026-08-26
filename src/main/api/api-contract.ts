@@ -5,6 +5,7 @@ export const API_PATHS = {
   logout: '/auth/logout',
   me: '/auth/me',
   profile: '/users/profile',
+  paymentHistory: '/users/payment-history',
   changePassword: '/users/change-password',
   organizations: '/organizations',
   organizationWallet: (organizationCode: string) => `/organizations/${encodeURIComponent(organizationCode)}/wallet`,
@@ -45,6 +46,7 @@ export const DESKTOP_ALLOWED_API_PATHS = new Set<string>([
   API_PATHS.profile,
   API_PATHS.changePassword,
   API_PATHS.organizations,
+  API_PATHS.paymentHistory,
 ]);
 
 export function isDesktopApiPathAllowed(path: string): boolean {

@@ -12,6 +12,7 @@ export class DesktopUserContextService {
   wallet(organizationCode: string): Promise<unknown> { return this.transport.request(API_PATHS.organizationWallet(organizationCode), 'GET'); }
   usage(organizationCode: string, workspaceCode?: string): Promise<unknown> { return this.transport.request(API_PATHS.organizationUsage(organizationCode, workspaceCode), 'GET'); }
   dashboardStats(organizationCode: string, workspaceCode?: string): Promise<unknown> { return this.transport.request(API_PATHS.organizationDashboardStats(organizationCode, workspaceCode), 'GET'); }
+  paymentHistory(): Promise<unknown> { return this.transport.request(API_PATHS.paymentHistory, 'GET'); }
   workspaces(organizationCode: string): Promise<unknown> { return this.cached(`workspaces:${organizationCode}`, CACHE_TTL_MS.workspaces, () => this.transport.request(`/organizations/${encodeURIComponent(organizationCode)}/workspaces`, 'GET')); }
   models(organizationCode: string, workspaceCode: string): Promise<unknown> { return this.cached(`models:${organizationCode}:${workspaceCode}`, CACHE_TTL_MS.models, () => this.transport.request(`/organizations/${encodeURIComponent(organizationCode)}/workspaces/${encodeURIComponent(workspaceCode)}/models`, 'GET')); }
 

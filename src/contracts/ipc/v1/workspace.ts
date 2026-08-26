@@ -102,7 +102,10 @@ export interface PlanSnapshot { id: string; goal: string; totalSteps: number; st
 
 export interface DesktopWorkspaceApi {
   list(): Promise<Workspace[]>;
-  pickFolder(): Promise<string | null>;
+  pickFolder(rootPath?: string): Promise<string | null>;
+  pickFile(rootPath?: string, extensions?: string[]): Promise<string | null>;
+  pickMultipleFile(rootPath?: string, extensions?: string[]): Promise<string[]>;
+  fileSize(rootPath: string | undefined, filePath: string): Promise<number>;
   add(rootPath: string): Promise<Workspace>;
   addRoot(workspaceId: string, rootPath: string): Promise<Workspace>;
   rename(workspaceId: string, name: string): Promise<Workspace>;

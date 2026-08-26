@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -23,10 +22,11 @@ export class ExtensionFileService {
   async createHook(input: HookCreateInput): Promise<{ name: string }> {
     const cwd = await this.requireTrustedProject(input.cwd);
     const paths = await ensureProjectConfig(cwd);
+    assertSafeName(input.name, 'hook');
     validateHookContent(input.event, input.command, input.args, input.timeoutMs);
-    const name = `hook-${randomUUID()}`;
-    await writeFile(join(paths.hooksDir, `${name}.json`), `${JSON.stringify({ event: input.event, command: input.command.trim(), args: input.args, timeoutMs: input.timeoutMs }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    return { name };
+    const filePath = join(paths.hooksDir, `${input.name}.json`);
+    await writeFile(filePath, `${JSON.stringify({ event: input.event, command: input.command.trim(), args: input.args, timeoutMs: input.timeoutMs }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    return { name: input.name };
   }
 
   async removeHook(input: { cwd: string; name: string }): Promise<void> {

@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { describe, expect, it, vi } from 'vitest';
-import { Avatar, Button, CopyTextButton, Modal, Skeleton, Tooltip } from './ui.js';
+import { Avatar, Button, CopyTextButton, Label, Modal, Skeleton, TextArea, TextInput, Tooltip } from './ui.js';
 
 describe('desktop UI primitives', () => {
   it('renders a semantic button variant and interaction', () => {
@@ -11,6 +11,14 @@ describe('desktop UI primitives', () => {
     const button = screen.getByRole('button', { name: 'Send' });
     expect(button.className).toContain('button-primary');
     fireEvent.click(button);
+  });
+
+  it('renders required markers and inline input errors through shared controls', () => {
+    render(<><Label required>Name</Label><TextInput label="Email" required errorText="Email is required." /><TextArea label="Notes" errorText="Notes are too long." /></>);
+    expect(screen.getAllByText('*')).toHaveLength(2);
+    expect(screen.getByRole('textbox', { name: 'Email' })).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('textbox', { name: 'Email' })).toHaveAccessibleDescription('Email is required.');
+    expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveAccessibleDescription('Notes are too long.');
   });
 
   it('keeps modal close action explicit', () => {

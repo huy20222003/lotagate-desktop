@@ -15,7 +15,7 @@ export function setApplicationMenu(context: DesktopMenuContext): void {
     {
       label: 'File',
       submenu: [
-        { label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: () => sendCommand('newTask') },
+        { label: 'New Chat', click: () => sendCommand('newTask') },
         { label: 'Open Workspace...', accelerator: 'CmdOrCtrl+O', click: () => sendCommand('openWorkspace') },
         { type: 'separator' },
         { role: 'quit', label: 'Exit' },

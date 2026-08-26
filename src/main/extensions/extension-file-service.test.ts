@@ -45,8 +45,8 @@ describe('ExtensionFileService', () => {
     const root = await mkdtemp(join(tmpdir(), 'lotagate-hook-crud-'));
     try {
       const service = new ExtensionFileService({ requireTrusted: async () => undefined });
-      const created = await service.createHook({ cwd: root, event: 'tool.before', command: 'node', args: ['hook.mjs'], timeoutMs: 5000 });
-      expect(created.name).toMatch(/^hook-[0-9a-f-]+$/u);
+      const created = await service.createHook({ cwd: root, name: 'audit-hook', event: 'tool.before', command: 'node', args: ['hook.mjs'], timeoutMs: 5000 });
+      expect(created.name).toBe('audit-hook');
       expect(await service.listProjectHooks(root)).toEqual([created.name]);
       const detail = await service.readDetail({ kind: 'hook', cwd: root, name: created.name, scope: 'project' });
       expect(JSON.parse(detail.content)).toEqual({ event: 'tool.before', command: 'node', args: ['hook.mjs'], timeoutMs: 5000 });
@@ -61,7 +61,7 @@ describe('ExtensionFileService', () => {
     const root = await mkdtemp(join(tmpdir(), 'lotagate-hook-untrusted-'));
     try {
       const service = new ExtensionFileService({ requireTrusted: async () => { throw new Error('Trust this workspace before changing project hooks.'); } });
-      await expect(service.createHook({ cwd: root, event: 'session.start', command: 'node', args: [], timeoutMs: 10000 })).rejects.toThrow('Trust this workspace');
+      await expect(service.createHook({ cwd: root, name: 'startup-hook', event: 'session.start', command: 'node', args: [], timeoutMs: 10000 })).rejects.toThrow('Trust this workspace');
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

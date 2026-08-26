@@ -23,7 +23,7 @@ export function Scrollbar({ children, className = '', viewportRef: externalViewp
     return () => { viewport.removeEventListener('scroll', update); observer.disconnect(); };
   }, []);
 
-  return <div className={`scrollbar ${className}`}>
+  return <div className={`scrollbar scrollbar-thin ${className}`}>
     <div ref={setViewportRef} className="scrollbar-viewport">{children}</div>
     {thumb.visible ? <div className="scrollbar-track" aria-hidden="true"><span className="scrollbar-thumb" style={{ height: thumb.height, transform: `translateY(${thumb.top}px)` }} /></div> : null}
   </div>;

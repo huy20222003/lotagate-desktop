@@ -1,6 +1,7 @@
 import { AlertCircle, Bot, Check, ChevronRight, Circle, LoaderCircle, ListChecks } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { PlanSnapshot, PlanStepSnapshot, SubagentSnapshot } from '../../../contracts/ipc/v1/workspace.js';
+import { Scrollbar } from '../../components/Scrollbar.js';
 
 export function OrchestrationPanel({ plan, subagents }: { plan?: PlanSnapshot | undefined; subagents: SubagentSnapshot[] }) {
   const visiblePlan = plan !== undefined && plan.status !== 'completed' ? plan : undefined;
@@ -24,7 +25,7 @@ export function OrchestrationPanel({ plan, subagents }: { plan?: PlanSnapshot | 
 }
 
 function OrchestrationDrawer({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return <aside className="orchestration-drawer" aria-label={title}><header><strong>{title}</strong><button type="button" className="icon-button" aria-label="Close orchestration details" onClick={onClose}><ChevronRight size={16} /></button></header><div className="orchestration-drawer-content">{children}</div></aside>;
+  return <aside className="orchestration-drawer" aria-label={title}><header><strong>{title}</strong><button type="button" className="icon-button" aria-label="Close orchestration details" onClick={onClose}><ChevronRight size={16} /></button></header><Scrollbar className="orchestration-drawer-scroll">{children}</Scrollbar></aside>;
 }
 
 function PlanDetails({ plan }: { plan: PlanSnapshot }) {

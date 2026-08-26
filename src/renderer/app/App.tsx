@@ -4,6 +4,7 @@ import { Spinner } from '../components/ui.js';
 import { LoginScreen } from '../features/auth/LoginScreen.js';
 import { WorkspaceShell } from '../features/workspace/WorkspaceShell.js';
 import { useLocale } from '../i18n/locale.js';
+import { toUserErrorMessage as toMessage } from '../utils/errors.js';
 
 type AppState = 'checking' | 'login' | 'workspace';
 
@@ -38,8 +39,4 @@ export function App() {
     setUser(profile);
     setState('workspace');
   }
-}
-
-function toMessage(reason: unknown): string {
-  return reason instanceof Error ? reason.message : 'Unable to connect to the LotaGate API.';
 }

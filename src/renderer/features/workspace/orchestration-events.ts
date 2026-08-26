@@ -1,4 +1,5 @@
 import type { PlanSnapshot, SubagentSnapshot } from '../../../contracts/ipc/v1/workspace.js';
+import { readNumber, readString } from '../../utils/data.js';
 
 export function applySubagentEvent(current: SubagentSnapshot[], event: string, data: Record<string, unknown>): SubagentSnapshot[] {
   if (!event.startsWith('subagent.')) return current;
@@ -56,6 +57,4 @@ function parseStep(value: unknown, fallbackIndex: number): PlanSnapshot['steps']
 function parseLastAction(value: unknown): SubagentSnapshot['lastAction'] | undefined { if (typeof value !== 'object' || value === null) return undefined; const record = value as Record<string, unknown>; const label = readString(record['label']); return label === undefined ? undefined : { kind: readString(record['kind']) ?? 'other', label }; }
 function parseHandoff(value: unknown): SubagentSnapshot['handoff'] | undefined { if (typeof value !== 'object' || value === null) return undefined; const record = value as Record<string, unknown>; const summary = readString(record['summary']); if (summary === undefined) return undefined; return { summary, filesInspected: readStrings(record['filesInspected']), filesChanged: readStrings(record['filesChanged']), commandsRun: readStrings(record['commandsRun']), verification: readStrings(record['verification']), warnings: readStrings(record['warnings']) }; }
 function readStatus(value: unknown): SubagentSnapshot['status'] | undefined { return value === 'queued' || value === 'running' || value === 'completed' || value === 'completed_with_warning' || value === 'failed' || value === 'cancelled' ? value : undefined; }
-function readString(value: unknown): string | undefined { return typeof value === 'string' && value.trim() ? value : undefined; }
-function readNumber(value: unknown): number | undefined { return typeof value === 'number' && Number.isFinite(value) ? value : undefined; }
 function readStrings(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(0, 100) : []; }

@@ -1,4 +1,5 @@
 import type { Activity, FileChangeDiff, FileChangeSummary, FileDiffLine, FileDiffLineKind } from '../../../contracts/ipc/v1/workspace.js';
+import { readString } from '../../utils/data.js';
 
 export const EMPTY_FILE_CHANGE_SUMMARY: FileChangeSummary = { files: [], additions: 0, deletions: 0 };
 export type FileChangeSummariesByTurn = Record<string, FileChangeSummary>;
@@ -88,4 +89,3 @@ function readLineNumber(value: unknown, key: 'oldLine' | 'newLine'): Partial<Pic
 
 function isLineKind(value: unknown): value is FileDiffLineKind { return value === 'context' || value === 'addition' || value === 'deletion'; }
 function readCount(value: unknown, lines: readonly FileDiffLine[], kind: FileDiffLineKind): number { return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : lines.filter(line => line.kind === kind).length; }
-function readString(value: unknown): string | undefined { return typeof value === 'string' && value.trim() ? value : undefined; }

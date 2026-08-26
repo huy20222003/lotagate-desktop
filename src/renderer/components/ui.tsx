@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, PropsWithChildren, ReactNode, TextareaHTMLAttributes } from 'react';
-import { createContext, forwardRef, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createContext, forwardRef, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { LucideIcon } from 'lucide-react';
 import { Check, CheckCircle2, ChevronDown, Copy, Info, X, XCircle } from 'lucide-react';
 import { Scrollbar } from './Scrollbar.js';
@@ -13,12 +14,33 @@ export function Icon({ icon: IconComponent, size = 16, label, ...props }: { icon
   return <IconComponent size={size} aria-hidden={label === undefined} aria-label={label} {...props} />;
 }
 
-export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className="text-input" {...props} />;
+type FormControlLabelProps = PropsWithChildren<{ required?: boolean; require?: boolean; className?: string; id?: string }>;
+
+export function Label({ children, required = false, require = false, className = '', id }: FormControlLabelProps) {
+  return <span id={id} className={`field-label ${className}`}>{children}{required || require ? <span className="field-required" aria-hidden="true">*</span> : null}</span>;
 }
 
-export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(({ className = '', ...props }, ref) => <textarea ref={ref} className={`text-input text-area ${className}`} {...props} />);
-export function Label({ children }: PropsWithChildren) { return <span className="field-label">{children}</span>; }
+type TextInputProps = InputHTMLAttributes<HTMLInputElement> & { label?: ReactNode; errorText?: string; require?: boolean };
+export function TextInput({ className = '', label, errorText, require = false, required = false, 'aria-describedby': describedBy, ...props }: TextInputProps) {
+  const errorId = useId();
+  const labelId = useId();
+  const isRequired = required || require;
+  const describedByValue = [describedBy, errorText ? errorId : undefined].filter(Boolean).join(' ') || undefined;
+  const input = <input className={`text-input ${errorText ? 'has-error' : ''} ${className}`} required={isRequired} aria-invalid={errorText ? true : undefined} aria-describedby={describedByValue} aria-labelledby={label === undefined ? undefined : labelId} {...props} />;
+  if (label === undefined && errorText === undefined) return input;
+  return <div className="input-control">{label !== undefined ? <Label id={labelId} required={isRequired}>{label}</Label> : null}{input}{errorText ? <span id={errorId} className="field-error" role="alert">{errorText}</span> : null}</div>;
+}
+
+type TextAreaProps = TextareaHTMLAttributes<HTMLTextAreaElement> & { label?: ReactNode; errorText?: string; require?: boolean };
+export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(({ className = '', label, errorText, require = false, required = false, 'aria-describedby': describedBy, ...props }, ref) => {
+  const errorId = useId();
+  const labelId = useId();
+  const isRequired = required || require;
+  const describedByValue = [describedBy, errorText ? errorId : undefined].filter(Boolean).join(' ') || undefined;
+  const textarea = <textarea ref={ref} className={`text-input text-area ${errorText ? 'has-error' : ''} ${className}`} required={isRequired} aria-invalid={errorText ? true : undefined} aria-describedby={describedByValue} aria-labelledby={label === undefined ? undefined : labelId} {...props} />;
+  if (label === undefined && errorText === undefined) return textarea;
+  return <div className="input-control">{label !== undefined ? <Label id={labelId} required={isRequired}>{label}</Label> : null}{textarea}{errorText ? <span id={errorId} className="field-error" role="alert">{errorText}</span> : null}</div>;
+});
 export function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) { return <label className="check-control"><input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} /> <span>{label}</span></label>; }
 export function Radio({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) { return <label className="check-control"><input type="radio" checked={checked} onChange={onChange} /> <span>{label}</span></label>; }
 export function Badge({ children, tone = 'neutral', size = 'sm', className = '' }: PropsWithChildren<{ tone?: 'neutral' | 'success' | 'warning' | 'danger'; size?: 'sm' | 'md'; className?: string }>) { return <span className={`badge badge-${tone} badge-${size} ${className}`}>{children}</span>; }
@@ -62,36 +84,47 @@ export function CopyTextButton({ content, label }: { content: string; label: str
 export function Dropdown({ label, value, options, onChange, disabled = false, className = '' }: { label?: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void; disabled?: boolean; className?: string }) {
   const [open, setOpen] = useState(false);
   const [placement, setPlacement] = useState<'bottom' | 'top'>('bottom');
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, width: 280, height: 40 });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const selected = options.find(option => option.value === value)?.label ?? value;
   useEffect(() => {
     if (!open) return;
-    const closeOnOutsideClick = (event: PointerEvent) => { if (!dropdownRef.current?.contains(event.target as Node)) setOpen(false); };
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!dropdownRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
+    };
     document.addEventListener('pointerdown', closeOnOutsideClick);
     return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
   }, [open]);
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const bounds = trigger.getBoundingClientRect();
+    const gap = 8;
+    const width = Math.min(280, window.innerWidth - 32);
+    const estimatedHeight = Math.min(320, Math.max(40, options.length * 32 + 8));
+    const below = window.innerHeight - bounds.bottom - gap;
+    const above = bounds.top - gap;
+    const nextPlacement = below < estimatedHeight && above > below ? 'top' : 'bottom';
+    const top = nextPlacement === 'top' ? Math.max(8, bounds.top - estimatedHeight - gap) : Math.min(window.innerHeight - 8, bounds.bottom + gap);
+    const left = Math.min(Math.max(16, bounds.left), Math.max(16, window.innerWidth - width - 16));
+    setPlacement(nextPlacement);
+    setMenuPosition({ top, left, width, height: estimatedHeight });
+  }, [options.length]);
   useLayoutEffect(() => {
     if (!open) return;
-    const updatePlacement = () => {
-      const trigger = triggerRef.current;
-      if (!trigger) return;
-      const bounds = trigger.getBoundingClientRect();
-      const gap = 8;
-      const estimatedHeight = Math.min(320, Math.max(96, options.length * 32 + 8));
-      const below = window.innerHeight - bounds.bottom - gap;
-      const above = bounds.top - gap;
-      setPlacement(below < estimatedHeight && above > below ? 'top' : 'bottom');
-    };
-    updatePlacement();
-    window.addEventListener('resize', updatePlacement);
-    window.addEventListener('scroll', updatePlacement, true);
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
     return () => {
-      window.removeEventListener('resize', updatePlacement);
-      window.removeEventListener('scroll', updatePlacement, true);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [open, options.length]);
-  return <div ref={dropdownRef} className={`dropdown ${className} ${open ? 'open' : ''}`}>{label ? <span className="field-label">{label}</span> : null}<button ref={triggerRef} type="button" className="model-select" aria-label={label ?? 'Select option'} aria-expanded={open} disabled={disabled} onClick={() => setOpen(current => !current)}><span>{selected}</span><ChevronDown size={14} /></button>{open ? <div className={`dropdown-menu dropdown-menu-${placement}`}><Scrollbar><div className="dropdown-options">{options.map(option => <button type="button" key={option.value} className={option.value === value ? 'dropdown-option selected' : 'dropdown-option'} onClick={() => { onChange(option.value); setOpen(false); }}>{option.label}</button>)}</div></Scrollbar></div> : null}</div>;
+  }, [open, updatePosition]);
+  const menu = open ? createPortal(<div ref={menuRef} className={`dropdown-menu dropdown-menu-${placement}`} style={menuPosition}><Scrollbar><div className="dropdown-options">{options.map(option => <button type="button" key={option.value} className={option.value === value ? 'dropdown-option selected' : 'dropdown-option'} onClick={() => { onChange(option.value); setOpen(false); }}>{option.label}</button>)}</div></Scrollbar></div>, document.body) : null;
+  return <><div ref={dropdownRef} className={`dropdown ${className} ${open ? 'open' : ''}`}>{label ? <Label>{label}</Label> : null}<button ref={triggerRef} type="button" className="model-select" aria-label={label ?? 'Select option'} aria-expanded={open} disabled={disabled} onClick={() => setOpen(current => !current)}><span>{selected}</span><ChevronDown size={14} /></button></div>{menu}</>;
 }
 
 export function Tabs({ value, items, onChange }: { value: string; items: Array<{ value: string; label: string }>; onChange: (value: string) => void }) { return <div className="tabs" role="tablist" aria-label="Views">{items.map(item => <button key={item.value} role="tab" aria-selected={value === item.value} className={`tab ${value === item.value ? 'selected' : ''}`} onClick={() => onChange(item.value)}>{item.label}</button>)}</div>; }
@@ -102,7 +135,7 @@ export function Modal({ title, subtitle, children, onClose, className = '' }: Pr
   const dialogRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const dialog = dialogRef.current;
-    const focusable = dialog?.querySelector<HTMLElement>('button, input, textarea, select, [tabindex="0"]');
+    const focusable = dialog?.querySelector<HTMLElement>('[autofocus]') ?? dialog?.querySelector<HTMLElement>('input, textarea, select, button, [tabindex="0"]');
     focusable?.focus();
     const keydown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { onClose(); return; }
@@ -131,8 +164,8 @@ export function Avatar({ name, src }: { name?: string; src?: string }) {
   return <span className="avatar avatar-image-frame"><span className="avatar avatar-fallback" aria-hidden="true">{initials}</span><img className={`avatar avatar-image ${imageState === 'loaded' ? 'loaded' : ''}`} src={src} alt="" onLoad={() => setImageState('loaded')} onError={() => setImageState('failed')} /></span>;
 }
 
-export function Field({ label, children, error }: { label: string; children: ReactNode; error?: string }) {
-  return <label className="field"><span className="field-label">{label}</span>{children}{error ? <span className="field-error">{error}</span> : null}</label>;
+export function Field({ label, children, error, required = false, require = false }: { label: ReactNode; children: ReactNode; error?: string | undefined; required?: boolean | undefined; require?: boolean | undefined }) {
+  return <label className="field"><Label required={required} require={require}>{label}</Label>{children}{error ? <span className="field-error" role="alert">{error}</span> : null}</label>;
 }
 
 export type ToastTone = 'success' | 'error' | 'info';

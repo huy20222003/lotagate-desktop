@@ -7,6 +7,10 @@ import { applyPlanEvent, applySubagentEvent } from './orchestration-events.js';
 import { readSelectedModel, writeSelectedModel } from './model-preference.js';
 import { MessageQueueService, useMessageQueue, type QueuedMessage } from './message-queue-service.js';
 import type { AttachmentPreview } from './attachment-types.js';
+import { executeDesktopCommand, type DesktopCommandInvocation } from '../../services/desktop-command-client.js';
+import { extractWorkspaceModels, type WorkspaceModelOption } from './model-catalog.js';
+import { toUserErrorMessage as toMessage } from '../../utils/errors.js';
+import { agentStatusForEvent } from './agent-status.js';
 
 export function useWorkspaceController() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -24,11 +28,12 @@ export function useWorkspaceController() {
   const [approval, setApproval] = useState<ApprovalRequest | undefined>();
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>('auto');
   const [trust, setTrust] = useState<TrustRequest | undefined>();
-  const [models, setModels] = useState<Array<{ id: string; label: string }>>([]);
+  const [models, setModels] = useState<WorkspaceModelOption[]>([]);
   const [selectedModel, setSelectedModelValue] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [thinking, setThinking] = useState(false);
+  const [thinkingStartedAt, setThinkingStartedAt] = useState<number | undefined>();
   const [agentStatus, setAgentStatus] = useState<string | undefined>();
   const [turnTimings, setTurnTimings] = useState<Record<string, { startedAt: number; endedAt?: number }>>({});
   const [error, setError] = useState<string | undefined>();
@@ -97,7 +102,7 @@ export function useWorkspaceController() {
     if (!workspace) return;
     void window.lotagate.agent.initialize(workspace.rootPath).then(async () => {
       const modelValue = await window.lotagate.agent.modelList(workspace.rootPath);
-      const next = extractModels(modelValue);
+      const next = extractWorkspaceModels(modelValue);
       setModels(next);
     }).catch(() => undefined);
   }, [workspace]);
@@ -161,12 +166,15 @@ export function useWorkspaceController() {
       if (turnId && envelope.event.event === 'turn.started') activeTurnRef.current = { taskId: eventTask.id, cwd: workspace.rootPath, turnId };
       const currentTurn = turnId === undefined || activeTurnRef.current?.turnId === turnId;
       if (terminal && currentTurn) activeTurnRef.current = undefined;
-      const status = eventStatus(envelope.event.event, data);
+      const status = agentStatusForEvent(envelope.event.event, data);
       if (status !== undefined) setAgentStatus(status);
       else if (terminal || envelope.event.event === 'tool.completed') setAgentStatus(undefined);
-      if (envelope.event.event === 'turn.started') setThinking(true);
+      if (envelope.event.event === 'turn.started') {
+        setThinking(true);
+        setThinkingStartedAt(current => current ?? Date.now());
+      }
       if (terminal && currentTurn) {
-        setThinking(false); setAgentStatus(undefined);
+        setThinking(false); setThinkingStartedAt(undefined); setAgentStatus(undefined);
         const steeredId = steeringQueueIdRef.current;
         const shouldDrain = !suppressQueueRef.current && (envelope.event.event !== 'turn.cancelled' || steeredId !== undefined);
         const queued = shouldDrain ? (steeredId === undefined ? messageQueueServiceRef.current.takeFirst() : messageQueueServiceRef.current.remove(steeredId)) : undefined;
@@ -213,7 +221,7 @@ export function useWorkspaceController() {
   const newTask = useCallback(async (targetWorkspace?: Workspace) => {
     const target = targetWorkspace ?? workspace;
     if (target === undefined) return;
-    setBusy(true); setError(undefined); setThinking(false); setAgentStatus(undefined); setWorkspace(target); setApproval(undefined); setTrust(undefined);
+    setBusy(true); setError(undefined); setThinking(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); setWorkspace(target); setApproval(undefined); setTrust(undefined);
     try {
       const created = await window.lotagate.tasks.create({ workspaceId: target.id, title: 'New chat' });
       setTasks(current => [created, ...current]);
@@ -247,7 +255,7 @@ export function useWorkspaceController() {
     setTasks(current => current.filter(item => item.workspaceId !== workspaceId));
     setWorkspace(current => current?.id === workspaceId ? undefined : current);
     setTask(current => current?.workspaceId === workspaceId ? undefined : current);
-    setActivities([]); setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setThinking(false);
+    setActivities([]); setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setThinking(false); setThinkingStartedAt(undefined);
   }, []);
   const createTask = useCallback(async (prompt: string) => {
     if (workspace === undefined) throw new Error('Select a workspace first.');
@@ -285,7 +293,7 @@ export function useWorkspaceController() {
       setTasks(current => current.map(item => item.id === activeTask.id ? activeTask : item));
       const model = selectedModel || activeTask.model;
       if (model && activeTask.model !== model) await window.lotagate.tasks.update(activeTask.id, { model });
-      setThinking(true); setAgentStatus(undefined);
+      setThinking(true); setThinkingStartedAt(Date.now()); setAgentStatus(undefined);
       const turn = await window.lotagate.agent.turnStart(activeTask.cwd, { sessionId, prompt, taskId: activeTask.id, ...(model ? { model } : {}), ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
       const turnId = extractTurnId(turn);
       if (turnId) {
@@ -300,7 +308,7 @@ export function useWorkspaceController() {
       await reloadTasks(workspace.id);
       return true;
     } catch (reason) {
-      setThinking(false); setAgentStatus(undefined); setError(toMessage(reason));
+      setThinking(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); setError(toMessage(reason));
       if (failedTaskId) {
         if (activeTurnRef.current?.taskId === failedTaskId) activeTurnRef.current = undefined;
         await window.lotagate.tasks.setStatus(failedTaskId, 'failed');
@@ -329,6 +337,36 @@ export function useWorkspaceController() {
     if (activeTurnRef.current?.taskId === task?.id) { await enqueuePrompt(prompt); return; }
     await startPrompt(prompt);
   }, [enqueuePrompt, startPrompt, task, workspace]);
+  const runCommand = useCallback(async (invocation: DesktopCommandInvocation, preview: string): Promise<boolean> => {
+    if (!workspace || !preview.trim()) return false;
+    if (activeTurnRef.current?.taskId === task?.id) {
+      setError('Wait for the active response to finish before running a slash command.');
+      return false;
+    }
+    setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setPlan(undefined); setSubagents([]);
+    try {
+      const isNewTask = task === undefined;
+      let activeTask = task ?? await createTask(preview);
+      draftTaskRef.current = activeTask;
+      if (!isNewTask) await window.lotagate.tasks.addActivity(activeTask.id, 'user', preview, { command: invocation.actionId });
+      activeTask = await window.lotagate.tasks.update(activeTask.id, { draft: '', draftAttachmentIds: [], ...(activeTask.title === 'New chat' ? { title: sessionSlugFromPrompt(preview) } : {}) });
+      draftTaskRef.current = activeTask;
+      setTask(activeTask); setAttachments([]);
+      await window.lotagate.tasks.setStatus(activeTask.id, 'active');
+      await window.lotagate.agent.initialize(activeTask.cwd);
+      const output = await executeDesktopCommand(activeTask.cwd, invocation);
+      if (output.trim()) await window.lotagate.tasks.addActivity(activeTask.id, 'assistant', output.trim(), { command: invocation.actionId });
+      await window.lotagate.tasks.setStatus(activeTask.id, 'completed');
+      await reloadTasks(workspace.id);
+      await loadActivities(activeTask.id);
+      return true;
+    } catch (reason) {
+      const failedTask = draftTaskRef.current ?? task;
+      if (failedTask) await window.lotagate.tasks.setStatus(failedTask.id, 'failed').catch(() => undefined);
+      setError(toMessage(reason));
+      return false;
+    } finally { setBusy(false); }
+  }, [createTask, loadActivities, reloadTasks, task, workspace]);
   const dispatchQueuedPrompt = useCallback(async (message: QueuedMessage) => {
     const started = await startPrompt(message.prompt, message.attachments.map(attachment => attachment.id));
     if (!started) messageQueueServiceRef.current.prepend(message);
@@ -423,6 +461,7 @@ export function useWorkspaceController() {
       setTask(cancelled);
       setTasks(current => current.map(item => item.id === cancelled.id ? cancelled : item));
       setThinking(false);
+      setThinkingStartedAt(undefined);
       setAgentStatus(undefined);
       await reloadTasks(workspace.id);
     } catch (reason) {
@@ -431,6 +470,7 @@ export function useWorkspaceController() {
       if (refreshedTask?.turnId === undefined && refreshedTask?.status !== 'active') {
         activeTurnRef.current = undefined;
         setThinking(false);
+        setThinkingStartedAt(undefined);
         setAgentStatus(undefined);
         if (refreshedTask !== undefined) {
           setTasks(items => items.map(item => item.id === refreshedTask.id ? refreshedTask : item));
@@ -450,7 +490,7 @@ export function useWorkspaceController() {
     setTask(current => current?.id === updated.id ? updated : current);
   }, []);
 
-  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode, trust, models, selectedModel, setSelectedModel: selectModel, loading, busy, thinking, agentStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, removeWorkspace, sendPrompt, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, removeQueuedMessage, editQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, trust, models, selectedModel, selectModel, loading, busy, thinking, agentStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, removeWorkspace, sendPrompt, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, removeQueuedMessage, editQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById]);
+  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode, trust, models, selectedModel, setSelectedModel: selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, removeQueuedMessage, editQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, trust, models, selectedModel, selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, removeQueuedMessage, editQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById]);
 }
 
 async function loadAttachmentPreviews(taskId: string, attachmentIds: readonly string[] = [], availableArtifacts?: Artifact[]): Promise<AttachmentPreview[]> {
@@ -474,7 +514,6 @@ async function loadActivityAttachmentPreviews(taskId: string, activities: readon
 
 function extractSessionId(value: unknown): string | undefined { if (typeof value !== 'object' || value === null) return undefined; const session = (value as Record<string, unknown>)['session']; if (typeof session !== 'object' || session === null) return undefined; const id = (session as Record<string, unknown>)['id']; return typeof id === 'string' ? id : undefined; }
 function extractTurnId(value: unknown): string | undefined { if (typeof value !== 'object' || value === null) return undefined; const id = (value as Record<string, unknown>)['turnId']; return typeof id === 'string' ? id : undefined; }
-function extractModels(value: unknown): Array<{ id: string; label: string }> { if (typeof value !== 'object' || value === null) return []; const list = (value as Record<string, unknown>)['models']; if (!Array.isArray(list)) return []; return list.flatMap(item => { if (typeof item === 'string') return [{ id: item, label: item }]; if (typeof item !== 'object' || item === null) return []; const record = item as Record<string, unknown>; const id = typeof record['id'] === 'string' ? record['id'] : typeof record['model'] === 'string' ? record['model'] : undefined; return id === undefined ? [] : [{ id, label: typeof record['label'] === 'string' ? record['label'] : id }]; }); }
 function readAttachmentIds(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : []; }
 async function discardQueuedAttachments(taskId: string | undefined, messages: readonly QueuedMessage[], activities: readonly Activity[], protectedAttachmentIds: readonly string[]): Promise<void> {
   if (taskId === undefined) return;
@@ -486,12 +525,3 @@ async function discardQueuedAttachments(taskId: string | undefined, messages: re
     await window.lotagate.tasks.deleteArtifact(taskId, attachmentId, true).catch(() => undefined);
   }
 }
-function eventStatus(event: string, data: Record<string, unknown>): string | undefined {
-  if (event !== 'turn.started' && event !== 'tool.started' && event !== 'command.activity.started' && event !== 'approval.requested') return undefined;
-  for (const key of ['displayName', 'label', 'message', 'status']) {
-    const value = data[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return undefined;
-}
-function toMessage(reason: unknown): string { return reason instanceof Error ? reason.message : 'The workspace operation failed.'; }
