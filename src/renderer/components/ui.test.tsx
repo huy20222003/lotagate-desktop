@@ -28,6 +28,14 @@ describe('desktop UI primitives', () => {
     expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled();
   });
 
+  it('does not steal focus when a modal parent rerenders', () => {
+    const view = render(<Modal title="Confirm" onClose={() => undefined}><TextInput autoFocus label="Name" /><Button>Continue</Button></Modal>);
+    const continueButton = screen.getByRole('button', { name: 'Continue' });
+    continueButton.focus();
+    view.rerender(<Modal title="Confirm" onClose={() => undefined}><TextInput autoFocus label="Name" /><Button>Continue</Button></Modal>);
+    expect(document.activeElement).toBe(continueButton);
+  });
+
   it('provides accessible fallback initials for an avatar', () => {
     const view = render(<Avatar name="Nguyen Huy" />);
     expect(view.getAllByText('NH').length).toBeGreaterThan(0);

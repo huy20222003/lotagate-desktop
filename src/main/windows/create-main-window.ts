@@ -1,5 +1,6 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export function createMainWindow(): BrowserWindow {
   const appRoot = app.getAppPath();
@@ -7,6 +8,7 @@ export function createMainWindow(): BrowserWindow {
   const preload = join(mainDirectory, 'bridge.js');
   const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
   const icon = join(app.getAppPath(), 'resources', 'icons', 'lotagate.ico');
+  const renderer = app.isPackaged ? join(appRoot, '.vite', 'renderer', 'main_window', 'index.html') : join(appRoot, 'src', 'renderer', 'index.html');
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -22,14 +24,37 @@ export function createMainWindow(): BrowserWindow {
       sandbox: true,
     },
   });
+  window.webContents.on('will-navigate', (event, destination) => {
+    if (!isExpectedRendererUrl(destination, rendererUrl, renderer)) event.preventDefault();
+  });
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isHttpUrl(url)) void shell.openExternal(url).catch(() => undefined);
+    return { action: 'deny' };
+  });
   window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     console.error(`[renderer-load] ${errorCode} ${errorDescription}: ${validatedURL}`);
   });
   if (rendererUrl !== undefined) {
     void window.loadURL(rendererUrl).catch(error => console.error('[renderer-load]', error));
   } else {
-    const renderer = app.isPackaged ? join(appRoot, '.vite', 'renderer', 'main_window', 'index.html') : join(appRoot, 'src', 'renderer', 'index.html');
     void window.loadFile(renderer).catch(error => console.error('[renderer-load]', error));
   }
   return window;
+}
+
+function isExpectedRendererUrl(destination: string, developmentUrl: string | undefined, rendererFile: string): boolean {
+  if (developmentUrl !== undefined) {
+    try {
+      const expected = new URL(developmentUrl);
+      const actual = new URL(destination);
+      return actual.origin === expected.origin && actual.pathname === expected.pathname;
+    } catch { return false; }
+  }
+  try { return fileURLToPath(new URL(destination)) === rendererFile; }
+  catch { return false; }
+}
+
+function isHttpUrl(value: string): boolean {
+  try { const protocol = new URL(value).protocol; return protocol === 'http:' || protocol === 'https:'; }
+  catch { return false; }
 }

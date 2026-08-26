@@ -478,12 +478,12 @@ h1, h2, p { margin-top: 0; }
 .approval-mode { width: 145px; }
 .approval-mode .dropdown { gap: 0; }
 .approval-mode .model-select { width: 145px; min-height: 30px; padding: 0 7px; color: var(--color-text-tertiary); font-size: 12px; }
-.composer-approval { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--color-border); padding: 10px 12px; background: var(--color-surface-elevated); }
-.composer-approval > div:first-child { display: grid; min-width: 0; gap: 3px; }
-.composer-approval strong { color: var(--color-text-code); font-size: 12px; }
-.composer-approval span { overflow: hidden; color: var(--color-text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.composer-approval-actions { display: flex; flex: 0 0 auto; gap: 7px; }
-.composer-approval-actions .button { min-height: 29px; font-size: 11px; }
+.composer-approval { display: grid; gap: 13px; padding: 16px; background: var(--color-surface-elevated); }
+.composer-approval-header { display: grid; gap: 7px; min-width: 0; }
+.composer-approval strong { color: var(--color-text); font-size: 13px; line-height: 1.4; }
+.composer-approval p { margin: 0; overflow-wrap: anywhere; color: var(--color-text-secondary); font-family: var(--font-code); font-size: 11px; line-height: 1.5; }
+.composer-approval-options { display: grid; gap: 7px; }
+.composer-approval-options .button { justify-content: flex-start; min-height: 34px; font-size: 12px; }
 .composer-spacer { flex: 1; }
 .model-label { color: var(--color-text-tertiary); font-size: 11px; }
 .model-select { display: flex; width: 220px; min-height: 34px; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--color-border); border-radius: 7px; padding: 0 9px; background: var(--color-input-surface); color: var(--color-text); font-size: 11px; text-align: left; }

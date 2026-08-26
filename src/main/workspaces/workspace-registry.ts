@@ -66,6 +66,13 @@ export class WorkspaceRegistry {
     return workspace;
   }
 
+  async requireRegisteredRoot(rootPath: string): Promise<string> {
+    const canonical = await requireDirectory(rootPath);
+    const workspace = (await this.store.read()).map(item => workspaceSchema.parse(item)).find(item => item.rootPath === canonical || item.roots.includes(canonical));
+    if (workspace === undefined) throw new Error('The project is not registered as a workspace.');
+    return canonical;
+  }
+
   async requireTrusted(rootPath: string): Promise<void> {
     const canonical = await requireDirectory(rootPath);
     const workspace = (await this.list()).find(item => item.rootPath === canonical || item.roots.includes(canonical));

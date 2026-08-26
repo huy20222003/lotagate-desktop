@@ -6,9 +6,9 @@ import { Check, CheckCircle2, ChevronDown, Copy, Info, X, XCircle } from 'lucide
 import { Scrollbar } from './Scrollbar.js';
 import { useClipboard } from '../hooks/use-clipboard.js';
 
-export function Button({ variant = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }) {
-  return <button className={`button button-${variant} ${className}`} {...props} />;
-}
+export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }>(({ variant = 'secondary', className = '', ...props }, ref) => {
+  return <button ref={ref} className={`button button-${variant} ${className}`} {...props} />;
+});
 
 export function Icon({ icon: IconComponent, size = 16, label, ...props }: { icon: LucideIcon; size?: number; label?: string; className?: string }) {
   return <IconComponent size={size} aria-hidden={label === undefined} aria-label={label} {...props} />;
@@ -133,12 +133,17 @@ export function Table<T extends { id: string }>({ columns, rows }: { columns: Ar
 
 export function Modal({ title, subtitle, children, onClose, className = '' }: PropsWithChildren<{ title: string; subtitle?: string; onClose: () => void; className?: string }>) {
   const dialogRef = useRef<HTMLElement>(null);
-  useEffect(() => {
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useLayoutEffect(() => {
     const dialog = dialogRef.current;
     const focusable = dialog?.querySelector<HTMLElement>('[autofocus]') ?? dialog?.querySelector<HTMLElement>('input, textarea, select, button, [tabindex="0"]');
     focusable?.focus();
+  }, []);
+  useEffect(() => {
+    const dialog = dialogRef.current;
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { onClose(); return; }
+      if (event.key === 'Escape') { onCloseRef.current(); return; }
       if (event.key !== 'Tab' || !dialog) return;
       const elements = [...dialog.querySelectorAll<HTMLElement>('button, input, textarea, select, [tabindex="0"]')].filter(element => !element.hasAttribute('disabled'));
       if (elements.length === 0) return;
@@ -148,7 +153,7 @@ export function Modal({ title, subtitle, children, onClose, className = '' }: Pr
     };
     document.addEventListener('keydown', keydown);
     return () => document.removeEventListener('keydown', keydown);
-  }, [onClose]);
+  }, []);
   return <div className="modal-backdrop" role="presentation"><section ref={dialogRef} className={`modal ${className}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><header className="modal-header"><div className="modal-heading"><h2 id="modal-title">{title}</h2>{subtitle ? <span className="modal-subtitle">{subtitle}</span> : null}</div><button className="icon-button" aria-label="Close" onClick={onClose}><X size={17} /></button></header>{children}</section></div>;
 }
 

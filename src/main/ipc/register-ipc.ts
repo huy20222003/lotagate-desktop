@@ -7,7 +7,7 @@ import type { DesktopAuthApi, LoginInput } from '../../contracts/ipc/v1/auth.js'
 import type { DesktopUserContextService } from '../api/desktop-user-context-service.js';
 import type { AgentManager } from '../agents/agent-manager.js';
 import type { WorkspaceRegistry } from '../workspaces/workspace-registry.js';
-import type { TaskStore } from '../tasks/task-store.js';
+import type { TaskStore, TaskUpdate } from '../tasks/task-store.js';
 import type { GitService } from '../git/git-service.js';
 import type { TerminalService } from '../terminal/terminal-service.js';
 import type { SettingsService } from '../settings/settings-service.js';
@@ -51,6 +51,19 @@ export interface DesktopIpcServices {
 export function registerIpc(services: DesktopIpcServices): void {
   const { auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, extensionFiles, git, terminal, settings, artifacts, browser, automations, operations, runAutomation, setMenuContext, logger } = services;
   const handle = <TArgs extends unknown[], TResult>(channel: string, listener: (event: Electron.IpcMainInvokeEvent, ...args: TArgs) => TResult): void => registerLoggedIpcHandler(logger, channel, listener);
+  const requireWorkspaceCwd = (input: unknown): Promise<string> => workspaces.requireRegisteredRoot(cwdSchema.parse(input));
+  const taskUpdateSchema = z.object({
+    title: z.string().min(1).max(200).optional(),
+    pinned: z.boolean().optional(),
+    archived: z.boolean().optional(),
+    draft: z.string().max(512 * 1024).optional(),
+    draftAttachmentIds: z.array(idSchema).max(16).optional(),
+    sessionId: idSchema.optional(),
+    turnId: idSchema.optional(),
+    model: z.string().min(1).max(256).optional(),
+    lastEventCursor: z.number().int().nonnegative().optional(),
+    interruptedReason: z.string().max(4_096).optional(),
+  }).strict();
   handle('menu.setContext', async (event, context: unknown) => {
     assertTrustedRenderer(event);
     setMenuContext(z.enum(['login', 'workspace']).parse(context));
@@ -85,30 +98,34 @@ export function registerIpc(services: DesktopIpcServices): void {
   });
   handle('agent.initialize', async (event, cwd: unknown) => {
     assertTrustedRenderer(event);
-    return agents.initialize(cwdSchema.parse(cwd));
+    return agents.initialize(await requireWorkspaceCwd(cwd));
   });
   handle('agent.shutdown', async (event, cwd: unknown) => {
     assertTrustedRenderer(event);
-    await agents.shutdown(cwdSchema.parse(cwd));
+    await agents.shutdown(await requireWorkspaceCwd(cwd));
   });
-  handle('agent.sessionCreate', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.sessionCreate(cwdSchema.parse(cwd), objectSchema.parse(input) as { model?: string; name?: string }); });
-  handle('agent.sessionList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.sessionList(cwdSchema.parse(cwd)); });
-  handle('agent.sessionResume', async (event, cwd: unknown, sessionId: unknown) => { assertTrustedRenderer(event); return agents.sessionResume(cwdSchema.parse(cwd), idSchema.parse(sessionId)); });
+  handle('agent.sessionCreate', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.sessionCreate(await requireWorkspaceCwd(cwd), objectSchema.parse(input) as { model?: string; name?: string }); });
+  handle('agent.sessionList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.sessionList(await requireWorkspaceCwd(cwd)); });
+  handle('agent.sessionResume', async (event, cwd: unknown, sessionId: unknown) => { assertTrustedRenderer(event); return agents.sessionResume(await requireWorkspaceCwd(cwd), idSchema.parse(sessionId)); });
   handle('agent.turnStart', async (event, cwd: unknown, input: unknown) => {
     assertTrustedRenderer(event);
+    const canonicalCwd = await requireWorkspaceCwd(cwd);
     const value = objectSchema.parse(input);
     const attachmentIds = value['attachmentIds'] === undefined ? [] : z.array(idSchema).max(16).parse(value['attachmentIds']);
     const taskId = value['taskId'] === undefined ? undefined : idSchema.parse(value['taskId']);
+    const sessionId = idSchema.parse(value['sessionId']);
+    const task = taskId === undefined ? undefined : await tasks.requireForCwd(taskId, canonicalCwd);
+    if (task?.sessionId !== undefined && task.sessionId !== sessionId) throw new Error('The task session does not match the requested agent session.');
     const attachments = taskId === undefined ? [] : await artifacts.attachmentInputs(taskId, attachmentIds);
-    return agents.turnStart(cwdSchema.parse(cwd), { sessionId: idSchema.parse(value['sessionId']), prompt: z.string().min(1).max(512 * 1024).parse(value['prompt']), ...(value['model'] === undefined ? {} : { model: z.string().min(1).max(256).parse(value['model']) }), ...(attachments.length === 0 ? {} : { attachments }) });
+    return agents.turnStart(canonicalCwd, { sessionId, prompt: z.string().min(1).max(512 * 1024).parse(value['prompt']), ...(value['model'] === undefined ? {} : { model: z.string().min(1).max(256).parse(value['model']) }), ...(attachments.length === 0 ? {} : { attachments }) });
   });
-  handle('agent.turnCancel', async (event, cwd: unknown, turnId: unknown) => { assertTrustedRenderer(event); return agents.turnCancel(cwdSchema.parse(cwd), idSchema.parse(turnId)); });
-  handle('agent.approvalRespond', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.approvalRespond(cwdSchema.parse(cwd), objectSchema.parse(input) as { approvalId: string; approved: boolean }); });
-  handle('agent.trustRespond', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.trustRespond(cwdSchema.parse(cwd), objectSchema.parse(input) as { trustRequestId: string; trusted: boolean }); });
-  handle('agent.modelList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.modelList(cwdSchema.parse(cwd)); });
-  handle('agent.commandList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.commandList(cwdSchema.parse(cwd)); });
-  handle('agent.commandExecute', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.commandExecute(cwdSchema.parse(cwd), objectSchema.parse(input)); });
-  handle('agent.commandCancel', async (event, cwd: unknown, commandId: unknown) => { assertTrustedRenderer(event); return agents.commandCancel(cwdSchema.parse(cwd), idSchema.parse(commandId)); });
+  handle('agent.turnCancel', async (event, cwd: unknown, turnId: unknown) => { assertTrustedRenderer(event); return agents.turnCancel(await requireWorkspaceCwd(cwd), idSchema.parse(turnId)); });
+  handle('agent.approvalRespond', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.approvalRespond(await requireWorkspaceCwd(cwd), objectSchema.parse(input) as { approvalId: string; approved: boolean }); });
+  handle('agent.trustRespond', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.trustRespond(await requireWorkspaceCwd(cwd), objectSchema.parse(input) as { trustRequestId: string; trusted: boolean }); });
+  handle('agent.modelList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.modelList(await requireWorkspaceCwd(cwd)); });
+  handle('agent.commandList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.commandList(await requireWorkspaceCwd(cwd)); });
+  handle('agent.commandExecute', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.commandExecute(await requireWorkspaceCwd(cwd), objectSchema.parse(input)); });
+  handle('agent.commandCancel', async (event, cwd: unknown, commandId: unknown) => { assertTrustedRenderer(event); return agents.commandCancel(await requireWorkspaceCwd(cwd), idSchema.parse(commandId)); });
   handle('workspace.list', async event => { assertTrustedRenderer(event); return workspaces.list(); });
   handle('workspace.pickFolder', async (event, rootPath?: unknown) => {
     assertTrustedRenderer(event);
@@ -155,7 +172,7 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('workspace.settings', async (event, workspaceId: unknown, patch: unknown) => { assertTrustedRenderer(event); return workspaces.updateSettings(idSchema.parse(workspaceId), objectSchema.parse(patch)); });
   handle('workspace.remove', async (event, workspaceId: unknown) => { assertTrustedRenderer(event); return workspaces.remove(idSchema.parse(workspaceId)); });
   handle('workspace.trust', async (event, workspaceId: unknown, trusted: unknown) => { assertTrustedRenderer(event); return workspaces.trust(idSchema.parse(workspaceId), z.boolean().parse(trusted)); });
-  handle('workspace.fileSuggestions', async (event, rootPath: unknown, query: unknown) => { assertTrustedRenderer(event); return workspaceFileSuggestions.list(cwdSchema.parse(rootPath), z.string().max(256).parse(query)); });
+  handle('workspace.fileSuggestions', async (event, rootPath: unknown, query: unknown) => { assertTrustedRenderer(event); return workspaceFileSuggestions.list(await requireWorkspaceCwd(rootPath), z.string().max(256).parse(query)); });
   handle('task.list', async (event, workspaceId?: unknown) => { assertTrustedRenderer(event); return tasks.list(workspaceId === undefined ? undefined : idSchema.parse(workspaceId)); });
   handle('task.create', async (event, input: unknown) => {
     assertTrustedRenderer(event);
@@ -164,7 +181,7 @@ export function registerIpc(services: DesktopIpcServices): void {
     const workspace = await workspaces.require(workspaceId);
     return tasks.create({ workspaceId, cwd: workspace.rootPath, title: z.string().min(1).parse(value['title']), ...(value['prompt'] === undefined ? {} : { prompt: z.string().parse(value['prompt']) }) });
   });
-  handle('task.update', async (event, taskId: unknown, patch: unknown) => { assertTrustedRenderer(event); return tasks.update(idSchema.parse(taskId), objectSchema.parse(patch)); });
+  handle('task.update', async (event, taskId: unknown, patch: unknown) => { assertTrustedRenderer(event); return tasks.update(idSchema.parse(taskId), taskUpdateSchema.parse(patch) as TaskUpdate); });
   handle('task.status', async (event, taskId: unknown, status: unknown) => { assertTrustedRenderer(event); return tasks.setStatus(idSchema.parse(taskId), z.enum(['queued', 'active', 'completed', 'failed', 'cancelled', 'paused', 'interrupted']).parse(status)); });
   handle('task.retry', async (event, taskId: unknown) => { assertTrustedRenderer(event); return tasks.retry(idSchema.parse(taskId)); });
   handle('task.cancel', async (event, taskId: unknown) => { assertTrustedRenderer(event); return tasks.cancel(idSchema.parse(taskId)); });
@@ -182,24 +199,24 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('task.openArtifact', async (event, taskId: unknown, artifactId: unknown) => { assertTrustedRenderer(event); const path = await artifacts.path(idSchema.parse(taskId), idSchema.parse(artifactId)); return shell.openPath(path); });
   handle('extension.readDetail', async (event, input: unknown) => { assertTrustedRenderer(event); return extensionFiles.readDetail(extensionDetailInputSchema.parse(input)); });
   handle('extension.writeDetail', async (event, input: unknown) => { assertTrustedRenderer(event); await extensionFiles.writeDetail(extensionDetailWriteInputSchema.parse(input)); });
-  handle('extension.listProjectHooks', async (event, cwd: unknown) => { assertTrustedRenderer(event); return extensionFiles.listProjectHooks(cwdSchema.parse(cwd)); });
+  handle('extension.listProjectHooks', async (event, cwd: unknown) => { assertTrustedRenderer(event); return extensionFiles.listProjectHooks(await requireWorkspaceCwd(cwd)); });
   handle('extension.createHook', async (event, input: unknown) => { assertTrustedRenderer(event); return extensionFiles.createHook(hookCreateInputSchema.parse(input)); });
   handle('extension.removeHook', async (event, input: unknown) => { assertTrustedRenderer(event); await extensionFiles.removeHook(hookRemoveInputSchema.parse(input)); });
-  handle('git.status', async (event, cwd: unknown) => { assertTrustedRenderer(event); return git.status(cwdSchema.parse(cwd)); });
-  handle('git.diff', async (event, cwd: unknown, staged?: unknown) => { assertTrustedRenderer(event); return git.diff(cwdSchema.parse(cwd), staged === undefined ? false : z.boolean().parse(staged)); });
-  handle('git.branches', async (event, cwd: unknown) => { assertTrustedRenderer(event); return git.branches(cwdSchema.parse(cwd)); });
-  handle('git.stage', async (event, cwd: unknown, path: unknown) => { assertTrustedRenderer(event); return git.stage(cwdSchema.parse(cwd), cwdSchema.parse(path)); });
-  handle('git.unstage', async (event, cwd: unknown, path: unknown) => { assertTrustedRenderer(event); return git.unstage(cwdSchema.parse(cwd), cwdSchema.parse(path)); });
-  handle('git.commit', async (event, cwd: unknown, message: unknown) => { assertTrustedRenderer(event); return git.commit(cwdSchema.parse(cwd), z.string().parse(message)); });
-  handle('git.createBranch', async (event, cwd: unknown, branch: unknown) => { assertTrustedRenderer(event); return git.createBranch(cwdSchema.parse(cwd), z.string().parse(branch)); });
-  handle('git.exportPatch', async (event, cwd: unknown, staged?: unknown) => { assertTrustedRenderer(event); return git.exportPatch(cwdSchema.parse(cwd), staged === undefined ? false : z.boolean().parse(staged)); });
-  handle('git.worktreeAdd', async (event, cwd: unknown, path: unknown, branch: unknown) => { assertTrustedRenderer(event); return git.worktreeAdd(cwdSchema.parse(cwd), cwdSchema.parse(path), cwdSchema.parse(branch)); });
-  handle('git.worktreeRemove', async (event, cwd: unknown, path: unknown, confirmed: unknown) => { assertTrustedRenderer(event); return git.worktreeRemove(cwdSchema.parse(cwd), cwdSchema.parse(path), z.boolean().parse(confirmed)); });
-  handle('git.restore', async (event, cwd: unknown, path: unknown, confirmed: unknown) => { assertTrustedRenderer(event); return git.restore(cwdSchema.parse(cwd), cwdSchema.parse(path), z.boolean().parse(confirmed)); });
+  handle('git.status', async (event, cwd: unknown) => { assertTrustedRenderer(event); return git.status(await requireWorkspaceCwd(cwd)); });
+  handle('git.diff', async (event, cwd: unknown, staged?: unknown) => { assertTrustedRenderer(event); return git.diff(await requireWorkspaceCwd(cwd), staged === undefined ? false : z.boolean().parse(staged)); });
+  handle('git.branches', async (event, cwd: unknown) => { assertTrustedRenderer(event); return git.branches(await requireWorkspaceCwd(cwd)); });
+  handle('git.stage', async (event, cwd: unknown, path: unknown) => { assertTrustedRenderer(event); return git.stage(await requireWorkspaceCwd(cwd), cwdSchema.parse(path)); });
+  handle('git.unstage', async (event, cwd: unknown, path: unknown) => { assertTrustedRenderer(event); return git.unstage(await requireWorkspaceCwd(cwd), cwdSchema.parse(path)); });
+  handle('git.commit', async (event, cwd: unknown, message: unknown) => { assertTrustedRenderer(event); return git.commit(await requireWorkspaceCwd(cwd), z.string().parse(message)); });
+  handle('git.createBranch', async (event, cwd: unknown, branch: unknown) => { assertTrustedRenderer(event); return git.createBranch(await requireWorkspaceCwd(cwd), z.string().parse(branch)); });
+  handle('git.exportPatch', async (event, cwd: unknown, staged?: unknown) => { assertTrustedRenderer(event); return git.exportPatch(await requireWorkspaceCwd(cwd), staged === undefined ? false : z.boolean().parse(staged)); });
+  handle('git.worktreeAdd', async (event, cwd: unknown, path: unknown, branch: unknown) => { assertTrustedRenderer(event); return git.worktreeAdd(await requireWorkspaceCwd(cwd), cwdSchema.parse(path), cwdSchema.parse(branch)); });
+  handle('git.worktreeRemove', async (event, cwd: unknown, path: unknown, confirmed: unknown) => { assertTrustedRenderer(event); return git.worktreeRemove(await requireWorkspaceCwd(cwd), cwdSchema.parse(path), z.boolean().parse(confirmed)); });
+  handle('git.restore', async (event, cwd: unknown, path: unknown, confirmed: unknown) => { assertTrustedRenderer(event); return git.restore(await requireWorkspaceCwd(cwd), cwdSchema.parse(path), z.boolean().parse(confirmed)); });
   handle('terminal.execute', async (event, input: unknown) => {
     assertTrustedRenderer(event);
     const value = terminalExecutionInputSchema.parse(input);
-    const result = await terminal.execute(value);
+    const result = await terminal.execute({ ...value, cwd: await requireWorkspaceCwd(value.cwd) });
     if (value.taskId) await tasks.appendActivity(value.taskId, 'verification', `${value.command} ${value.args.join(' ')}`.trim(), { cwd: result.cwd, exitCode: result.exitCode, durationMs: result.durationMs, truncated: result.truncated, evidenceId: result.id, output: `${result.stdout}\n${result.stderr}`.slice(0, 4_096) });
     return result;
   });

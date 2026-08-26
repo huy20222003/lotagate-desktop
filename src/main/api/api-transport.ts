@@ -4,13 +4,18 @@ import { bootstrapCryptoSession, decryptJson, encryptJson, isEnvelope, nextConte
 import type { DesktopLogger } from '../observability/desktop-logger.js';
 import type { PersistentCache } from '../cache/persistent-cache.js';
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+
 export interface ApiTransportConfig {
   baseUrl: string;
   trustedOrigin: string;
   partition: string;
-  onSessionExpired?: () => void;
+  onSessionExpired?: () => void | Promise<void>;
   logger?: DesktopLogger;
   cache?: PersistentCache;
+  requestTimeoutMs?: number;
+  maxResponseBytes?: number;
 }
 
 export interface ApiErrorPayload {
@@ -21,6 +26,8 @@ export interface ApiErrorPayload {
 
 export interface ApiRequestOptions {
   retryOnUnauthorized?: boolean;
+  timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export class DesktopApiError extends Error {
@@ -44,7 +51,7 @@ export class ApiTransport {
     this.config.logger?.debug('api.request', { method: method.toUpperCase(), path });
     if (!this.config.baseUrl || !this.config.trustedOrigin) throw new DesktopApiError(0, 'The LotaGate API URL and trusted origin must be configured.', false);
     try {
-      const result = await this.requestOnce<T>(path, method, body);
+      const result = await this.requestOnce<T>(path, method, body, options);
       this.config.logger?.debug('api.response', { method: method.toUpperCase(), path, status: 200 });
       return result;
     }
@@ -55,7 +62,7 @@ export class ApiTransport {
       }
       await this.refreshSession();
       try {
-        const result = await this.requestOnce<T>(path, method, body);
+        const result = await this.requestOnce<T>(path, method, body, options);
         this.config.logger?.debug('api.response', { method: method.toUpperCase(), path, status: 200, retried: true });
         return result;
       } catch (retryError) {
@@ -103,13 +110,13 @@ export class ApiTransport {
     }
   }
 
-  private async requestOnce<T>(path: string, method: string, body?: unknown): Promise<T> {
+  private async requestOnce<T>(path: string, method: string, body?: unknown, options: ApiRequestOptions = {}): Promise<T> {
     const url = this.resolveUrl(path);
-    if (path === API_PATHS.cryptoSession) return this.send<T>(url, method, body);
-    const crypto = await this.ensureCryptoSession();
+    if (path === API_PATHS.cryptoSession) return this.send<T>(url, method, body, undefined, options);
+    const crypto = await this.ensureCryptoSession(options);
     const context = nextContext(crypto, method, new URL(url).pathname);
     const encryptedBody = body === undefined ? undefined : await encryptJson(body, crypto, context);
-    const response = await this.send<unknown>(url, method, encryptedBody, context);
+    const response = await this.send<unknown>(url, method, encryptedBody, context, options);
     if (isEnvelope(response)) return unwrapPayload(await decryptJson<ApiEnvelope<T>>(response, crypto, context));
     return response as T;
   }
@@ -130,21 +137,21 @@ export class ApiTransport {
 
   private async expireSession(): Promise<void> {
     await this.clearSession();
-    this.config.onSessionExpired?.();
+    await this.config.onSessionExpired?.();
   }
 
-  private async ensureCryptoSession(): Promise<ApiCryptoSession> {
+  private async ensureCryptoSession(options: ApiRequestOptions = {}): Promise<ApiCryptoSession> {
     if (!shouldRotate(this.cryptoSession)) return this.cryptoSession as ApiCryptoSession;
     this.cryptoSession = await bootstrapCryptoSession((publicKey) => this.send<{
       kid: string;
       salt: string;
       serverPublicKey: EcPublicJwk;
       expiresAt: number;
-    }>(this.resolveUrl(API_PATHS.cryptoSession), 'POST', publicKey));
+    }>(this.resolveUrl(API_PATHS.cryptoSession), 'POST', publicKey, undefined, options));
     return this.cryptoSession;
   }
 
-  private async send<T>(url: string, method: string, body?: unknown, context?: { kid: string; ts: number; seq: number; rid: string }): Promise<T> {
+  private async send<T>(url: string, method: string, body?: unknown, context?: { kid: string; ts: number; seq: number; rid: string }, options: ApiRequestOptions = {}): Promise<T> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
       Origin: this.config.trustedOrigin,
@@ -163,24 +170,37 @@ export class ApiTransport {
     const csrf = await this.readCsrfCookie();
     if (csrf && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase())) headers[API_CRYPTO.csrfHeaderName] = csrf;
     const payload = body === undefined ? undefined : JSON.stringify(body);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? this.config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
+    const abortExternal = () => controller.abort();
+    if (options.signal) {
+      if (options.signal.aborted) controller.abort();
+      else options.signal.addEventListener('abort', abortExternal, { once: true });
+    }
     let response: Response;
     try {
       response = await this.apiSession.fetch(url, {
         method: method.toUpperCase(),
         headers,
         credentials: 'include',
+        signal: controller.signal,
         ...(payload === undefined ? {} : { body: payload }),
       });
+      const result = { status: response.status, text: await readResponseText(response, this.config.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES) };
+      const parsed = parseResponse(result.text);
+      if (result.status < 200 || result.status >= 300) {
+        const error = parsed as ApiErrorPayload | undefined;
+        throw new DesktopApiError(result.status, error?.error?.message ?? error?.message ?? 'API request failed.');
+      }
+      return parsed as T;
     } catch (error) {
-      throw new DesktopApiError(0, error instanceof Error ? error.message : 'The LotaGate API request failed.', true);
+      if (error instanceof DesktopApiError) throw error;
+      const message = controller.signal.aborted ? 'The LotaGate API request timed out or was cancelled.' : error instanceof Error ? error.message : 'The LotaGate API request failed.';
+      throw new DesktopApiError(0, message, true);
+    } finally {
+      clearTimeout(timeout);
+      options.signal?.removeEventListener('abort', abortExternal);
     }
-    const result = { status: response.status, text: await response.text() };
-    const parsed = parseResponse(result.text);
-    if (result.status < 200 || result.status >= 300) {
-      const error = parsed as ApiErrorPayload | undefined;
-      throw new DesktopApiError(result.status, error?.error?.message ?? error?.message ?? 'API request failed.');
-    }
-    return parsed as T;
   }
 
   private async readCsrfCookie(): Promise<string | null> {
@@ -197,6 +217,34 @@ export class ApiTransport {
   private assertAllowed(path: string): void {
     if (!isDesktopApiPathAllowed(path) || path.startsWith('/admin')) throw new DesktopApiError(403, `Desktop API route is not allowlisted: ${path}`, false);
   }
+}
+
+async function readResponseText(response: Response, maxBytes: number): Promise<string> {
+  const contentLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) throw new DesktopApiError(502, 'The API response exceeded the desktop size limit.', true);
+  if (response.body === null) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > maxBytes) throw new DesktopApiError(502, 'The API response exceeded the desktop size limit.', true);
+    return text;
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      totalBytes += next.value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        throw new DesktopApiError(502, 'The API response exceeded the desktop size limit.', true);
+      }
+      chunks.push(next.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks.map(chunk => Buffer.from(chunk))));
 }
 
 interface ApiEnvelope<T> {

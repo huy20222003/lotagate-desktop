@@ -79,8 +79,11 @@ export class CliAgentProcess {
     this.stopping = true;
     const child = this.child;
     if (!child.killed) child.kill();
-    await Promise.race([once(child, 'close'), delay(PROCESS_CLOSE_TIMEOUT_MS)]);
-    if (!child.killed) child.kill('SIGKILL');
+    const closed = await Promise.race([once(child, 'close').then(() => true), delay(PROCESS_CLOSE_TIMEOUT_MS).then(() => false)]);
+    if (!closed && child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+      await Promise.race([once(child, 'close'), delay(PROCESS_CLOSE_TIMEOUT_MS)]);
+    }
     this.rejectPending(new CliAgentProcessError('The CLI agent process was shut down.'));
     this.child = undefined;
   }

@@ -39,3 +39,29 @@ describe('DesktopAuthService.restoreSession', () => {
     expect(transport.clearSession).toHaveBeenCalledOnce();
   });
 });
+
+describe('DesktopAuthService.logout', () => {
+  it('stops local agent processes before requesting server logout and always clears the session', async () => {
+    const order: string[] = [];
+    const transport = {
+      request: vi.fn(async () => { order.push('logout'); }),
+      clearSession: vi.fn(async () => { order.push('clear'); }),
+    } as unknown as ApiTransport;
+    const service = new DesktopAuthService(transport, async () => { order.push('stop-agents'); });
+
+    await service.logout();
+
+    expect(order).toEqual(['stop-agents', 'logout', 'clear']);
+  });
+
+  it('clears the session when server logout fails', async () => {
+    const transport = {
+      request: vi.fn().mockRejectedValue(new DesktopApiError(503, 'Unavailable')),
+      clearSession: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ApiTransport;
+    const service = new DesktopAuthService(transport, vi.fn().mockResolvedValue(undefined));
+
+    await expect(service.logout()).rejects.toThrow('Unavailable');
+    expect(transport.clearSession).toHaveBeenCalledOnce();
+  });
+});

@@ -13,8 +13,9 @@ function createTask(): Task {
 
 function createProjector(task: Task) {
   const tasks = {
-    findBySession: vi.fn(async () => task),
+    findBySession: vi.fn(async (sessionId: string) => sessionId === task.sessionId ? task : undefined),
     findByCwd: vi.fn(async () => task),
+    require: vi.fn(async () => task),
     setStatus: vi.fn(async (_taskId: string, status: Task['status']) => ({ ...task, status })),
     update: vi.fn(async (_taskId: string, patch: Partial<Task>) => ({ ...task, ...patch })),
     appendEvent: vi.fn(async () => task),
@@ -42,5 +43,19 @@ describe('TaskEventProjector turn lifecycle', () => {
     const { projector, tasks } = createProjector(createTask());
     await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'context.compacted', data: { sessionId: 'session-1', turnId: 'turn-1' } });
     expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Agent context was compacted.', expect.objectContaining({ sessionId: 'session-1', turnId: 'turn-1' }));
+  });
+
+  it('routes command output without a session id to the task that owns the active turn', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'turn.started', data: { sessionId: 'session-1', turnId: 'turn-1' } });
+    await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'command.output', data: { content: 'command output' } });
+    expect(tasks.appendEvent).toHaveBeenLastCalledWith('task-1', 'command', 'command output', expect.any(Object));
+  });
+
+  it('does not fall back to the latest cwd task for an event from an unknown session', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'command.output', data: { sessionId: 'unknown-session', content: 'unrelated output' } });
+    expect(tasks.appendEvent).not.toHaveBeenCalled();
+    expect(tasks.findByCwd).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, Monitor, Moon, Sun } from 'lucide-react';
 import { Button, Card, Checkbox, Dropdown, useToast } from '../../components/ui.js';
 import { useTheme, type FontChoice, type ThemeColor, type ThemePreference } from '../../theme/theme.js';
+import { useLocale, type Language } from '../../i18n/locale.js';
 
 const themeOptions: Array<{ value: ThemePreference; label: string; detail: string; icon: typeof Sun }> = [
   { value: 'system', label: 'System', detail: 'Follow the appearance setting of this device.', icon: Monitor },
@@ -17,9 +18,11 @@ const fontOptions: Array<{ value: FontChoice; label: string }> = [
 
 export function AppearancePage() {
   const { preference, setTheme, reducedMotion, setReducedMotion, contrast, setContrast, uiFont, setUiFont, codeFont, setCodeFont, colors, setColor } = useTheme();
+  const { language, setLanguage } = useLocale();
   const { error } = useToast();
   const [motionBusy, setMotionBusy] = useState(false);
   const [contrastDraft, setContrastDraft] = useState(contrast);
+  const [languageBusy, setLanguageBusy] = useState(false);
 
   useEffect(() => setContrastDraft(contrast), [contrast]);
 
@@ -41,6 +44,11 @@ export function AppearancePage() {
   };
   const commitContrast = () => { void setContrast(contrastDraft).catch(reason => reportError('Unable to update contrast', reason)); };
   const colorValue = (color: ThemeColor) => colors[color] ?? readThemeColor(color);
+  const updateLanguage = async (next: string) => {
+    setLanguageBusy(true);
+    try { await setLanguage(next as Language); } catch (reason) { reportError('Unable to update language', reason); }
+    finally { setLanguageBusy(false); }
+  };
 
   return <div className="appearance-page">
     <section className="appearance-section">
@@ -62,6 +70,10 @@ export function AppearancePage() {
       <div className="appearance-section-heading"><div><h2>Interface</h2><p>Adjust accessibility and motion preferences.</p></div></div>
       <Card className="appearance-setting-row"><div><strong>Reduce motion</strong><span>Minimize animations throughout the desktop application.</span></div><Checkbox label="Reduce motion" checked={reducedMotion} onChange={next => void updateMotion(next)} /></Card>
       {motionBusy ? <p className="appearance-setting-note">Saving…</p> : null}
+    </section>
+    <section className="appearance-section">
+      <div className="appearance-section-heading"><div><h2>Language</h2><p>Choose the language used by the desktop interface.</p></div></div>
+      <div className="appearance-setting-row appearance-font-row"><div><strong>Interface language</strong><span>Changes are saved to this device.</span></div><Dropdown value={language} options={[{ value: 'en', label: 'English' }, { value: 'vi', label: 'Tiếng Việt' }]} onChange={value => void updateLanguage(value)} disabled={languageBusy} aria-label="Interface language" /></div>
     </section>
   </div>;
 }

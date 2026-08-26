@@ -51,7 +51,7 @@ app.whenReady().then(() => {
     partition: runtimeConfig.authPartition,
     logger,
     cache,
-    onSessionExpired: () => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('auth.sessionExpired'); },
+    onSessionExpired: async () => { await agentManager?.shutdownAll(); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('auth.sessionExpired'); },
   });
   const workspaces = new WorkspaceRegistry();
   const extensionFiles = new ExtensionFileService(workspaces);
@@ -70,7 +70,7 @@ app.whenReady().then(() => {
     },
     onDiagnostic: (cwd, diagnostic) => { logger.warn('agent.diagnostic', { cwd, kind: diagnostic.kind, message: diagnostic.message }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic }); },
     onExit: (cwd, error) => {
-      void tasks.findByCwd(cwd).then(task => { if (task) return tasks.update(task.id, { interruptedReason: error.message }); }).then(async task => { if (task) await tasks.setStatus(task.id, 'interrupted'); }).catch(() => undefined);
+      void tasks.interruptActiveByCwd(cwd, error.message).catch(() => undefined);
       logger.error('agent.process.exit', { cwd, error: error.message });
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic: { kind: 'protocol', message: error.message } });
     },
@@ -89,7 +89,7 @@ app.whenReady().then(() => {
     await agents.turnStart(workspace.rootPath, { sessionId, prompt: automation.prompt });
   };
   const runAutomation = (id: string): Promise<Automation> => automations.run(id, executeAutomation);
-  registerIpc({ auth: new DesktopAuthService(transport), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, extensionFiles, git: new GitService(), terminal: new TerminalService(workspaces, tasks), settings: new SettingsService(), artifacts: new ArtifactService(), browser, automations, operations, runAutomation, setMenuContext: setApplicationMenu, logger });
+  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, extensionFiles, git: new GitService(), terminal: new TerminalService(workspaces, tasks), settings: new SettingsService(), artifacts: new ArtifactService(), browser, automations, operations, runAutomation, setMenuContext: setApplicationMenu, logger });
   automations.start(executeAutomation, 15_000);
   createMainWindow();
   app.on('activate', () => {

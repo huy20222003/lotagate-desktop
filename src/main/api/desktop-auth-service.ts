@@ -3,7 +3,7 @@ import { API_PATHS } from './api-contract.js';
 import { ApiTransport, DesktopApiError } from './api-transport.js';
 
 export class DesktopAuthService {
-  constructor(private readonly transport: ApiTransport) {}
+  constructor(private readonly transport: ApiTransport, private readonly stopAgents?: () => Promise<void>) {}
 
   async getCurrentUser(): Promise<UserProfile | null> {
     try {
@@ -46,6 +46,7 @@ export class DesktopAuthService {
 
   async logout(): Promise<void> {
     try {
+      await this.stopAgents?.();
       await this.transport.request(API_PATHS.logout, 'POST');
     } finally {
       await this.transport.clearSession();

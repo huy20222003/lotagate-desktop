@@ -36,13 +36,20 @@ export class ArtifactService {
 
   async importFile(taskId: string, sourcePath: string, kind: Artifact['kind']): Promise<Artifact> {
     const details = await stat(sourcePath);
+    if (!details.isFile()) throw new Error('The selected artifact must be a file.');
+    if (details.size <= 0 || details.size > MAX_ATTACHMENT_BYTES) throw new Error('The selected artifact exceeds the supported size limit.');
     const destinationDirectory = join(desktopDataPath('artifacts'), taskId);
     await mkdir(destinationDirectory, { recursive: true });
     const destination = join(destinationDirectory, `${randomUUID()}-${basename(sourcePath)}`);
-    await copyFile(sourcePath, destination);
-    const artifact = artifactSchema.parse({ id: randomUUID(), taskId, name: basename(sourcePath), path: destination, kind, size: details.size, createdAt: new Date().toISOString() });
-    await this.store.update(current => [...current, artifact]);
-    return artifact;
+    try {
+      await copyFile(sourcePath, destination);
+      const artifact = artifactSchema.parse({ id: randomUUID(), taskId, name: basename(sourcePath), path: destination, kind, size: details.size, createdAt: new Date().toISOString() });
+      await this.store.update(current => [...current, artifact]);
+      return artifact;
+    } catch (error) {
+      await unlink(destination).catch(() => undefined);
+      throw error;
+    }
   }
 
   async createText(taskId: string, name: string, content: string, kind: Extract<Artifact['kind'], 'text' | 'markdown' | 'patch' | 'json'> = 'text'): Promise<Artifact> {
