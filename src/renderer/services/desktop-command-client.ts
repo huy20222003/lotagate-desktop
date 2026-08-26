@@ -22,6 +22,10 @@ export async function listDesktopCommands(cwd: string): Promise<DesktopCommandDe
   return commands.flatMap(parseCommandDescriptor);
 }
 
+export function findDesktopCommand(commands: readonly DesktopCommandDescriptor[], path: readonly string[]): DesktopCommandDescriptor | undefined {
+  return commands.find(command => command.path.length === path.length && command.path.every((part, index) => part === path[index]));
+}
+
 export function executeDesktopCommand(cwd: string, invocation: DesktopCommandInvocation): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     let commandId: string | undefined;

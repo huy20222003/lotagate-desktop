@@ -14,7 +14,7 @@ function createTask(): Task {
 function createProjector(task: Task) {
   const tasks = {
     findBySession: vi.fn(async () => task),
-    findByCwd: vi.fn(async () => undefined),
+    findByCwd: vi.fn(async () => task),
     setStatus: vi.fn(async (_taskId: string, status: Task['status']) => ({ ...task, status })),
     update: vi.fn(async (_taskId: string, patch: Partial<Task>) => ({ ...task, ...patch })),
     appendEvent: vi.fn(async () => task),
@@ -36,5 +36,11 @@ describe('TaskEventProjector turn lifecycle', () => {
     await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'turn.failed', data: { sessionId: 'session-1', turnId: 'turn-1', error: 'Agent failed.' } });
     expect(tasks.setStatus).toHaveBeenCalledWith('task-1', 'failed');
     expect(tasks.update).toHaveBeenCalledWith('task-1', { turnId: undefined, interruptedReason: 'Agent failed.' });
+  });
+
+  it('persists the compacted marker emitted by the CLI context manager', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'context.compacted', data: { sessionId: 'session-1', turnId: 'turn-1' } });
+    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Agent context was compacted.', expect.objectContaining({ sessionId: 'session-1', turnId: 'turn-1' }));
   });
 });
