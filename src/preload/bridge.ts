@@ -86,6 +86,13 @@ const bridge: DesktopBridge = {
     previewArtifact: (taskId, artifactId) => ipcRenderer.invoke('task.previewArtifact', taskId, artifactId),
     openArtifact: (taskId, artifactId) => ipcRenderer.invoke('task.openArtifact', taskId, artifactId),
   },
+  extensions: {
+    readDetail: input => ipcRenderer.invoke('extension.readDetail', input),
+    writeDetail: input => ipcRenderer.invoke('extension.writeDetail', input),
+    listProjectHooks: cwd => ipcRenderer.invoke('extension.listProjectHooks', cwd),
+    createHook: input => ipcRenderer.invoke('extension.createHook', input),
+    removeHook: input => ipcRenderer.invoke('extension.removeHook', input),
+  },
   git: {
     status: cwd => ipcRenderer.invoke('git.status', cwd),
     diff: (cwd, staged) => ipcRenderer.invoke('git.diff', cwd, staged),

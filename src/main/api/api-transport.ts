@@ -1,12 +1,16 @@
 import { session, type Session } from 'electron';
 import { API_AUTH_COOKIES, API_CRYPTO, API_PATHS, isDesktopApiPathAllowed } from './api-contract.js';
 import { bootstrapCryptoSession, decryptJson, encryptJson, isEnvelope, nextContext, shouldRotate, type ApiCryptoSession, type EcPublicJwk } from './api-crypto.js';
+import type { DesktopLogger } from '../observability/desktop-logger.js';
+import type { PersistentCache } from '../cache/persistent-cache.js';
 
 export interface ApiTransportConfig {
   baseUrl: string;
   trustedOrigin: string;
   partition: string;
   onSessionExpired?: () => void;
+  logger?: DesktopLogger;
+  cache?: PersistentCache;
 }
 
 export interface ApiErrorPayload {
@@ -37,15 +41,26 @@ export class ApiTransport {
 
   async request<T>(path: string, method: string, body?: unknown, options: ApiRequestOptions = {}): Promise<T> {
     this.assertAllowed(path);
+    this.config.logger?.debug('api.request', { method: method.toUpperCase(), path });
     if (!this.config.baseUrl || !this.config.trustedOrigin) throw new DesktopApiError(0, 'The LotaGate API URL and trusted origin must be configured.', false);
-    try { return await this.requestOnce<T>(path, method, body); }
+    try {
+      const result = await this.requestOnce<T>(path, method, body);
+      this.config.logger?.debug('api.response', { method: method.toUpperCase(), path, status: 200 });
+      return result;
+    }
     catch (error) {
-      if (options.retryOnUnauthorized === false || !(error instanceof DesktopApiError) || error.status !== 401 || new Set<string>([API_PATHS.login, API_PATHS.refresh, API_PATHS.cryptoSession, API_PATHS.logout]).has(path)) throw error;
+      if (options.retryOnUnauthorized === false || !(error instanceof DesktopApiError) || error.status !== 401 || new Set<string>([API_PATHS.login, API_PATHS.refresh, API_PATHS.cryptoSession, API_PATHS.logout]).has(path)) {
+        this.config.logger?.warn('api.error', { method: method.toUpperCase(), path, status: error instanceof DesktopApiError ? error.status : 0 });
+        throw error;
+      }
       await this.refreshSession();
       try {
-        return await this.requestOnce<T>(path, method, body);
+        const result = await this.requestOnce<T>(path, method, body);
+        this.config.logger?.debug('api.response', { method: method.toUpperCase(), path, status: 200, retried: true });
+        return result;
       } catch (retryError) {
         if (retryError instanceof DesktopApiError && retryError.status === 401) await this.expireSession();
+        this.config.logger?.warn('api.error', { method: method.toUpperCase(), path, status: retryError instanceof DesktopApiError ? retryError.status : 0, retried: true });
         throw retryError;
       }
     }
@@ -53,6 +68,7 @@ export class ApiTransport {
 
   async clearSession(): Promise<void> {
     this.cryptoSession = null;
+    await this.config.cache?.clear();
     await this.apiSession.clearStorageData({ storages: ['cookies'] });
   }
 

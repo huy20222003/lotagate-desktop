@@ -63,6 +63,12 @@ current electron-vite integration; the renderer remains Vite-managed.
   never parsed.
 - Local task/workspace/settings data is stored in the Electron user-data
   directory, not inside a repository.
+- Runtime logs are written as redacted JSONL files under
+  `<userData>/desktop-data/logs/desktop-YYYY-MM-DD.log` and retained for 30
+  days. Dynamic account/model data is cached under
+  `<userData>/desktop-data/cache/` with feature-specific TTLs; the cache is
+  cleared when the authenticated session is cleared. Billing and usage
+  responses are intentionally not persisted in the cache.
 - Executable TypeScript/JavaScript and executable tests are checked at 600
   lines or fewer. Configuration, lockfiles, docs, schemas, and assets are
   exempt as documented in `PLAN.md`.

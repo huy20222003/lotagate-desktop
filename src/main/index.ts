@@ -6,6 +6,7 @@ import { DesktopUserContextService } from './api/desktop-user-context-service.js
 import { loadRuntimeEnvironment, readRuntimeConfig } from './config/runtime-config.js';
 import { registerIpc } from './ipc/register-ipc.js';
 import { createMainWindow } from './windows/create-main-window.js';
+import { configureMediaPermissions } from './windows/media-permissions.js';
 import { setApplicationMenu } from './windows/application-menu.js';
 import { WorkspaceRegistry } from './workspaces/workspace-registry.js';
 import { TaskStore } from './tasks/task-store.js';
@@ -19,6 +20,9 @@ import { AutomationService } from './automation/automation-service.js';
 import { DesktopOperations } from './operations/desktop-operations.js';
 import { WorkspaceFileSuggestions } from './workspaces/workspace-file-suggestions.js';
 import type { Automation } from './automation/automation-service.js';
+import { DesktopLogger } from './observability/desktop-logger.js';
+import { PersistentCache } from './cache/persistent-cache.js';
+import { ExtensionFileService } from './extensions/extension-file-service.js';
 
 loadRuntimeEnvironment();
 const runtimeConfig = readRuntimeConfig();
@@ -26,6 +30,8 @@ let agentManager: AgentManager | undefined;
 let browserService: BrowserService | undefined;
 let automationService: AutomationService | undefined;
 let shuttingDown = false;
+const logger = new DesktopLogger();
+const cache = new PersistentCache();
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.on('second-instance', (_event, commandLine) => {
@@ -36,14 +42,19 @@ else app.on('second-instance', (_event, commandLine) => {
 });
 
 app.whenReady().then(() => {
+  logger.info('app.ready', { platform: process.platform, arch: process.arch });
+  configureMediaPermissions();
   setApplicationMenu('login');
   const transport = new ApiTransport({
     baseUrl: runtimeConfig.apiBaseUrl,
     trustedOrigin: runtimeConfig.trustedOrigin,
     partition: runtimeConfig.authPartition,
+    logger,
+    cache,
     onSessionExpired: () => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('auth.sessionExpired'); },
   });
   const workspaces = new WorkspaceRegistry();
+  const extensionFiles = new ExtensionFileService(workspaces);
   const tasks = new TaskStore();
   const taskProjector = new TaskEventProjector(tasks);
   const browser = new BrowserService();
@@ -53,15 +64,17 @@ app.whenReady().then(() => {
   operations.initializeTray();
   const agents = new AgentManager({
     onEvent: (cwd, event) => {
+      logger.debug('agent.event', { cwd, event: event.event });
       void taskProjector.apply(cwd, event).catch(() => undefined);
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
     },
-    onDiagnostic: (cwd, diagnostic) => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic }); },
+    onDiagnostic: (cwd, diagnostic) => { logger.warn('agent.diagnostic', { cwd, kind: diagnostic.kind, message: diagnostic.message }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic }); },
     onExit: (cwd, error) => {
       void tasks.findByCwd(cwd).then(task => { if (task) return tasks.update(task.id, { interruptedReason: error.message }); }).then(async task => { if (task) await tasks.setStatus(task.id, 'interrupted'); }).catch(() => undefined);
+      logger.error('agent.process.exit', { cwd, error: error.message });
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic: { kind: 'protocol', message: error.message } });
     },
-  });
+  }, cache);
   agentManager = agents;
   const automations = new AutomationService();
   automationService = automations;
@@ -76,7 +89,7 @@ app.whenReady().then(() => {
     await agents.turnStart(workspace.rootPath, { sessionId, prompt: automation.prompt });
   };
   const runAutomation = (id: string): Promise<Automation> => automations.run(id, executeAutomation);
-  registerIpc({ auth: new DesktopAuthService(transport), userContext: new DesktopUserContextService(transport), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, git: new GitService(), terminal: new TerminalService(workspaces, tasks), settings: new SettingsService(), artifacts: new ArtifactService(), browser, automations, operations, runAutomation, setMenuContext: setApplicationMenu });
+  registerIpc({ auth: new DesktopAuthService(transport), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, extensionFiles, git: new GitService(), terminal: new TerminalService(workspaces, tasks), settings: new SettingsService(), artifacts: new ArtifactService(), browser, automations, operations, runAutomation, setMenuContext: setApplicationMenu, logger });
   automations.start(executeAutomation, 15_000);
   createMainWindow();
   app.on('activate', () => {
@@ -93,7 +106,7 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   shuttingDown = true;
   automationService?.stop();
-  void Promise.all([agentManager?.shutdownAll(), browserService?.closeAll()]).finally(() => app.quit());
+  void Promise.all([agentManager?.shutdownAll(), browserService?.closeAll()]).finally(async () => { await logger.close(); app.quit(); });
 });
 
 function extractSessionId(value: unknown): string | undefined {

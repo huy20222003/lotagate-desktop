@@ -5,6 +5,7 @@ import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 import { requireDirectory } from '../security/path-policy.js';
 import { runGit } from '../git/git-process.js';
+import { ensureProjectConfig } from './project-config-layout.js';
 
 export class WorkspaceRegistry {
   private readonly store = new JsonFileStore<Workspace[]>(desktopDataPath('workspaces.json'), [], value => workspaceSchema.array().parse(value));
@@ -53,6 +54,8 @@ export class WorkspaceRegistry {
   async updateSettings(workspaceId: string, patch: Record<string, unknown>): Promise<Workspace> { return this.mutate(workspaceId, workspace => ({ ...workspace, settings: { ...workspace.settings, ...patch }, lastOpenedAt: new Date().toISOString() })); }
 
   async trust(workspaceId: string, trusted: boolean): Promise<Workspace> {
+    const workspace = await this.require(workspaceId);
+    if (trusted) await ensureProjectConfig(workspace.rootPath);
     return this.updateWith(workspaceId, workspace => ({ ...workspace, trusted, lastOpenedAt: new Date().toISOString() }));
   }
 
@@ -61,6 +64,13 @@ export class WorkspaceRegistry {
     if (workspace === undefined) throw new Error('Workspace was not found.');
     await access(workspace.rootPath);
     return workspace;
+  }
+
+  async requireTrusted(rootPath: string): Promise<void> {
+    const canonical = await requireDirectory(rootPath);
+    const workspace = (await this.list()).find(item => item.rootPath === canonical || item.roots.includes(canonical));
+    if (workspace === undefined) throw new Error('The project is not registered as a workspace.');
+    if (!workspace.trusted) throw new Error('Trust this workspace before changing project hooks.');
   }
 
   private async mutate(workspaceId: string, update: (workspace: Workspace) => Workspace): Promise<Workspace> {

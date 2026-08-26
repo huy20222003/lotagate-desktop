@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fileChangeSummariesFromActivities, fileChangesFromActivities, mergeFileChange } from './file-changes.js';
+import { fileChangeSummariesFromActivities, fileChangesFromActivities, mergeFileChange, mergeFileChangeSummaries } from './file-changes.js';
 
 describe('file change projection', () => {
   it('keeps the latest change for each file and totals its lines', () => {
@@ -19,5 +19,14 @@ describe('file change projection', () => {
     ]);
     expect(summaries['turn-1']).toMatchObject({ additions: 1, deletions: 0, files: [{ path: 'test.md' }] });
     expect(summaries['turn-2']).toMatchObject({ additions: 2, deletions: 1, files: [{ path: 'other.md' }] });
+  });
+
+  it('preserves live changes when an older activity snapshot arrives', () => {
+    const merged = mergeFileChangeSummaries(
+      { 'turn-1': { files: [{ path: 'live.md', additions: 2, deletions: 0, truncated: false, lines: [] }], additions: 2, deletions: 0 } },
+      { 'turn-1': { files: [{ path: 'live.md', additions: 1, deletions: 0, truncated: false, lines: [] }, { path: 'snapshot.md', additions: 1, deletions: 0, truncated: false, lines: [] }], additions: 2, deletions: 0 } },
+    );
+    expect(merged['turn-1']).toMatchObject({ additions: 3, deletions: 0, files: [{ path: 'live.md' }, { path: 'snapshot.md' }] });
+    expect(merged['turn-1']?.files[0]?.additions).toBe(2);
   });
 });

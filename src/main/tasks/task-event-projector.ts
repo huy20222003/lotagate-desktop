@@ -45,8 +45,14 @@ function eventText(event: string, data: Record<string, unknown>): string | undef
   if (event === 'command.output') return typeof data['content'] === 'string' ? data['content'] : 'Command output received.';
   if (event === 'context.compacted') return 'Agent context was compacted.';
   if (event === 'usage.updated') return 'Usage updated.';
-  if (event === 'turn.failed') return 'Agent turn failed.';
+  if (event === 'turn.failed') return failedTurnText(data);
   return undefined;
+}
+
+function failedTurnText(data: Record<string, unknown>): string {
+  const error = data['error'];
+  if (typeof error === 'object' && error !== null && typeof (error as Record<string, unknown>)['message'] === 'string') return `Agent turn failed: ${(error as Record<string, unknown>)['message']}`;
+  return 'Agent turn failed.';
 }
 
 function activityKind(event: string): 'assistant' | 'tool' | 'approval' | 'trust' | 'file' | 'command' | 'context' | 'usage' | 'error' {

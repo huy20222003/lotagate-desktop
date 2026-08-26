@@ -2,6 +2,8 @@ import { CliAgentProcess, type CliAgentEventHandler } from './cli-agent-process.
 import { resolveCliExecutable } from './cli-resolver.js';
 import type { DesktopAgentResult, DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js';
 import { requireDirectory } from '../security/path-policy.js';
+import { CACHE_TTL_MS } from '../cache/cache-policy.js';
+import type { PersistentCache } from '../cache/persistent-cache.js';
 
 export interface AgentManagerHandler {
   onEvent(cwd: string, event: DesktopEvent): void;
@@ -22,7 +24,7 @@ export class AgentManager {
   private readonly recoveryAttempts = new Map<string, number>();
   private readonly recoveryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  constructor(private readonly handler: AgentManagerHandler) {}
+  constructor(private readonly handler: AgentManagerHandler, private readonly cache?: PersistentCache) {}
 
   async initialize(cwd: string): Promise<DesktopAgentResult> {
     const process = this.getOrCreate(await requireDirectory(cwd));
@@ -44,8 +46,8 @@ export class AgentManager {
   async turnCancel(cwd: string, turnId: string): Promise<unknown> { return this.request(cwd, 'turn.cancel', { turnId }); }
   async approvalRespond(cwd: string, input: { approvalId: string; approved: boolean }): Promise<unknown> { return this.request(cwd, 'approval.respond', input); }
   async trustRespond(cwd: string, input: { trustRequestId: string; trusted: boolean }): Promise<unknown> { return this.request(cwd, 'trust.respond', input); }
-  async modelList(cwd: string): Promise<unknown> { return this.request(cwd, 'model.list', {}); }
-  async commandList(cwd: string): Promise<unknown> { return this.request(cwd, 'command.list', {}); }
+  async modelList(cwd: string): Promise<unknown> { return this.cachedProtocolResult(cwd, 'models', CACHE_TTL_MS.models, () => this.request(cwd, 'model.list', {})); }
+  async commandList(cwd: string): Promise<unknown> { return this.cachedProtocolResult(cwd, 'commands', CACHE_TTL_MS.models, () => this.request(cwd, 'command.list', {})); }
   async commandExecute(cwd: string, input: Record<string, unknown>): Promise<unknown> { return this.request(cwd, 'command.execute', input); }
   async commandCancel(cwd: string, commandId: string): Promise<unknown> { return this.request(cwd, 'command.cancel', { commandId }); }
 
@@ -96,5 +98,15 @@ export class AgentManager {
 
   private async request(cwd: string, method: string, input: Record<string, unknown>): Promise<unknown> {
     return (this.getOrCreate(await requireDirectory(cwd))).request(method, input);
+  }
+
+  private async cachedProtocolResult(cwd: string, kind: string, ttlMs: number, load: () => Promise<unknown>): Promise<unknown> {
+    const canonical = await requireDirectory(cwd);
+    const key = `agent:${kind}:${canonical}`;
+    const cached = await this.cache?.get<unknown>(key);
+    if (cached !== undefined) return cached;
+    const value = await load();
+    await this.cache?.set(key, value, ttlMs);
+    return value;
   }
 }

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { describe, expect, it } from 'vitest';
-import { Avatar, Button, Modal, Skeleton, Tooltip } from './ui.js';
+import { describe, expect, it, vi } from 'vitest';
+import { Avatar, Button, CopyTextButton, Modal, Skeleton, Tooltip } from './ui.js';
 
 describe('desktop UI primitives', () => {
   it('renders a semantic button variant and interaction', () => {
@@ -41,5 +41,30 @@ describe('desktop UI primitives', () => {
     render(<Tooltip label="Copy response"><Skeleton>42</Skeleton></Tooltip>);
     expect(screen.getByRole('tooltip')).toHaveTextContent('Copy response');
     expect(screen.getByText('42')).toHaveClass('skeleton');
+  });
+
+  it('copies text through the shared clipboard action', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    render(<CopyTextButton content="response text" label="Copy response" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy response' }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('response text'));
+    expect(screen.getAllByRole('tooltip').some(tooltip => tooltip.textContent === 'Copied')).toBe(true);
+  });
+
+  it('falls back to the document copy command when clipboard API fails', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('Clipboard denied'));
+    const execCommand = vi.fn().mockReturnValue(true);
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand });
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    render(<CopyTextButton content="user message" label="Copy message" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy message' }));
+
+    await waitFor(() => expect(execCommand).toHaveBeenCalledWith('copy'));
+    expect(screen.getAllByRole('tooltip').some(tooltip => tooltip.textContent === 'Copied')).toBe(true);
+    delete (document as { execCommand?: unknown }).execCommand;
   });
 });

@@ -1,20 +1,29 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CreditCard, UserRound } from 'lucide-react';
+import { ArrowLeft, Blocks, CreditCard, Plug, Puzzle, UserRound, Workflow } from 'lucide-react';
 import type { UserProfile } from '../../../contracts/ipc/v1/auth.js';
+import type { Workspace } from '../../../contracts/ipc/v1/workspace.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
 import { Avatar, Button, Card, Icon, Skeleton, Tooltip } from '../../components/ui.js';
 import { formatTime } from '../../utils/time.js';
+import { ExtensionsPage } from './ExtensionsPage.js';
+import type { ExtensionKind } from './extension-command-client.js';
 
-type SettingsSection = 'profile' | 'billing';
+type SettingsSection = 'profile' | 'billing' | ExtensionKind;
 
-export function SettingsPage({ user, onBack }: { user: UserProfile; onBack: () => void }) {
+const settingsGroups: Array<{ title: string; items: Array<{ value: SettingsSection; label: string; icon: typeof UserRound }> }> = [
+  { title: 'Account', items: [{ value: 'profile', label: 'Profile', icon: UserRound }, { value: 'billing', label: 'Billing', icon: CreditCard }] },
+  { title: 'Extensions', items: [{ value: 'hook', label: 'Hooks', icon: Workflow }, { value: 'skill', label: 'Skills', icon: Puzzle }, { value: 'plugin', label: 'Plugins', icon: Blocks }, { value: 'mcp', label: 'MCP', icon: Plug }] },
+];
+
+export function SettingsPage({ user, workspace, onBack }: { user: UserProfile; workspace?: Workspace; onBack: () => void }) {
   const [section, setSection] = useState<SettingsSection>('profile');
   const accountName = user.fullName ?? user.username ?? user.email;
   const organizationCode = useMemo(() => user.defaultOrganizationCode ?? user.organizations[0]?.organizationCode, [user]);
 
+  const title = settingsGroups.flatMap(group => group.items).find(item => item.value === section)?.label ?? 'Settings';
   return <div className="settings-page">
-    <aside className="settings-sidebar"><Button variant="ghost" className="settings-back" onClick={onBack}><Icon icon={ArrowLeft} size={16} /> Back to app</Button><h2>Settings</h2><Scrollbar className="settings-nav"><div className="settings-nav-list"><button className={section === 'profile' ? 'settings-nav-item selected' : 'settings-nav-item'} onClick={() => setSection('profile')}><Icon icon={UserRound} size={15} /> Profile</button><button className={section === 'billing' ? 'settings-nav-item selected' : 'settings-nav-item'} onClick={() => setSection('billing')}><Icon icon={CreditCard} size={15} /> Billing</button></div></Scrollbar></aside>
-    <Scrollbar className="settings-content-scrollbar"><main className="settings-content"><header className="settings-header"><h1>{section === 'profile' ? 'Profile' : 'Billing'}</h1></header>{section === 'profile' ? <ProfilePanel user={user} accountName={accountName} /> : <BillingPanel {...(organizationCode ? { organizationCode } : {})} />}</main></Scrollbar>
+    <aside className="settings-sidebar"><Button variant="ghost" className="settings-back" onClick={onBack}><Icon icon={ArrowLeft} size={16} /> Back to app</Button><h2>Settings</h2><Scrollbar className="settings-nav"><div className="settings-nav-groups">{settingsGroups.map(group => <section className="settings-nav-group" key={group.title}><h3>{group.title}</h3><div className="settings-nav-list">{group.items.map(item => <button key={item.value} className={section === item.value ? 'settings-nav-item selected' : 'settings-nav-item'} onClick={() => setSection(item.value)}><Icon icon={item.icon} size={15} /> {item.label}</button>)}</div></section>)}</div></Scrollbar></aside>
+    <Scrollbar className="settings-content-scrollbar"><main className="settings-content"><header className="settings-header"><h1>{title}</h1></header>{section === 'profile' ? <ProfilePanel user={user} accountName={accountName} /> : section === 'billing' ? <BillingPanel {...(organizationCode ? { organizationCode } : {})} /> : <ExtensionsPage kind={section} {...(workspace?.rootPath ? { cwd: workspace.rootPath } : {})} trusted={workspace?.trusted === true} />}</main></Scrollbar>
   </div>;
 }
 

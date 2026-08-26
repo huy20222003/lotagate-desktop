@@ -1,8 +1,9 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, PropsWithChildren, ReactNode, TextareaHTMLAttributes } from 'react';
-import { createContext, forwardRef, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, forwardRef, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { CheckCircle2, ChevronDown, Info, X, XCircle } from 'lucide-react';
+import { Check, CheckCircle2, ChevronDown, Copy, Info, X, XCircle } from 'lucide-react';
 import { Scrollbar } from './Scrollbar.js';
+import { useClipboard } from '../hooks/use-clipboard.js';
 
 export function Button({ variant = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }) {
   return <button className={`button button-${variant} ${className}`} {...props} />;
@@ -24,12 +25,45 @@ export function Badge({ children, tone = 'neutral', size = 'sm', className = '' 
 export function Card({ children, className = '' }: PropsWithChildren<{ className?: string }>) { return <section className={`card ${className}`}>{children}</section>; }
 export function Divider() { return <hr className="divider" />; }
 export function EmptyState({ title, detail, action }: { title: string; detail?: string; action?: ReactNode }) { return <div className="empty-state"><strong>{title}</strong>{detail ? <p>{detail}</p> : null}{action}</div>; }
-export function Tooltip({ label, children }: PropsWithChildren<{ label: string }>) { return <span className="tooltip-wrap"><span className="tooltip-bubble" role="tooltip">{label}</span>{children}</span>; }
+export function Tooltip({ label, children }: PropsWithChildren<{ label: string }>) {
+  const tooltipRef = useRef<HTMLSpanElement>(null);
+  const [placement, setPlacement] = useState<'top' | 'bottom'>('top');
+  useLayoutEffect(() => {
+    const updatePlacement = () => {
+      const tooltip = tooltipRef.current;
+      const bubble = tooltip?.querySelector<HTMLElement>('.tooltip-bubble');
+      if (!tooltip || !bubble) return;
+      const bounds = tooltip.getBoundingClientRect();
+      const bubbleHeight = bubble.getBoundingClientRect().height;
+      const gap = 7;
+      const below = window.innerHeight - bounds.bottom;
+      const above = bounds.top;
+      setPlacement(below >= bubbleHeight + gap || below >= above ? 'bottom' : 'top');
+    };
+    updatePlacement();
+    window.addEventListener('resize', updatePlacement);
+    window.addEventListener('scroll', updatePlacement, true);
+    return () => {
+      window.removeEventListener('resize', updatePlacement);
+      window.removeEventListener('scroll', updatePlacement, true);
+    };
+  }, []);
+  return <span ref={tooltipRef} className={`tooltip-wrap tooltip-${placement}`}><span className="tooltip-bubble" role="tooltip">{label}</span>{children}</span>;
+}
 export function Skeleton({ children, className = '' }: PropsWithChildren<{ className?: string }>) { return <span className={`skeleton ${className}`} aria-hidden="true">{children}</span>; }
+
+export function CopyTextButton({ content, label }: { content: string; label: string }) {
+  const { copy, status } = useClipboard();
+  const copied = status === 'copied';
+  const tooltipLabel = status === 'error' ? 'Copy failed' : copied ? 'Copied' : label;
+  return <Tooltip label={tooltipLabel}><button type="button" className="agent-copy-button" aria-label={label} onClick={() => void copy(content)}>{copied ? <Check size={13} /> : <Copy size={13} />}</button></Tooltip>;
+}
 
 export function Dropdown({ label, value, options, onChange, disabled = false, className = '' }: { label?: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void; disabled?: boolean; className?: string }) {
   const [open, setOpen] = useState(false);
+  const [placement, setPlacement] = useState<'bottom' | 'top'>('bottom');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const selected = options.find(option => option.value === value)?.label ?? value;
   useEffect(() => {
     if (!open) return;
@@ -37,14 +71,34 @@ export function Dropdown({ label, value, options, onChange, disabled = false, cl
     document.addEventListener('pointerdown', closeOnOutsideClick);
     return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
   }, [open]);
-  return <div ref={dropdownRef} className={`dropdown ${className} ${open ? 'open' : ''}`}>{label ? <span className="field-label">{label}</span> : null}<button type="button" className="model-select" aria-label={label ?? 'Select option'} aria-expanded={open} disabled={disabled} onClick={() => setOpen(current => !current)}><span>{selected}</span><ChevronDown size={14} /></button>{open ? <div className="dropdown-menu"><Scrollbar><div className="dropdown-options">{options.map(option => <button type="button" key={option.value} className={option.value === value ? 'dropdown-option selected' : 'dropdown-option'} onClick={() => { onChange(option.value); setOpen(false); }}>{option.label}</button>)}</div></Scrollbar></div> : null}</div>;
+  useLayoutEffect(() => {
+    if (!open) return;
+    const updatePlacement = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const bounds = trigger.getBoundingClientRect();
+      const gap = 8;
+      const estimatedHeight = Math.min(320, Math.max(96, options.length * 32 + 8));
+      const below = window.innerHeight - bounds.bottom - gap;
+      const above = bounds.top - gap;
+      setPlacement(below < estimatedHeight && above > below ? 'top' : 'bottom');
+    };
+    updatePlacement();
+    window.addEventListener('resize', updatePlacement);
+    window.addEventListener('scroll', updatePlacement, true);
+    return () => {
+      window.removeEventListener('resize', updatePlacement);
+      window.removeEventListener('scroll', updatePlacement, true);
+    };
+  }, [open, options.length]);
+  return <div ref={dropdownRef} className={`dropdown ${className} ${open ? 'open' : ''}`}>{label ? <span className="field-label">{label}</span> : null}<button ref={triggerRef} type="button" className="model-select" aria-label={label ?? 'Select option'} aria-expanded={open} disabled={disabled} onClick={() => setOpen(current => !current)}><span>{selected}</span><ChevronDown size={14} /></button>{open ? <div className={`dropdown-menu dropdown-menu-${placement}`}><Scrollbar><div className="dropdown-options">{options.map(option => <button type="button" key={option.value} className={option.value === value ? 'dropdown-option selected' : 'dropdown-option'} onClick={() => { onChange(option.value); setOpen(false); }}>{option.label}</button>)}</div></Scrollbar></div> : null}</div>;
 }
 
 export function Tabs({ value, items, onChange }: { value: string; items: Array<{ value: string; label: string }>; onChange: (value: string) => void }) { return <div className="tabs" role="tablist" aria-label="Views">{items.map(item => <button key={item.value} role="tab" aria-selected={value === item.value} className={`tab ${value === item.value ? 'selected' : ''}`} onClick={() => onChange(item.value)}>{item.label}</button>)}</div>; }
 
 export function Table<T extends { id: string }>({ columns, rows }: { columns: Array<{ key: string; label: string; render?: (row: T) => ReactNode }>; rows: T[] }) { return <div className="table-wrap"><table><thead><tr>{columns.map(column => <th key={column.key} scope="col">{column.label}</th>)}</tr></thead><tbody>{rows.map(row => <tr key={row.id}>{columns.map(column => <td key={column.key}>{column.render ? column.render(row) : String((row as Record<string, unknown>)[column.key] ?? '')}</td>)}</tr>)}</tbody></table></div>; }
 
-export function Modal({ title, children, onClose }: PropsWithChildren<{ title: string; onClose: () => void }>) {
+export function Modal({ title, subtitle, children, onClose, className = '' }: PropsWithChildren<{ title: string; subtitle?: string; onClose: () => void; className?: string }>) {
   const dialogRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -62,7 +116,7 @@ export function Modal({ title, children, onClose }: PropsWithChildren<{ title: s
     document.addEventListener('keydown', keydown);
     return () => document.removeEventListener('keydown', keydown);
   }, [onClose]);
-  return <div className="modal-backdrop" role="presentation"><section ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header className="modal-header"><h2 id="modal-title">{title}</h2><button className="icon-button" aria-label="Close" onClick={onClose}><X size={17} /></button></header>{children}</section></div>;
+  return <div className="modal-backdrop" role="presentation"><section ref={dialogRef} className={`modal ${className}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><header className="modal-header"><div className="modal-heading"><h2 id="modal-title">{title}</h2>{subtitle ? <span className="modal-subtitle">{subtitle}</span> : null}</div><button className="icon-button" aria-label="Close" onClick={onClose}><X size={17} /></button></header>{children}</section></div>;
 }
 
 export function Spinner({ label = 'Loading' }: { label?: string }) {

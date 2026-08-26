@@ -9,6 +9,6 @@ describe('sessionSlugFromPrompt', () => {
   it('bounds long session slugs without losing the prompt identity', () => {
     const slug = sessionSlugFromPrompt('a'.repeat(100));
     expect(slug).toHaveLength(80);
-    expect(slug.endsWith('…')).toBe(true);
+    expect(slug.endsWith('....')).toBe(true);
   });
 });

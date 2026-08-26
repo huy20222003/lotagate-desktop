@@ -36,6 +36,20 @@ export function fileChangeSummariesFromActivities(activities: readonly Activity[
   return Object.fromEntries([...changesByTurn.entries()].map(([turnId, changes]) => [turnId, summarize(changes)]));
 }
 
+export function mergeFileChangeSummaries(current: FileChangeSummariesByTurn, next: FileChangeSummariesByTurn): FileChangeSummariesByTurn {
+  const merged = { ...current };
+  for (const [turnId, summary] of Object.entries(next)) {
+    let turnSummary = merged[turnId] ?? EMPTY_FILE_CHANGE_SUMMARY;
+    const existingPaths = new Set(turnSummary.files.map(change => change.path));
+    for (const change of summary.files) {
+      if (existingPaths.has(change.path)) continue;
+      turnSummary = mergeFileChange(turnSummary, change);
+    }
+    merged[turnId] = turnSummary;
+  }
+  return merged;
+}
+
 export function mergeFileChangeForTurn(summaries: FileChangeSummariesByTurn, turnId: string, value: unknown): FileChangeSummariesByTurn {
   const next = parseFileChange(value);
   if (next === undefined) return summaries;
