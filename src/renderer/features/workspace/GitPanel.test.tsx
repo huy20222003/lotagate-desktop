@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GitRepositorySnapshot } from '../../../contracts/ipc/v1/workspace.js';
@@ -8,7 +8,7 @@ import { GitPanel } from './GitPanel.js';
 describe('GitPanel', () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-  it('loads repository changes and performs stage, diff, and commit actions', async () => {
+  it('loads repository changes and performs stage and commit actions', async () => {
     const snapshot: GitRepositorySnapshot = { root: '/workspace', repositoryName: 'workspace', branch: 'main', detached: false, upstream: 'origin/main', ahead: 1, behind: 0, clean: false, conflicts: 0, changes: [{ path: 'src/file.ts', status: 'modified', indexStatus: '.', worktreeStatus: 'M', staged: false, unstaged: true, binary: false }, { path: 'README.md', status: 'modified', indexStatus: '.', worktreeStatus: 'M', staged: false, unstaged: true, binary: false }, { path: '.lotagate/', status: 'untracked', indexStatus: '?', worktreeStatus: '?', staged: false, unstaged: true, binary: false, directory: true }], exitCode: 0, stderr: '', updatedAt: new Date().toISOString() };
     let currentSnapshot = snapshot;
     const stageAll = vi.fn().mockImplementation(() => { currentSnapshot = { ...currentSnapshot, changes: currentSnapshot.changes.map(change => ({ ...change, staged: true, unstaged: false, indexStatus: 'M', worktreeStatus: '.' })) }; return Promise.resolve(); });
@@ -20,6 +20,17 @@ describe('GitPanel', () => {
     expect(screen.getByText('workspace')).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Commit message' })).toHaveClass('text-area');
     expect(screen.getByText('.lotagate/')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Current Git branch' })).toHaveClass('model-select');
+    fireEvent.click(screen.getByRole('button', { name: 'New branch' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Branch name' }), { target: { value: 'feature/git-panel' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create branch' }));
+    await waitFor(() => expect(window.lotagate.git.createBranch).toHaveBeenCalledWith('/workspace', 'feature/git-panel'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pull' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Pull' }));
+    const pullDialog = screen.getByRole('dialog', { name: 'Pull from remote?' });
+    expect(pullDialog).toBeVisible();
+    fireEvent.click(within(pullDialog).getByRole('button', { name: 'Pull' }));
+    await waitFor(() => expect(window.lotagate.git.pull).toHaveBeenCalledWith('/workspace'));
     fireEvent.click(screen.getAllByRole('button', { name: 'Stage' })[0]!);
     await waitFor(() => expect(stage).toHaveBeenCalledWith('/workspace', 'src/file.ts'));
     fireEvent.click(screen.getByRole('button', { name: 'Stage all' }));
