@@ -1,14 +1,20 @@
 .workspace-shell { display: grid; height: 100vh; min-height: 0; grid-template-columns: 290px minmax(0, 1fr); overflow: hidden; background: var(--color-canvas); filter: contrast(var(--ui-contrast, 1)); }
 .workspace-shell.sidebar-collapsed { grid-template-columns: 64px minmax(0, 1fr); }
-.sidebar { position: relative; display: flex; height: 100vh; min-height: 0; flex-direction: column; overflow: hidden; border-right: 1px solid var(--color-border); background: var(--color-canvas); }
+.sidebar { position: relative; display: flex; width: 100%; height: 100vh; min-height: 0; flex-direction: column; overflow: hidden; border-right: 1px solid var(--color-border); background: var(--color-canvas); }
+.sidebar.is-resizing { user-select: none; }
+.sidebar-resize-handle { position: absolute; top: 0; right: 0; bottom: 0; z-index: 3; width: 10px; cursor: col-resize; touch-action: none; outline: none; }
+.sidebar-resize-handle::after { position: absolute; top: 0; right: 4px; bottom: 0; width: 2px; background: transparent; content: ''; transition: background .15s ease; }
+.sidebar-resize-handle:hover::after, .sidebar-resize-handle:focus-visible::after, .sidebar.is-resizing .sidebar-resize-handle::after { background: var(--color-accent); }
 .sidebar-header { display: flex; height: 64px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--color-border); padding: 0 18px; }
 .sidebar-toggle { flex: 0 0 auto; }
 .sidebar-collapsed .sidebar-header { justify-content: center; padding: 0 12px; }
 .sidebar-collapsed .brand-mark, .sidebar-collapsed .new-task, .sidebar-collapsed .workspace-scrollbar, .sidebar-collapsed .account-copy, .sidebar-collapsed .account-chevron { display: none; }
+.sidebar-collapsed .sidebar-resize-handle { display: none; }
 .sidebar-collapsed .account-area { padding-right: 9px; padding-left: 9px; }
 .sidebar-collapsed .account-button { justify-content: center; padding-right: 0; padding-left: 0; }
 .icon-button { display: inline-grid; width: 30px; height: 30px; place-items: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--color-text-tertiary); }
 .new-task { margin: 16px 16px 12px; justify-content: flex-start; }
+.ui-button.new-task { justify-content: flex-start; }
 .workspace-list { min-height: 0; flex: 1; overflow: auto; }
 .scrollbar { position: relative; min-height: 0; flex: 1; }
 .scrollbar-thin .scrollbar-track { width: 4px; }

@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { ChevronDown, CirclePlus, Folder, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, X } from 'lucide-react';
+import { useEffect, useRef, type KeyboardEventHandler, type PointerEventHandler } from 'react';
+import { ChevronDown, CirclePlus, Folder, PanelLeftClose, PanelLeftOpen, Pencil, Settings, ShieldCheck, X } from 'lucide-react';
 import type { Task, Workspace } from '../../../contracts/ipc/v1/workspace.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
 import { Avatar, Button, Icon, Skeleton } from '../../components/ui.js';
@@ -13,9 +13,10 @@ export interface WorkspaceSidebarProps {
   accountOpen: boolean; onAccount: () => void; onCloseAccount: () => void; onSettings: () => void; onLogout: () => void;
   onNewChat: (workspace?: Workspace) => void; onWorkspace: (workspace: Workspace) => void; onTask: (task: Task) => void; onAddWorkspace: () => void;
   onRenameWorkspace: (workspace: Workspace) => void; onRemoveWorkspace: (workspace: Workspace) => void; onArchiveTask: (task: Task) => void; onPinTask: (task: Task, pinned: boolean) => void; onRenameTask: (task: Task) => void; collapsed: boolean; onToggleCollapsed: () => void;
+  sidebarResizing: boolean; onStartResize: PointerEventHandler<HTMLDivElement>; onResizeKeyDown: KeyboardEventHandler<HTMLDivElement>;
 }
 
-export function WorkspaceSidebar({ accountName, avatarProps, workspaces, activeWorkspace, tasks, activeTask, loading, accountOpen, onAccount, onCloseAccount, onSettings, onLogout, onNewChat, onWorkspace, onTask, onAddWorkspace, onRenameWorkspace, onRemoveWorkspace, onArchiveTask, onPinTask, onRenameTask, collapsed, onToggleCollapsed }: WorkspaceSidebarProps) {
+export function WorkspaceSidebar({ accountName, avatarProps, workspaces, activeWorkspace, tasks, activeTask, loading, accountOpen, onAccount, onCloseAccount, onSettings, onLogout, onNewChat, onWorkspace, onTask, onAddWorkspace, onRenameWorkspace, onRemoveWorkspace, onArchiveTask, onPinTask, onRenameTask, collapsed, onToggleCollapsed, sidebarResizing, onStartResize, onResizeKeyDown }: WorkspaceSidebarProps) {
   const accountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -26,9 +27,10 @@ export function WorkspaceSidebar({ accountName, avatarProps, workspaces, activeW
   }, [accountOpen, onCloseAccount]);
 
   const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
-  return <aside className="sidebar">
+  return <aside className={`sidebar${sidebarResizing ? ' is-resizing' : ''}`}>
+    <div className="sidebar-resize-handle" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" tabIndex={0} onPointerDown={onStartResize} onKeyDown={onResizeKeyDown} />
     <header className="sidebar-header"><div className="brand-mark"><BrandLogo /><span>LotaGate</span></div><button type="button" className="icon-button ui-icon-button sidebar-toggle" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!collapsed} onClick={onToggleCollapsed}><Icon icon={ToggleIcon} size={17} /></button></header>
-    <Button variant="secondary" className="new-task" onClick={() => onNewChat(activeWorkspace)} disabled={activeWorkspace === undefined}><Icon icon={CirclePlus} size={16} /> New Chat</Button>
+    <Button variant="secondary" className="new-task" onClick={() => onNewChat(activeWorkspace)} disabled={activeWorkspace === undefined}><Icon icon={Pencil} size={16} /> New Chat</Button>
     <Scrollbar className="workspace-scrollbar sidebar-section">
       <div className="section-heading"><span>Workspaces</span><button className="icon-button ui-icon-button" aria-label="Add workspace" onClick={onAddWorkspace}><Icon icon={CirclePlus} size={14} /></button></div>
       {loading ? <SidebarLoadingSkeleton /> : workspaces.length === 0 ? <button className="workspace-row" onClick={onAddWorkspace}><Icon icon={Folder} size={15} /><span>Add a workspace</span></button> : workspaces.map(workspace => <WorkspaceGroup key={workspace.id} workspace={workspace} tasks={tasks.filter(task => task.workspaceId === workspace.id && !task.archived)} activeTask={activeTask} onWorkspace={onWorkspace} onTask={onTask} onNewChat={onNewChat} onRename={onRenameWorkspace} onRemove={onRemoveWorkspace} onArchive={onArchiveTask} onPin={onPinTask} onRenameTask={onRenameTask} />)}
