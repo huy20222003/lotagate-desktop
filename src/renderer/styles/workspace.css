@@ -17,6 +17,7 @@
 .new-task { margin-top: 16px; margin-bottom: 2px; }
 .sidebar-plugin { margin-top: 0; margin-bottom: 12px; }
 .ui-button.sidebar-action { justify-content: flex-start; }
+.ui-button.sidebar-action:hover:not(:disabled) { background: var(--color-surface); color: var(--color-text); }
 .workspace-list { min-height: 0; flex: 1; overflow: auto; }
 .scrollbar { position: relative; min-height: 0; flex: 1; }
 .scrollbar-thin .scrollbar-track { width: 4px; }
