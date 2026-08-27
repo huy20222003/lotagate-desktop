@@ -13,7 +13,7 @@ import { ConversationTimeline } from './ConversationTimeline.js';
 import { useKeyboardShortcuts } from '../../services/keyboard-shortcuts.js';
 import { toUserErrorMessage as toMessage } from '../../utils/errors.js';
 import { workspaceNameSchema } from '../../validation/shared.js';
-import { FileChangesDrawer } from './WorkspaceOverlays.js';
+import { FileChangesDrawer, GitPanel } from './WorkspaceOverlays.js';
 import { Composer } from './Composer.js';
 import { ConversationHeader } from './ConversationHeader.js';
 import { ChatLoadingSkeleton } from './ChatLoadingSkeleton.js';
@@ -44,6 +44,7 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
+  const [gitOpen, setGitOpen] = useState(false);
   const [agentBrowserSessionId, setAgentBrowserSessionId] = useState<string>();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [changesSummary, setChangesSummary] = useState<FileChangeSummary | undefined>();
@@ -127,6 +128,7 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
     setAgentBrowserSessionId(browserSessionId);
     setChangesOpen(false);
     setSourcesOpen(false);
+    setGitOpen(false);
     setBrowserOpen(true);
   }), [controller.workspace?.rootPath]);
   useEffect(() => {
@@ -187,21 +189,22 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   async function confirmLogout() { setLoggingOut(true); try { await window.lotagate.auth.logout(); onLoggedOut(); } finally { setLoggingOut(false); setLogoutOpen(false); } }
   const accountName = user.fullName ?? user.username ?? user.email;
   const avatarProps = user.avatarUrl ? { name: accountName, src: user.avatarUrl } : { name: accountName };
-  const openChanges = useCallback((summary: FileChangeSummary) => { setChangesSummary(summary); setSourcesOpen(false); setBrowserOpen(false); setChangesOpen(true); }, []);
+  const openChanges = useCallback((summary: FileChangeSummary) => { setChangesSummary(summary); setSourcesOpen(false); setBrowserOpen(false); setGitOpen(false); setChangesOpen(true); }, []);
   const latestFileChanges = controller.fileChanges.files.length > 0 ? controller.fileChanges : [...Object.values(controller.fileChangesByTurn)].reverse().find(summary => summary.files.length > 0) ?? controller.fileChanges;
-  const toggleFileChanges = useCallback(() => { if (changesOpen) { setChangesOpen(false); return; } setChangesSummary(latestFileChanges); setSourcesOpen(false); setBrowserOpen(false); setChangesOpen(true); }, [changesOpen, latestFileChanges]);
-  const toggleSources = useCallback(() => { if (sourcesOpen) { setSourcesOpen(false); return; } setChangesOpen(false); setBrowserOpen(false); setSourcesOpen(true); }, [sourcesOpen]);
-  const toggleBrowser = useCallback(() => { if (browserOpen) { setBrowserOpen(false); return; } setChangesOpen(false); setSourcesOpen(false); setBrowserOpen(true); }, [browserOpen]);
+  const toggleFileChanges = useCallback(() => { if (changesOpen) { setChangesOpen(false); return; } setChangesSummary(latestFileChanges); setSourcesOpen(false); setBrowserOpen(false); setGitOpen(false); setChangesOpen(true); }, [changesOpen, latestFileChanges]);
+  const toggleSources = useCallback(() => { if (sourcesOpen) { setSourcesOpen(false); return; } setChangesOpen(false); setBrowserOpen(false); setGitOpen(false); setSourcesOpen(true); }, [sourcesOpen]);
+  const toggleBrowser = useCallback(() => { if (browserOpen) { setBrowserOpen(false); return; } setChangesOpen(false); setSourcesOpen(false); setGitOpen(false); setBrowserOpen(true); }, [browserOpen]);
+  const toggleGit = useCallback(() => { if (gitOpen) { setGitOpen(false); return; } setChangesOpen(false); setSourcesOpen(false); setBrowserOpen(false); setGitOpen(true); }, [gitOpen]);
   const showConversationControls = showScrollBottom || (controller.thinking && controller.fileChanges.files.length > 0);
   const isWelcomeState = controller.task !== undefined && controller.workspace !== undefined && !controller.loading && !controller.activitiesLoading && !controller.thinking && !controller.activities.some(activity => activity.kind === 'user');
-  useEffect(() => { setChangesSummary(undefined); setAgentBrowserSessionId(undefined); setBrowserOpen(false); }, [controller.task?.id]);
+  useEffect(() => { setChangesSummary(undefined); setAgentBrowserSessionId(undefined); setBrowserOpen(false); setGitOpen(false); }, [controller.task?.id]);
   const scrollToMessage = useCallback((activityId: string) => { document.getElementById(`chat-message-${activityId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, []);
   if (settingsOpen) return <SettingsPage user={user} {...(controller.workspace === undefined ? {} : { workspace: controller.workspace })} keyboardShortcuts={keyboardShortcuts.bindings} onUpdateShortcut={keyboardShortcuts.updateShortcut} onBack={() => setSettingsOpen(false)} />;
   const composer = <Composer disabled={controller.workspace === undefined} workspace={controller.workspace} thinking={controller.thinking} task={controller.task} attachments={controller.attachments} queuedMessages={controller.queuedMessages} models={controller.models} selectedModel={controller.selectedModel} onModel={controller.setSelectedModel} busy={controller.busy} error={controller.error} onSend={controller.sendPrompt} onRunCommand={controller.runCommand} onCancel={controller.cancelTask} onDraft={controller.updateDraft} onAttach={controller.pickArtifact} onAttachImage={controller.attachImage} onRemoveAttachment={controller.removeAttachment} onSteerQueued={controller.steerQueuedMessage} onRemoveQueued={controller.removeQueuedMessage} onEditQueued={controller.editQueuedMessage} onOpenImage={setLightboxImage} approval={controller.approval} approvalMode={controller.approvalMode} onApprovalMode={controller.setApprovalMode} onApproval={controller.respondApproval} />;
   return <div className={`workspace-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
      <WorkspaceSidebar accountName={accountName} avatarProps={avatarProps} workspaces={controller.workspaces} activeWorkspace={controller.workspace} tasks={controller.tasks} activeTask={controller.task} loading={controller.loading} accountOpen={accountOpen} onAccount={() => setAccountOpen(open => !open)} onCloseAccount={() => setAccountOpen(false)} onSettings={() => { setSettingsOpen(true); setAccountOpen(false); }} onLogout={() => { setLogoutOpen(true); setAccountOpen(false); }} onNewChat={startNewChat} onWorkspace={controller.selectWorkspace} onTask={controller.selectTask} onAddWorkspace={() => void openWorkspacePicker()} onRenameWorkspace={startRename} onRemoveWorkspace={startRemove} onArchiveTask={setArchiveTarget} onPinTask={(target, pinned) => { void controller.pinTaskById(target.id, pinned).catch(reason => showError('Unable to update session pin', toMessage(reason))); }} onRenameTask={startRenameTask} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed(current => !current)} />
-     <main className={`conversation${changesOpen ? ' has-file-changes' : ''}${browserOpen ? ' has-browser' : ''}${isWelcomeState ? ' is-welcome' : ''}`}>
-       {isWelcomeState ? null : <ConversationHeader task={controller.task} workspace={controller.workspace} changesOpen={changesOpen} sourcesOpen={sourcesOpen} terminalOpen={terminalOpen} browserOpen={browserOpen} onToggleChanges={toggleFileChanges} onToggleSources={toggleSources} onToggleTerminal={() => setTerminalOpen(open => !open)} onToggleBrowser={toggleBrowser} onRenameTask={startRenameTask} onPinTask={(pinned) => { if (controller.task) void controller.pinTaskById(controller.task.id, pinned).catch(reason => showError('Unable to update session pin', toMessage(reason))); }} onArchiveTask={() => { if (controller.task) setArchiveTarget(controller.task); }} />}
+    <main className={`conversation${changesOpen ? ' has-file-changes' : ''}${browserOpen ? ' has-browser' : ''}${gitOpen ? ' has-git' : ''}${isWelcomeState ? ' is-welcome' : ''}`}>
+       {isWelcomeState ? null : <ConversationHeader task={controller.task} workspace={controller.workspace} changesOpen={changesOpen} sourcesOpen={sourcesOpen} terminalOpen={terminalOpen} browserOpen={browserOpen} gitOpen={gitOpen} onToggleChanges={toggleFileChanges} onToggleSources={toggleSources} onToggleTerminal={() => setTerminalOpen(open => !open)} onToggleBrowser={toggleBrowser} onToggleGit={toggleGit} onRenameTask={startRenameTask} onPinTask={(pinned) => { if (controller.task) void controller.pinTaskById(controller.task.id, pinned).catch(reason => showError('Unable to update session pin', toMessage(reason))); }} onArchiveTask={() => { if (controller.task) setArchiveTarget(controller.task); }} />}
        <div className="conversation-columns">
          <section className="conversation-chat">
             {isWelcomeState ? <NewChatWelcome><div className="composer-dock">{composer}</div></NewChatWelcome> : <><div className="conversation-body"><ConversationTimeline activities={controller.activities} onSelect={scrollToMessage} viewportRef={threadViewportRef} /><Scrollbar className={`thread-scrollbar${controller.thinking ? ' is-thinking' : ''}`} viewportRef={threadViewportRef}><div className="thread-content">{controller.loading || controller.activitiesLoading ? <ChatLoadingSkeleton /> : <TaskConversation task={controller.task} activities={controller.activities} activityAttachments={controller.activityAttachments} fileChangesByTurn={controller.fileChangesByTurn} onOpenFileChanges={openChanges} onOpenImage={setLightboxImage} statusText={controller.agentStatus} contextCompactionStatus={controller.contextCompactionStatus} plan={controller.plan} thinking={controller.thinking} {...(controller.thinkingStartedAt === undefined ? {} : { thinkingStartedAt: controller.thinkingStartedAt })} turnTimings={controller.turnTimings} trust={controller.trust} onTrust={controller.respondTrust} />}</div></Scrollbar></div><OrchestrationPanel plan={controller.plan} subagents={controller.subagents} /><div className="composer-dock">{showConversationControls ? <div className="conversation-controls">{showScrollBottom ? <ScrollToLatestButton thinking={controller.thinking} awayFromLatest={showScrollBottom} onClick={scrollToBottom} /> : null}{controller.thinking && controller.fileChanges.files.length > 0 ? <ChangeSummaryChip summary={controller.fileChanges} onClick={() => openChanges(controller.fileChanges)} /> : null}</div> : null}{composer}</div>{terminalOpen && controller.workspace ? <TerminalPanel cwd={controller.workspace.rootPath} onClose={() => setTerminalOpen(false)} /> : null}</>}
@@ -209,6 +212,7 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
          {!isWelcomeState && changesOpen && controller.workspace ? <FileChangesDrawer cwd={controller.workspace.rootPath} summary={changesSummary ?? controller.fileChanges} onClose={() => setChangesOpen(false)} /> : null}
          {!isWelcomeState && sourcesOpen && controller.task ? <SourcesDrawer taskId={controller.task.id} refreshKey={controller.task.updatedAt} onClose={() => setSourcesOpen(false)} /> : null}
          {!isWelcomeState && browserOpen ? <BrowserPanel {...(controller.task?.id === undefined ? {} : { taskId: controller.task.id })} {...(agentBrowserSessionId === undefined ? {} : { sessionId: agentBrowserSessionId })} onClose={() => setBrowserOpen(false)} /> : null}
+         {!isWelcomeState && gitOpen && controller.workspace ? <GitPanel cwd={controller.workspace.rootPath} onClose={() => setGitOpen(false)} /> : null}
       </div>
     </main>
     {logoutOpen ? <Modal title="Sign out of LotaGate" onClose={() => setLogoutOpen(false)}><p className="modal-copy">Your server session will be cleared. Local task records remain available.</p><div className="modal-actions"><Button variant="secondary" onClick={() => setLogoutOpen(false)}>Cancel</Button><Button variant="danger" onClick={confirmLogout} disabled={loggingOut}>{loggingOut ? 'Signing out…' : 'Sign out'}</Button></div></Modal> : null}

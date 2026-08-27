@@ -147,19 +147,40 @@ export interface DesktopTaskApi {
 }
 
 export interface DesktopGitApi {
-  status(cwd: string): Promise<Record<string, unknown>>;
+  status(cwd: string): Promise<GitRepositorySnapshot>;
   diff(cwd: string, staged?: boolean): Promise<string>;
+  fileDiff(cwd: string, path: string, staged?: boolean): Promise<string>;
   readFile(cwd: string, path: string): Promise<string>;
   branches(cwd: string): Promise<string[]>;
+  branchList(cwd: string): Promise<GitBranch[]>;
   stage(cwd: string, path: string): Promise<void>;
+  stageAll(cwd: string): Promise<void>;
   unstage(cwd: string, path: string): Promise<void>;
+  unstageAll(cwd: string): Promise<void>;
   commit(cwd: string, message: string): Promise<Record<string, unknown>>;
   createBranch(cwd: string, branch: string): Promise<void>;
+  checkout(cwd: string, branch: string, confirmed: boolean): Promise<void>;
+  fetch(cwd: string): Promise<GitOperationResult>;
+  pull(cwd: string): Promise<GitOperationResult>;
+  push(cwd: string, confirmed: boolean): Promise<GitOperationResult>;
+  history(cwd: string, limit?: number): Promise<GitCommit[]>;
+  stashList(cwd: string): Promise<GitStash[]>;
+  stashSave(cwd: string, message?: string): Promise<GitOperationResult>;
+  stashApply(cwd: string, reference: string): Promise<GitOperationResult>;
+  stashDrop(cwd: string, reference: string, confirmed: boolean): Promise<GitOperationResult>;
   exportPatch(cwd: string, staged?: boolean): Promise<string>;
   worktreeAdd(cwd: string, worktreePath: string, branch: string): Promise<Record<string, unknown>>;
   worktreeRemove(cwd: string, worktreePath: string, confirmed: boolean): Promise<void>;
   restore(cwd: string, path: string, confirmed: boolean): Promise<void>;
 }
+
+export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'copied' | 'untracked' | 'conflicted' | 'ignored';
+export interface GitFileChange { path: string; originalPath?: string; status: GitFileStatus; indexStatus: string; worktreeStatus: string; staged: boolean; unstaged: boolean; binary: boolean; }
+export interface GitRepositorySnapshot { root: string; branch?: string; detached: boolean; upstream?: string; ahead: number; behind: number; clean: boolean; conflicts: number; changes: GitFileChange[]; exitCode: number; stderr: string; updatedAt: string; }
+export interface GitBranch { name: string; current: boolean; remote: boolean; upstream?: string; ahead: number; behind: number; }
+export interface GitCommit { hash: string; shortHash: string; subject: string; author: string; authoredAt: string; parents: string[]; }
+export interface GitStash { reference: string; message: string; }
+export interface GitOperationResult { output: string; exitCode: number; stderr: string; }
 
 export interface DesktopTerminalApi {
   execute(input: TerminalExecutionInput): Promise<Record<string, unknown>>;

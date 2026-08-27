@@ -1,5 +1,6 @@
 export { InlineApproval } from './InlineApproval.js';
 export { FileChangesDrawer } from './FileChangesDrawer.js';
+export { GitPanel } from './GitPanel.js';
 export { FileChangeCard } from './FileChangeCard.js';
 export { FileChangeItem } from './FileChangeItem.js';
 export { FileChangeDiffContent } from './FileChangeDiffContent.js';

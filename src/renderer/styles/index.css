@@ -5,6 +5,7 @@
 @import './layout-components.css';
 @import './settings.css';
 @import './file-changes.css';
+@import './git.css';
 @import './browser.css';
 @import './responsive.css';
 @import './ui.css';
