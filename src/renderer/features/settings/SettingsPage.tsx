@@ -12,15 +12,15 @@ import type { KeyboardShortcutAction, KeyboardShortcutBindings } from '../../ser
 import { ProfilePanel } from './ProfilePanel.js';
 import { BillingPanel } from './BillingPanel.js';
 
-type SettingsSection = 'profile' | 'billing' | 'appearance' | 'keyboard-shortcuts' | ExtensionKind;
+export type SettingsSection = 'profile' | 'billing' | 'appearance' | 'keyboard-shortcuts' | ExtensionKind;
 const settingsGroups: Array<{ title: string; items: Array<{ value: SettingsSection; label: string; icon: typeof UserRound }> }> = [
   { title: 'Account', items: [{ value: 'profile', label: 'Profile', icon: UserRound }, { value: 'billing', label: 'Billing', icon: CreditCard }] },
   { title: 'Preferences', items: [{ value: 'appearance', label: 'Appearance', icon: MonitorCog }, { value: 'keyboard-shortcuts', label: 'Keyboard shortcuts', icon: Keyboard }] },
   { title: 'Extensions', items: [{ value: 'hook', label: 'Hooks', icon: Workflow }, { value: 'skill', label: 'Skills', icon: Puzzle }, { value: 'plugin', label: 'Plugins', icon: Blocks }, { value: 'mcp', label: 'MCP', icon: Plug }] },
 ];
 
-export function SettingsPage({ user, workspace, onBack, keyboardShortcuts, onUpdateShortcut }: { user: UserProfile; workspace?: Workspace; onBack: () => void; keyboardShortcuts: KeyboardShortcutBindings; onUpdateShortcut: (action: KeyboardShortcutAction, shortcut: string | null) => Promise<void> }) {
-  const [section, setSection] = useState<SettingsSection>('profile');
+export function SettingsPage({ user, workspace, onBack, keyboardShortcuts, onUpdateShortcut, initialSection = 'profile' }: { user: UserProfile; workspace?: Workspace; onBack: () => void; keyboardShortcuts: KeyboardShortcutBindings; onUpdateShortcut: (action: KeyboardShortcutAction, shortcut: string | null) => Promise<void>; initialSection?: SettingsSection }) {
+  const [section, setSection] = useState<SettingsSection>(initialSection);
   const accountName = user.fullName ?? user.username ?? user.email;
   const organizationCode = useMemo(() => user.defaultOrganizationCode ?? user.organizations[0]?.organizationCode, [user]);
   const title = settingsGroups.flatMap(group => group.items).find(item => item.value === section)?.label ?? 'Settings';
