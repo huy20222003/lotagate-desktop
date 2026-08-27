@@ -1,7 +1,6 @@
 import { readString } from '../../utils/data.js';
 
 export function agentStatusForEvent(event: string, data: Record<string, unknown>): string | undefined {
-  if (event === 'turn.started') return 'I’ll review the request and work through it step by step.';
   if (event === 'approval.requested') {
     const displayName = readString(data['displayName']) ?? readString(data['toolName']) ?? 'this action';
     return `I need your approval before I continue with ${displayName}.`;

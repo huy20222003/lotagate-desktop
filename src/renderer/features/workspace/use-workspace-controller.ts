@@ -177,7 +177,8 @@ export function useWorkspaceController() {
       const currentTurn = turnId === undefined || activeTurnRef.current?.turnId === turnId;
       if (terminal && currentTurn) activeTurnRef.current = undefined;
       const status = agentStatusForEvent(envelope.event.event, data);
-      if (status !== undefined) setAgentStatus(status);
+      if (envelope.event.event === 'turn.started') setAgentStatus(undefined);
+      else if (status !== undefined) setAgentStatus(status);
       else if (terminal || envelope.event.event === 'tool.completed') setAgentStatus(undefined);
       if (envelope.event.event === 'turn.started') {
         setThinking(true);
@@ -287,6 +288,7 @@ export function useWorkspaceController() {
       draftTaskRef.current = activeTask;
       const attachmentIds = [...(attachmentIdsOverride ?? activeTask.draftAttachmentIds)];
       if (!isNewTask) await window.lotagate.tasks.addActivity(activeTask.id, 'user', prompt, attachmentIds.length === 0 ? {} : { attachmentIds });
+      await loadActivities(activeTask.id);
       const patch: { draft: string; draftAttachmentIds: string[]; title?: string } = { draft: '', draftAttachmentIds: [] };
       if (activeTask.title === 'New chat') {
         patch.title = sessionSlugFromPrompt(prompt);
@@ -328,7 +330,7 @@ export function useWorkspaceController() {
       return false;
     }
     finally { setBusy(false); }
-  }, [createTask, reloadTasks, selectedModel, task, workspace]);
+  }, [createTask, loadActivities, reloadTasks, selectedModel, task, workspace]);
   const enqueuePrompt = useCallback(async (prompt: string) => {
     const activeTask = draftTaskRef.current ?? task;
     if (!activeTask) return;

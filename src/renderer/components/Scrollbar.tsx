@@ -17,6 +17,7 @@ export function Scrollbar({ children, className = '', viewportRef: externalViewp
     };
     update();
     viewport.addEventListener('scroll', update, { passive: true });
+    if (typeof ResizeObserver === 'undefined') return () => viewport.removeEventListener('scroll', update);
     const observer = new ResizeObserver(update);
     observer.observe(viewport);
     if (viewport.firstElementChild) observer.observe(viewport.firstElementChild);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, CircleOff, Plus, Trash2 } from 'lucide-react';
 import { Button, Card, Dropdown, EmptyState, Field, Modal, Skeleton, TextArea, TextInput, Tooltip, useToast } from '../../components/ui.js';
 import { ExtensionCommandClient, type CommandInvocation, type ExtensionKind, type ExtensionRow, type ExtensionScope } from './extension-command-client.js';
@@ -147,7 +147,19 @@ function ExtensionDetailModal({ kind, cwd, row, detail, onClose, onSaved }: { ki
     finally { setSaving(false); }
   };
   const subtitle = detail.fileName === undefined ? {} : { subtitle: detail.fileName };
-  return <Modal title={row.name} {...subtitle} className="extension-detail-dialog" onClose={onClose}><Scrollbar className="extension-detail-scrollbar"><div className="extension-detail-modal">{kind === 'mcp' ? <McpDetailFields type={mcpType} url={mcpUrl} errors={validationErrors} editable={editable} onType={setMcpType} onUrl={setMcpUrl} {...(row.scope === undefined ? {} : { scope: row.scope })} /> : kind === 'plugin' ? <PluginDetailFields version={pluginVersion} description={pluginDescription} editable={editable} onVersion={setPluginVersion} onDescription={setPluginDescription} /> : kind === 'hook' ? <HookDetailFields event={hookEvent} command={hookCommand} args={hookArgs} timeoutMs={hookTimeout} errors={validationErrors} editable={editable} onEvent={setHookEvent} onCommand={setHookCommand} onArgs={setHookArgs} onTimeout={setHookTimeout} /> : kind === 'skill' && detail.format === 'markdown' ? editable ? <Field label="Skill content (Markdown)" error={validationErrors['content']}><TextArea className="extension-detail-editor" value={content} onChange={event => setContent(event.target.value)} spellCheck={false} /></Field> : <div className="extension-markdown-preview"><AgentMarkdown content={content} /></div> : <pre className="extension-text-preview">{content}</pre>}{error ? <p className="field-error">{error}</p> : null}</div></Scrollbar><div className="modal-actions"><Button variant="secondary" onClick={onClose}>Close</Button>{editable ? <Button variant="primary" disabled={saving || firstValidationError(validationErrors) !== undefined} onClick={() => void save()}>{saving ? 'Saving…' : 'Save changes'}</Button> : null}</div></Modal>;
+  const skillMarkdown = kind === 'skill' && detail.format === 'markdown';
+  return <Modal title={row.name} {...subtitle} className="extension-detail-dialog" onClose={onClose}><Scrollbar className="extension-detail-scrollbar"><div className="extension-detail-modal">{kind === 'mcp' ? <McpDetailFields type={mcpType} url={mcpUrl} errors={validationErrors} editable={editable} onType={setMcpType} onUrl={setMcpUrl} {...(row.scope === undefined ? {} : { scope: row.scope })} /> : kind === 'plugin' ? <PluginDetailFields version={pluginVersion} description={pluginDescription} editable={editable} onVersion={setPluginVersion} onDescription={setPluginDescription} /> : kind === 'hook' ? <HookDetailFields event={hookEvent} command={hookCommand} args={hookArgs} timeoutMs={hookTimeout} errors={validationErrors} editable={editable} onEvent={setHookEvent} onCommand={setHookCommand} onArgs={setHookArgs} onTimeout={setHookTimeout} /> : skillMarkdown && editable ? <SkillMarkdownEditor content={content} {...(validationErrors['content'] === undefined ? {} : { error: validationErrors['content'] })} onChange={setContent} /> : skillMarkdown ? <div className="extension-markdown-preview"><AgentMarkdown content={content} /></div> : <pre className="extension-text-preview">{content}</pre>}{error ? <p className="field-error">{error}</p> : null}</div></Scrollbar><div className="modal-actions"><Button variant="secondary" onClick={onClose}>Close</Button>{editable ? <Button variant="primary" disabled={saving || firstValidationError(validationErrors) !== undefined} onClick={() => void save()}>{saving ? 'Saving…' : 'Save changes'}</Button> : null}</div></Modal>;
+}
+
+function SkillMarkdownEditor({ content, error, onChange }: { content: string; error?: string; onChange: (value: string) => void }) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [content]);
+  return <Field label="Skill content (Markdown)" {...(error === undefined ? {} : { error })}><TextArea ref={textareaRef} rows={1} className="extension-detail-editor" value={content} onChange={event => onChange(event.target.value)} spellCheck={false} /></Field>;
 }
 
 function HookDetailFields({ event, command, args, timeoutMs, errors, editable, onEvent, onCommand, onArgs, onTimeout }: { event: DesktopHookEvent; command: string; args: string; timeoutMs: string; errors: ValidationErrors; editable: boolean; onEvent: (value: DesktopHookEvent) => void; onCommand: (value: string) => void; onArgs: (value: string) => void; onTimeout: (value: string) => void }) {

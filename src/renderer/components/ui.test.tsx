@@ -32,6 +32,7 @@ describe('desktop UI primitives', () => {
     const dropdownTrigger = screen.getByRole('button', { name: 'Select option' });
     fireEvent.keyDown(dropdownTrigger, { key: 'Enter' });
     await waitFor(() => expect(dropdownTrigger).toHaveAttribute('aria-expanded', 'true'));
+    expect(document.querySelector('.dropdown-scrollbar')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'Two' }));
     expect(onDropdownChange).toHaveBeenCalledWith('two');
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Second' }));
