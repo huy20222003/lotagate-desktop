@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { GitBranch, GitCommit, GitOperationResult, GitRepositorySnapshot, GitStash } from '../../contracts/ipc/v1/workspace.js';
 import { requireDirectory, assertPathInside } from '../security/path-policy.js';
 import { runGitResult, type GitResult } from './git-process.js';
@@ -17,7 +17,12 @@ export class GitService {
   async status(cwd: string): Promise<GitRepositorySnapshot> {
     const root = await requireDirectory(cwd);
     const result = await runGitResult(['status', '--porcelain=v2', '--branch', '-z'], root);
-    return parseStatusV2(result.stdout, root, result.exitCode, sanitizeGitText(result.stderr));
+    const snapshot = parseStatusV2(result.stdout, root, result.exitCode, sanitizeGitText(result.stderr));
+    const changes = await Promise.all(snapshot.changes.map(async change => {
+      try { return { ...change, directory: (await lstat(assertPathInside(change.path, root))).isDirectory() }; }
+      catch { return change; }
+    }));
+    return { ...snapshot, changes };
   }
 
   async diff(cwd: string, staged = false): Promise<string> {

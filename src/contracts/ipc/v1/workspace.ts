@@ -175,8 +175,8 @@ export interface DesktopGitApi {
 }
 
 export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'copied' | 'untracked' | 'conflicted' | 'ignored';
-export interface GitFileChange { path: string; originalPath?: string; status: GitFileStatus; indexStatus: string; worktreeStatus: string; staged: boolean; unstaged: boolean; binary: boolean; }
-export interface GitRepositorySnapshot { root: string; branch?: string; detached: boolean; upstream?: string; ahead: number; behind: number; clean: boolean; conflicts: number; changes: GitFileChange[]; exitCode: number; stderr: string; updatedAt: string; }
+export interface GitFileChange { path: string; originalPath?: string; status: GitFileStatus; indexStatus: string; worktreeStatus: string; staged: boolean; unstaged: boolean; binary: boolean; directory?: boolean; }
+export interface GitRepositorySnapshot { root: string; repositoryName: string; branch?: string; detached: boolean; upstream?: string; ahead: number; behind: number; clean: boolean; conflicts: number; changes: GitFileChange[]; exitCode: number; stderr: string; updatedAt: string; }
 export interface GitBranch { name: string; current: boolean; remote: boolean; upstream?: string; ahead: number; behind: number; }
 export interface GitCommit { hash: string; shortHash: string; subject: string; author: string; authoredAt: string; parents: string[]; }
 export interface GitStash { reference: string; message: string; }

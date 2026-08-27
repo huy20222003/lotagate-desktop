@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import type { GitBranch, GitCommit, GitFileChange, GitFileStatus, GitStash, GitRepositorySnapshot } from '../../contracts/ipc/v1/workspace.js';
 
 export function parseStatusV2(output: string, root: string, exitCode: number, stderr: string): GitRepositorySnapshot {
@@ -46,7 +47,7 @@ export function parseStatusV2(output: string, root: string, exitCode: number, st
     if (kind === '2') index += 1;
     changes.push({ path, ...(originalPath === undefined ? {} : { originalPath }), status, indexStatus: xy[0] ?? ' ', worktreeStatus: xy[1] ?? ' ', staged: xy[0] !== ' ' && xy[0] !== '?' && xy[0] !== '.', unstaged: xy[1] !== ' ' && xy[1] !== '?' && xy[1] !== '.', binary: false });
   }
-  return { root, ...(branch === undefined ? {} : { branch }), detached, ...(upstream === undefined ? {} : { upstream }), ahead, behind, clean: changes.length === 0, conflicts: changes.filter(change => change.status === 'conflicted').length, changes, exitCode, stderr, updatedAt: new Date().toISOString() };
+  return { root, repositoryName: basename(root) || root, ...(branch === undefined ? {} : { branch }), detached, ...(upstream === undefined ? {} : { upstream }), ahead, behind, clean: changes.length === 0, conflicts: changes.filter(change => change.status === 'conflicted').length, changes, exitCode, stderr, updatedAt: new Date().toISOString() };
 }
 
 function statusForXY(xy: string): GitFileStatus {
