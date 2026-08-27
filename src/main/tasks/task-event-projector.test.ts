@@ -30,6 +30,7 @@ describe('TaskEventProjector turn lifecycle', () => {
     await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'turn.started', data: { sessionId: 'session-1', turnId: 'turn-1' } });
     expect(tasks.setStatus).toHaveBeenCalledWith('task-1', 'active');
     expect(tasks.update).toHaveBeenCalledWith('task-1', { turnId: 'turn-1' });
+    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Desktop turn timing marker.', expect.objectContaining({ turnId: 'turn-1', desktopTurnTiming: expect.objectContaining({ phase: 'started', timestampMs: expect.any(Number) }) }));
   });
 
   it('clears stale turn state after a failed turn', async () => {
@@ -37,6 +38,7 @@ describe('TaskEventProjector turn lifecycle', () => {
     await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'turn.failed', data: { sessionId: 'session-1', turnId: 'turn-1', error: 'Agent failed.' } });
     expect(tasks.setStatus).toHaveBeenCalledWith('task-1', 'failed');
     expect(tasks.update).toHaveBeenCalledWith('task-1', { turnId: undefined, interruptedReason: 'Agent failed.' });
+    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Desktop turn timing marker.', expect.objectContaining({ turnId: 'turn-1', desktopTurnTiming: expect.objectContaining({ phase: 'failed', timestampMs: expect.any(Number) }) }));
   });
 
   it('persists the compacted marker emitted by the CLI context manager', async () => {

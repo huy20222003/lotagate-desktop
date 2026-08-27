@@ -11,6 +11,7 @@ import { executeDesktopCommand, type DesktopCommandInvocation } from '../../serv
 import { extractWorkspaceModels, type WorkspaceModelOption } from './model-catalog.js';
 import { toUserErrorMessage as toMessage } from '../../utils/errors.js';
 import { agentStatusForEvent } from './agent-status.js';
+import { turnTimingsFromActivities } from './turn-timings.js';
 
 type ContextCompactionPhase = 'compacting' | 'compacted' | 'failed';
 
@@ -128,6 +129,7 @@ export function useWorkspaceController() {
     if (requestId === activityRequestRef.current) {
       const summaries = fileChangeSummariesFromActivities(next);
       setActivities(next);
+      setTurnTimings(turnTimingsFromActivities(next));
       setActivityAttachments(nextActivityAttachments);
       setFileChangesByTurn(current => mergeFileChangeSummaries(current, summaries));
       const liveTurnId = activeTurnRef.current?.turnId;
@@ -147,7 +149,7 @@ export function useWorkspaceController() {
   useEffect(() => {
     let mounted = true;
     activityRequestRef.current += 1;
-    if (!task) { setActivities([]); setActivityAttachments({}); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); return; }
+    if (!task) { setActivities([]); setTurnTimings({}); setActivityAttachments({}); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); return; }
     setActivitiesLoading(true);
     void loadActivities(task.id).catch(reason => { if (mounted) setError(toMessage(reason)); }).finally(() => { if (mounted) setActivitiesLoading(false); });
     void loadAttachmentPreviews(task.id, task.draftAttachmentIds).then(next => { if (mounted) setAttachments(next); }).catch(() => { if (mounted) setAttachments([]); });
@@ -261,6 +263,11 @@ export function useWorkspaceController() {
     const updated = await window.lotagate.workspaces.rename(workspaceId, name);
     setWorkspaces(current => current.map(item => item.id === updated.id ? updated : item));
     setWorkspace(current => current?.id === updated.id ? updated : current);
+  }, []);
+  const renameTask = useCallback(async (taskId: string, title: string) => {
+    const updated = await window.lotagate.tasks.update(taskId, { title });
+    setTasks(current => current.map(item => item.id === updated.id ? updated : item));
+    setTask(current => current?.id === updated.id ? updated : current);
   }, []);
   const removeWorkspace = useCallback(async (workspaceId: string) => {
     await window.lotagate.workspaces.remove(workspaceId);
@@ -504,7 +511,7 @@ export function useWorkspaceController() {
     setTask(current => current?.id === updated.id ? updated : current);
   }, []);
 
-  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode, trust, models, selectedModel, setSelectedModel: selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, removeQueuedMessage, editQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, trust, models, selectedModel, selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById]);
+  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode, trust, models, selectedModel, setSelectedModel: selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, removeQueuedMessage, editQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, trust, models, selectedModel, selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById]);
 }
 
 async function loadAttachmentPreviews(taskId: string, attachmentIds: readonly string[] = [], availableArtifacts?: Artifact[]): Promise<AttachmentPreview[]> {

@@ -1,3 +1,4 @@
+import { DESKTOP_TURN_TIMING_METADATA_KEY, type DesktopTurnTimingMarker } from '../../contracts/ipc/v1/workspace.js';
 import type { DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js';
 import type { TaskStore } from './task-store.js';
 
@@ -24,6 +25,8 @@ export class TaskEventProjector {
     if (selectedTask === undefined || selectedTask.archived || selectedTask.cwd !== cwd) return;
     const task = selectedTask;
     const data = event.data;
+    const timing = turnTimingMarker(event.event, data);
+    if (timing !== undefined) await this.tasks.appendEvent(task.id, 'context', 'Desktop turn timing marker.', { turnId: data['turnId'], [DESKTOP_TURN_TIMING_METADATA_KEY]: timing });
     const text = eventText(event.event, data);
     if (text !== undefined) {
       const metadata = redactMetadata(data);
@@ -55,6 +58,12 @@ function eventText(event: string, data: Record<string, unknown>): string | undef
   if (event === 'usage.updated') return 'Usage updated.';
   if (event === 'turn.failed') return failedTurnText(data);
   return undefined;
+}
+
+function turnTimingMarker(event: string, data: Record<string, unknown>): DesktopTurnTimingMarker | undefined {
+  const phase = event === 'turn.started' ? 'started' : event === 'turn.completed' ? 'completed' : event === 'turn.failed' ? 'failed' : event === 'turn.cancelled' ? 'cancelled' : undefined;
+  if (phase === undefined || typeof data['turnId'] !== 'string' || data['turnId'].length === 0) return undefined;
+  return { phase, timestampMs: Date.now() };
 }
 
 function failedTurnText(data: Record<string, unknown>): string {

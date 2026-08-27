@@ -100,6 +100,7 @@ const bridge: DesktopBridge = {
   git: {
     status: cwd => ipcRenderer.invoke('git.status', cwd),
     diff: (cwd, staged) => ipcRenderer.invoke('git.diff', cwd, staged),
+    readFile: (cwd, path) => ipcRenderer.invoke('git.readFile', cwd, path),
     branches: cwd => ipcRenderer.invoke('git.branches', cwd),
     stage: (cwd, path) => ipcRenderer.invoke('git.stage', cwd, path),
     unstage: (cwd, path) => ipcRenderer.invoke('git.unstage', cwd, path),

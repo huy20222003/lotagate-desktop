@@ -194,17 +194,87 @@
   @apply mr-2 inline-flex w-4 justify-center text-[var(--color-accent)];
 }
 
+.action-menu-trigger {
+  @apply inline-grid h-7 w-7 place-items-center rounded-[var(--radius-ui-sm)] border-0 bg-transparent text-[var(--color-text-tertiary)] outline-none transition-colors;
+}
+
+.action-menu-trigger:hover,
+.action-menu-trigger[data-state='open'],
+.action-menu-trigger:focus-visible {
+  @apply bg-[var(--color-surface-hover)] text-ui-text;
+}
+
+.action-menu-content {
+  @apply z-[120] min-w-[180px] rounded-[var(--radius-ui-md)] border border-[var(--color-border)] bg-[var(--color-surface-popover)] p-1 text-ui-text shadow-[0_15px_35px_var(--shadow-menu)];
+}
+
+.action-menu-header {
+  @apply border-b border-[var(--color-border-muted)] px-1.5 pb-2 pt-1;
+}
+
+.action-menu-header-copy {
+  @apply grid min-w-0 gap-0.5;
+}
+
+.action-menu-header-copy strong,
+.action-menu-header-copy span,
+.action-menu-header-copy small {
+  @apply overflow-hidden text-ellipsis whitespace-nowrap;
+}
+
+.action-menu-header-copy strong {
+  @apply text-[12px] font-medium text-ui-text;
+}
+
+.action-menu-header-copy span,
+.action-menu-header-copy small {
+  @apply text-[11px] text-[var(--color-text-tertiary)];
+}
+
+.action-menu-item {
+  @apply flex min-h-[32px] cursor-default items-center gap-2 rounded-[4px] px-2 text-[12px] text-[var(--color-text-secondary)] outline-none;
+}
+
+.action-menu-item[data-highlighted] {
+  @apply bg-[var(--color-surface-hover)] text-ui-text;
+}
+
+.action-menu-item-danger {
+  @apply text-[var(--color-danger)];
+}
+
+.action-menu-item-danger[data-highlighted] {
+  @apply bg-[var(--color-surface-danger-hover)] text-[var(--color-text-danger-hover)];
+}
+
 .ui-tabs {
   @apply flex gap-1 border-b border-[var(--color-border)];
 }
 
+.tab-item {
+  @apply inline-flex items-center border border-transparent border-b-0;
+}
+
 .ui-tab {
-  @apply min-h-[34px] rounded-t-[var(--radius-ui-sm)] border-b-2 border-transparent px-2.5 text-[12px] text-[var(--color-text-tertiary)] outline-none transition-colors;
+  @apply min-h-[34px] rounded-none border-b-2 border-transparent px-2.5 text-[12px] text-[var(--color-text-tertiary)] outline-none transition-colors;
+}
+
+.tab-item:has(.ui-tab[data-state='active']) {
+  @apply rounded-t-[8px] border-[var(--color-border)] bg-[var(--color-surface-elevated)];
 }
 
 .ui-tab:hover,
 .ui-tab[data-state='active'] {
   @apply border-[var(--color-accent)] text-ui-text;
+}
+
+.tab-close {
+  @apply -ml-1 inline-grid h-5 w-5 place-items-center rounded-[var(--radius-ui-sm)] border-0 bg-transparent text-[var(--color-text-tertiary)] outline-none transition-colors;
+}
+
+.tab-close:hover,
+.tab-close:focus-visible {
+  @apply bg-[var(--color-surface-hover)] text-ui-text;
 }
 
 .ui-dialog-overlay {

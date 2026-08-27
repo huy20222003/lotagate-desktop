@@ -14,6 +14,9 @@ export const workspaceSchema = z.object({
 });
 
 export const taskStatusSchema = z.enum(['queued', 'active', 'completed', 'failed', 'cancelled', 'paused', 'interrupted']);
+export const DESKTOP_TURN_TIMING_METADATA_KEY = 'desktopTurnTiming' as const;
+export type DesktopTurnTimingPhase = 'started' | 'completed' | 'failed' | 'cancelled';
+export interface DesktopTurnTimingMarker { phase: DesktopTurnTimingPhase; timestampMs: number }
 export const taskSchema = z.object({
   id: z.string().min(1),
   workspaceId: z.string().min(1),
@@ -142,6 +145,7 @@ export interface DesktopTaskApi {
 export interface DesktopGitApi {
   status(cwd: string): Promise<Record<string, unknown>>;
   diff(cwd: string, staged?: boolean): Promise<string>;
+  readFile(cwd: string, path: string): Promise<string>;
   branches(cwd: string): Promise<string[]>;
   stage(cwd: string, path: string): Promise<void>;
   unstage(cwd: string, path: string): Promise<void>;

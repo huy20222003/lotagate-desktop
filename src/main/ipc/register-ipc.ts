@@ -204,6 +204,7 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('extension.removeHook', async (event, input: unknown) => { assertTrustedRenderer(event); await extensionFiles.removeHook(hookRemoveInputSchema.parse(input)); });
   handle('git.status', async (event, cwd: unknown) => { assertTrustedRenderer(event); return git.status(await requireWorkspaceCwd(cwd)); });
   handle('git.diff', async (event, cwd: unknown, staged?: unknown) => { assertTrustedRenderer(event); return git.diff(await requireWorkspaceCwd(cwd), staged === undefined ? false : z.boolean().parse(staged)); });
+  handle('git.readFile', async (event, cwd: unknown, path: unknown) => { assertTrustedRenderer(event); return git.readFile(await requireWorkspaceCwd(cwd), cwdSchema.parse(path)); });
   handle('git.branches', async (event, cwd: unknown) => { assertTrustedRenderer(event); return git.branches(await requireWorkspaceCwd(cwd)); });
   handle('git.stage', async (event, cwd: unknown, path: unknown) => { assertTrustedRenderer(event); return git.stage(await requireWorkspaceCwd(cwd), cwdSchema.parse(path)); });
   handle('git.unstage', async (event, cwd: unknown, path: unknown) => { assertTrustedRenderer(event); return git.unstage(await requireWorkspaceCwd(cwd), cwdSchema.parse(path)); });

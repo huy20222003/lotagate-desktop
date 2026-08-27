@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDown, Folder } from 'lucide-react';
+import { ArrowDown, Archive, Folder, PanelRight, Pencil, Pin, PinOff } from 'lucide-react';
 import { WorkspaceSidebar } from './WorkspaceSidebar.js';
 import { SettingsPage } from '../settings/SettingsPage.js';
 import type { Activity, FileChangeSummary, Task, TrustRequest, Workspace } from '../../../contracts/ipc/v1/workspace.js';
 import type { UserProfile } from '../../../contracts/ipc/v1/auth.js';
-import { Button, CopyTextButton, EmptyState, Field, Modal, Skeleton, TextInput, useToast } from '../../components/ui.js';
+import { Button, CopyTextButton, EmptyState, Field, Modal, Skeleton, TextInput, Tooltip, useToast } from '../../components/ui.js';
+import { ActionMenu } from '../../components/ActionMenu.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
 import { useWorkspaceController } from './use-workspace-controller.js';
 import { AgentMarkdown } from './markdown-renderer.js';
@@ -32,12 +33,15 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<Workspace | undefined>();
+  const [renameSessionTarget, setRenameSessionTarget] = useState<Task | undefined>();
   const [removeTarget, setRemoveTarget] = useState<Workspace | undefined>();
   const [archiveTarget, setArchiveTarget] = useState<Task | undefined>();
   const [pendingWorkspacePath, setPendingWorkspacePath] = useState<string | undefined>();
   const [workspaceName, setWorkspaceName] = useState('');
+  const [sessionName, setSessionName] = useState('');
   const [workspaceActionBusy, setWorkspaceActionBusy] = useState(false);
   const [changesOpen, setChangesOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [changesSummary, setChangesSummary] = useState<FileChangeSummary | undefined>();
   const [lightboxImage, setLightboxImage] = useState<AttachmentPreview | undefined>();
   const threadViewportRef = useRef<HTMLDivElement>(null);
@@ -82,6 +86,16 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
     catch (reason) { showError('Unable to rename workspace', toMessage(reason)); }
     finally { setWorkspaceActionBusy(false); }
   }, [controller, renameTarget, showError, success, workspaceName, workspaceNameError]);
+  const startRenameTask = useCallback((target: Task) => { setSessionName(target.title); setRenameSessionTarget(target); }, []);
+  const sessionNameValidation = workspaceNameSchema.safeParse(sessionName);
+  const sessionNameError = sessionNameValidation.success ? undefined : sessionNameValidation.error.issues[0]?.message;
+  const saveSessionName = useCallback(async () => {
+    if (!renameSessionTarget || sessionNameError !== undefined) return;
+    setWorkspaceActionBusy(true);
+    try { await controller.renameTask(renameSessionTarget.id, sessionName.trim()); success('Session renamed'); setRenameSessionTarget(undefined); }
+    catch (reason) { showError('Unable to rename session', toMessage(reason)); }
+    finally { setWorkspaceActionBusy(false); }
+  }, [controller, renameSessionTarget, sessionName, sessionNameError, showError, success]);
   const startRemove = useCallback((target: Workspace) => setRemoveTarget(target), []);
   const confirmRemove = useCallback(async () => {
     if (!removeTarget) return;
@@ -136,7 +150,7 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
     const latest = controller.activities[controller.activities.length - 1];
     if (latest?.kind === 'user') followLatestRef.current = true;
     if (!viewport || (!followLatestRef.current && hasRenderedActivities.current)) return;
-    const behavior = !hasRenderedActivities.current || latest?.kind === 'user' ? 'auto' : 'smooth';
+    const behavior = !hasRenderedActivities.current || latest?.kind === 'user' || controller.thinking ? 'auto' : 'smooth';
     hasRenderedActivities.current = true;
     window.requestAnimationFrame(() => viewport.scrollTo({ top: viewport.scrollHeight, behavior }));
   }, [controller.activities, controller.agentStatus, controller.thinking]);
@@ -160,20 +174,28 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   const accountName = user.fullName ?? user.username ?? user.email;
   const avatarProps = user.avatarUrl ? { name: accountName, src: user.avatarUrl } : { name: accountName };
   const openChanges = useCallback((summary: FileChangeSummary) => { setChangesSummary(summary); setChangesOpen(true); }, []);
+  const latestFileChanges = controller.fileChanges.files.length > 0 ? controller.fileChanges : [...Object.values(controller.fileChangesByTurn)].reverse().find(summary => summary.files.length > 0) ?? controller.fileChanges;
+  const toggleFileChanges = useCallback(() => { setChangesOpen(open => { if (!open) setChangesSummary(latestFileChanges); return !open; }); }, [latestFileChanges]);
+  const showConversationControls = showScrollBottom || (controller.thinking && controller.fileChanges.files.length > 0);
+  useEffect(() => { setChangesSummary(undefined); }, [controller.task?.id]);
   const scrollToMessage = useCallback((activityId: string) => { document.getElementById(`chat-message-${activityId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, []);
   if (settingsOpen) return <SettingsPage user={user} {...(controller.workspace === undefined ? {} : { workspace: controller.workspace })} keyboardShortcuts={keyboardShortcuts.bindings} onUpdateShortcut={keyboardShortcuts.updateShortcut} onBack={() => setSettingsOpen(false)} />;
-  return <div className="workspace-shell">
-    <WorkspaceSidebar accountName={accountName} avatarProps={avatarProps} workspaces={controller.workspaces} activeWorkspace={controller.workspace} tasks={controller.tasks} activeTask={controller.task} loading={controller.loading} accountOpen={accountOpen} onAccount={() => setAccountOpen(open => !open)} onCloseAccount={() => setAccountOpen(false)} onSettings={() => { setSettingsOpen(true); setAccountOpen(false); }} onLogout={() => { setLogoutOpen(true); setAccountOpen(false); }} onNewChat={startNewChat} onWorkspace={controller.selectWorkspace} onTask={controller.selectTask} onAddWorkspace={() => void openWorkspacePicker()} onRenameWorkspace={startRename} onRemoveWorkspace={startRemove} onArchiveTask={setArchiveTarget} onPinTask={(target, pinned) => { void controller.pinTaskById(target.id, pinned).catch(reason => showError('Unable to update session pin', toMessage(reason))); }} />
-    <main className="conversation">
-      <ConversationHeader task={controller.task} workspace={controller.workspace} />
-      <div className="conversation-body"><ConversationTimeline activities={controller.activities} onSelect={scrollToMessage} viewportRef={threadViewportRef} /><Scrollbar className="thread-scrollbar" viewportRef={threadViewportRef}><div className="thread-content">{controller.loading || controller.activitiesLoading ? <ChatLoadingSkeleton /> : <TaskConversation task={controller.task} activities={controller.activities} activityAttachments={controller.activityAttachments} fileChangesByTurn={controller.fileChangesByTurn} onOpenFileChanges={openChanges} onOpenImage={setLightboxImage} statusText={controller.agentStatus} contextCompactionStatus={controller.contextCompactionStatus} thinking={controller.thinking} {...(controller.thinkingStartedAt === undefined ? {} : { thinkingStartedAt: controller.thinkingStartedAt })} turnTimings={controller.turnTimings} trust={controller.trust} onTrust={controller.respondTrust} />}</div></Scrollbar></div>
-      <OrchestrationPanel plan={controller.plan} subagents={controller.subagents} />
-      <div className="conversation-controls">{showScrollBottom ? <ScrollToLatestButton thinking={controller.thinking} awayFromLatest={showScrollBottom} onClick={scrollToBottom} /> : null}{controller.thinking && controller.fileChanges.files.length > 0 ? <ChangeSummaryChip summary={controller.fileChanges} onClick={() => openChanges(controller.fileChanges)} /> : null}</div>
-      <div className="composer-dock"><Composer disabled={controller.workspace === undefined} workspace={controller.workspace} thinking={controller.thinking} task={controller.task} attachments={controller.attachments} queuedMessages={controller.queuedMessages} models={controller.models} selectedModel={controller.selectedModel} onModel={controller.setSelectedModel} busy={controller.busy} error={controller.error} onSend={controller.sendPrompt} onRunCommand={controller.runCommand} onCancel={controller.cancelTask} onDraft={controller.updateDraft} onAttach={controller.pickArtifact} onAttachImage={controller.attachImage} onRemoveAttachment={controller.removeAttachment} onSteerQueued={controller.steerQueuedMessage} onRemoveQueued={controller.removeQueuedMessage} onEditQueued={controller.editQueuedMessage} onOpenImage={setLightboxImage} approval={controller.approval} approvalMode={controller.approvalMode} onApprovalMode={controller.setApprovalMode} onApproval={controller.respondApproval} /></div>
-      {changesOpen ? <FileChangesDrawer summary={changesSummary ?? controller.fileChanges} onClose={() => setChangesOpen(false)} /> : null}
+  return <div className={`workspace-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+    <WorkspaceSidebar accountName={accountName} avatarProps={avatarProps} workspaces={controller.workspaces} activeWorkspace={controller.workspace} tasks={controller.tasks} activeTask={controller.task} loading={controller.loading} accountOpen={accountOpen} onAccount={() => setAccountOpen(open => !open)} onCloseAccount={() => setAccountOpen(false)} onSettings={() => { setSettingsOpen(true); setAccountOpen(false); }} onLogout={() => { setLogoutOpen(true); setAccountOpen(false); }} onNewChat={startNewChat} onWorkspace={controller.selectWorkspace} onTask={controller.selectTask} onAddWorkspace={() => void openWorkspacePicker()} onRenameWorkspace={startRename} onRemoveWorkspace={startRemove} onArchiveTask={setArchiveTarget} onPinTask={(target, pinned) => { void controller.pinTaskById(target.id, pinned).catch(reason => showError('Unable to update session pin', toMessage(reason))); }} onRenameTask={startRenameTask} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed(current => !current)} />
+    <main className={`conversation${changesOpen ? ' has-file-changes' : ''}`}>
+      <ConversationHeader task={controller.task} workspace={controller.workspace} changesOpen={changesOpen} onToggleChanges={toggleFileChanges} onRenameTask={startRenameTask} onPinTask={(pinned) => { if (controller.task) void controller.pinTaskById(controller.task.id, pinned).catch(reason => showError('Unable to update session pin', toMessage(reason))); }} onArchiveTask={() => { if (controller.task) setArchiveTarget(controller.task); }} />
+      <div className="conversation-columns">
+        <section className="conversation-chat">
+          <div className="conversation-body"><ConversationTimeline activities={controller.activities} onSelect={scrollToMessage} viewportRef={threadViewportRef} /><Scrollbar className={`thread-scrollbar${controller.thinking ? ' is-thinking' : ''}`} viewportRef={threadViewportRef}><div className="thread-content">{controller.loading || controller.activitiesLoading ? <ChatLoadingSkeleton /> : <TaskConversation task={controller.task} activities={controller.activities} activityAttachments={controller.activityAttachments} fileChangesByTurn={controller.fileChangesByTurn} onOpenFileChanges={openChanges} onOpenImage={setLightboxImage} statusText={controller.agentStatus} contextCompactionStatus={controller.contextCompactionStatus} thinking={controller.thinking} {...(controller.thinkingStartedAt === undefined ? {} : { thinkingStartedAt: controller.thinkingStartedAt })} turnTimings={controller.turnTimings} trust={controller.trust} onTrust={controller.respondTrust} />}</div></Scrollbar></div>
+          <OrchestrationPanel plan={controller.plan} subagents={controller.subagents} />
+          <div className="composer-dock">{showConversationControls ? <div className="conversation-controls">{showScrollBottom ? <ScrollToLatestButton thinking={controller.thinking} awayFromLatest={showScrollBottom} onClick={scrollToBottom} /> : null}{controller.thinking && controller.fileChanges.files.length > 0 ? <ChangeSummaryChip summary={controller.fileChanges} onClick={() => openChanges(controller.fileChanges)} /> : null}</div> : null}<Composer disabled={controller.workspace === undefined} workspace={controller.workspace} thinking={controller.thinking} task={controller.task} attachments={controller.attachments} queuedMessages={controller.queuedMessages} models={controller.models} selectedModel={controller.selectedModel} onModel={controller.setSelectedModel} busy={controller.busy} error={controller.error} onSend={controller.sendPrompt} onRunCommand={controller.runCommand} onCancel={controller.cancelTask} onDraft={controller.updateDraft} onAttach={controller.pickArtifact} onAttachImage={controller.attachImage} onRemoveAttachment={controller.removeAttachment} onSteerQueued={controller.steerQueuedMessage} onRemoveQueued={controller.removeQueuedMessage} onEditQueued={controller.editQueuedMessage} onOpenImage={setLightboxImage} approval={controller.approval} approvalMode={controller.approvalMode} onApprovalMode={controller.setApprovalMode} onApproval={controller.respondApproval} /></div>
+        </section>
+        {changesOpen && controller.workspace ? <FileChangesDrawer cwd={controller.workspace.rootPath} summary={changesSummary ?? controller.fileChanges} onClose={() => setChangesOpen(false)} /> : null}
+      </div>
     </main>
     {logoutOpen ? <Modal title="Sign out of LotaGate" onClose={() => setLogoutOpen(false)}><p className="modal-copy">Your server session will be cleared. Local task records remain available.</p><div className="modal-actions"><Button variant="secondary" onClick={() => setLogoutOpen(false)}>Cancel</Button><Button variant="danger" onClick={confirmLogout} disabled={loggingOut}>{loggingOut ? 'Signing out…' : 'Sign out'}</Button></div></Modal> : null}
     {renameTarget ? <Modal title="Edit workspace" onClose={() => setRenameTarget(undefined)}><div className="modal-form"><Field label="Display name" required error={workspaceNameError}><TextInput value={workspaceName} onChange={event => setWorkspaceName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void saveWorkspaceName(); }} autoFocus /></Field></div><div className="modal-actions"><Button variant="secondary" onClick={() => setRenameTarget(undefined)}>Cancel</Button><Button variant="primary" onClick={() => void saveWorkspaceName()} disabled={workspaceActionBusy || workspaceNameError !== undefined}>{workspaceActionBusy ? 'Saving…' : 'Save'}</Button></div></Modal> : null}
+    {renameSessionTarget ? <Modal title="Rename session" onClose={() => setRenameSessionTarget(undefined)}><div className="modal-form"><Field label="Session name" required error={sessionNameError}><TextInput value={sessionName} onChange={event => setSessionName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void saveSessionName(); }} autoFocus /></Field></div><div className="modal-actions"><Button variant="secondary" onClick={() => setRenameSessionTarget(undefined)}>Cancel</Button><Button variant="primary" onClick={() => void saveSessionName()} disabled={workspaceActionBusy || sessionNameError !== undefined}>{workspaceActionBusy ? 'Saving…' : 'Save'}</Button></div></Modal> : null}
     {removeTarget ? <Modal title="Remove workspace" onClose={() => setRemoveTarget(undefined)}><p className="modal-copy">Are you want to remove <strong>{removeTarget.name}</strong> workspace?</p><div className="modal-actions"><Button variant="secondary" onClick={() => setRemoveTarget(undefined)}>Cancel</Button><Button variant="danger" onClick={() => void confirmRemove()} disabled={workspaceActionBusy}>{workspaceActionBusy ? 'Removing…' : 'Remove workspace'}</Button></div></Modal> : null}
     {archiveTarget ? <Modal title="Archive session" onClose={() => setArchiveTarget(undefined)}><p className="modal-copy">Are you want to archive session <strong>{archiveTarget.title}</strong></p><div className="modal-actions"><Button variant="secondary" onClick={() => setArchiveTarget(undefined)}>Cancel</Button><Button variant="danger" onClick={() => void confirmArchive()} disabled={workspaceActionBusy}>{workspaceActionBusy ? 'Archiving…' : 'Archive session'}</Button></div></Modal> : null}
     {pendingWorkspacePath ? <Modal title="Trust workspace" onClose={() => setPendingWorkspacePath(undefined)}><p className="modal-copy">Allow LotaGate to use tools in this workspace?</p><p className="workspace-trust-path">{pendingWorkspacePath}</p><div className="modal-actions"><Button variant="secondary" onClick={() => setPendingWorkspacePath(undefined)}>Cancel</Button><Button variant="primary" onClick={() => void confirmAddWorkspace()} disabled={workspaceActionBusy}>{workspaceActionBusy ? 'Adding…' : 'Trust and add'}</Button></div></Modal> : null}
@@ -181,8 +203,10 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   </div>;
 }
 
-function ConversationHeader({ task, workspace }: { task?: Task | undefined; workspace?: Workspace | undefined }) {
-  return <header className="conversation-header"><div className="task-title"><Folder size={17} /><strong>{task?.title ?? workspace?.name ?? 'Agent Workspace'}</strong></div></header>;
+function ConversationHeader({ task, workspace, changesOpen, onToggleChanges, onRenameTask, onPinTask, onArchiveTask }: { task?: Task | undefined; workspace?: Workspace | undefined; changesOpen: boolean; onToggleChanges: () => void; onRenameTask: (task: Task) => void; onPinTask: (pinned: boolean) => void; onArchiveTask: () => void }) {
+  const title = task?.title ?? workspace?.name ?? 'Agent Workspace';
+  const items = task === undefined ? [] : [{ label: task.pinned ? 'Unpin session' : 'Pin session', icon: task.pinned ? PinOff : Pin, onSelect: () => onPinTask(!task.pinned) }, { label: 'Rename', icon: Pencil, onSelect: () => onRenameTask(task) }, { label: 'Archive session', icon: Archive, tone: 'danger' as const, onSelect: onArchiveTask }];
+  return <header className="conversation-header"><div className="task-title"><Folder size={17} /><strong title={title}>{title}</strong>{task ? <ActionMenu ariaLabel={`Session actions for ${title}`} items={items} /> : null}</div><div className="conversation-header-actions"><Tooltip label={changesOpen ? 'Hide side panel' : 'Show side panel'}><button type="button" className="icon-button ui-icon-button conversation-panel-toggle" aria-label={changesOpen ? 'Hide changed files panel' : 'Show changed files panel'} aria-pressed={changesOpen} onClick={onToggleChanges}><PanelRight size={17} /></button></Tooltip></div></header>;
 }
 
 function isViewportAtBottom(viewport: HTMLDivElement): boolean {
@@ -211,7 +235,7 @@ function TaskConversation({ task, activities, activityAttachments, fileChangesBy
     return <ChatMessage key={activity.id} activity={activity} attachments={activityAttachments[activity.id] ?? []} onOpenFileChanges={onOpenFileChanges} onOpenImage={onOpenImage} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...messageTiming(activity, turnTimings)} />;
   });
   const unlinkedChanges = !thinking ? Object.entries(fileChangesByTurn).filter(([turnId, summary]) => !renderedTurnIds.has(turnId) && summary.files.length > 0) : [];
-  return <><div className="activity-list">{messages}{unlinkedChanges.map(([turnId, summary]) => <FileChangeCard key={`changes:${turnId}`} summary={summary} onOpenFileChanges={onOpenFileChanges} />)}</div>{thinking && !hasActiveAssistant && workingTiming ? <ElapsedTime timing={workingTiming} fallback={task.createdAt} /> : null}{contextCompactionStatus ? <ContextCompactionIndicator phase={contextCompactionStatus} /> : null}{statusText ? <div className="agent-status" aria-live="polite">{statusText}</div> : thinking ? <TypingIndicator /> : null}{trust ? <TrustCard request={trust} onDecision={onTrust} /> : null}</>;
+  return <><div className="activity-list">{messages}{unlinkedChanges.map(([turnId, summary]) => <FileChangeCard key={`changes:${turnId}`} summary={summary} onOpenFileChanges={onOpenFileChanges} />)}</div><div className="conversation-live-status">{thinking && !hasActiveAssistant && workingTiming ? <ElapsedTime timing={workingTiming} fallback={task.createdAt} /> : null}{contextCompactionStatus ? <ContextCompactionIndicator phase={contextCompactionStatus} /> : null}{statusText ? <div className="agent-status" aria-live="polite">{statusText}</div> : thinking ? <TypingIndicator /> : null}{trust ? <TrustCard request={trust} onDecision={onTrust} /> : null}</div></>;
 }
 
 function ContextCompactionIndicator({ phase }: { phase: 'compacting' | 'compacted' | 'failed' }) {

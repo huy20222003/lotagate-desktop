@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:component": "vitest run src/renderer/**/*.test.tsx",
-    "test:contract": "vitest run src/contracts/**/*.test.ts src/main/api/**/*.test.ts",
+    "test:contract": "vitest run src/contracts src/main/api",
     "test:e2e": "npm run package && playwright test",
     "lint": "eslint .",
     "check:file-size": "node scripts/check-file-sizes.mjs",

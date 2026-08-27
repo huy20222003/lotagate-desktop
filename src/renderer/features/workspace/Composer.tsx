@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CornerUpRight, FileText, Folder, Paperclip, Pencil, Send, Square, Trash2, X } from 'lucide-react';
 import type { ApprovalRequest, Task, Workspace, WorkspaceFileSuggestion } from '../../../contracts/ipc/v1/workspace.js';
 import { Button, Dropdown, Icon, Modal, Spinner, TextArea, Tooltip } from '../../components/ui.js';
@@ -16,6 +16,9 @@ import { PromptMarkup } from './prompt-markup.js';
 import { formatTextClamp } from '../../utils/text.js';
 import { InlineApproval } from './WorkspaceOverlays.js';
 
+const PROMPT_INPUT_MIN_HEIGHT = 62;
+const PROMPT_INPUT_MAX_HEIGHT = 220;
+
 export function Composer({ disabled, workspace, thinking, task, attachments, queuedMessages, models, selectedModel, onModel, busy, error, onSend, onRunCommand, onCancel, onDraft, onAttach, onAttachImage, onRemoveAttachment, onSteerQueued, onRemoveQueued, onEditQueued, onOpenImage, approval, approvalMode, onApprovalMode, onApproval }: { disabled: boolean; workspace?: Workspace | undefined; thinking: boolean; task?: Task | undefined; attachments: AttachmentPreview[]; queuedMessages: readonly QueuedMessage[]; models: WorkspaceModelOption[]; selectedModel: string; onModel: (model: string) => void; busy: boolean; error?: string | undefined; onSend: (prompt: string) => Promise<void>; onRunCommand: (invocation: DesktopCommandInvocation, preview: string) => Promise<boolean>; onCancel: () => Promise<void>; onDraft: (draft: string) => Promise<void>; onAttach: () => Promise<void>; onAttachImage: (name: string, bytes: Uint8Array) => Promise<void>; onRemoveAttachment: (attachmentId: string) => Promise<void>; onSteerQueued: (id: string) => Promise<void>; onRemoveQueued: (id: string) => Promise<void>; onEditQueued: (id: string) => Promise<QueuedMessage | undefined>; onOpenImage: (attachment: AttachmentPreview) => void; approval?: ApprovalRequest | undefined; approvalMode: ApprovalMode; onApprovalMode: (mode: ApprovalMode) => void; onApproval: (approved: boolean) => Promise<void> }) {
   const [draft, setDraft] = useState(task?.draft ?? '');
   const [suggestions, setSuggestions] = useState<WorkspaceFileSuggestion[]>([]);
@@ -30,6 +33,15 @@ export function Composer({ disabled, workspace, thinking, task, attachments, que
   const [slashValidationAttempted, setSlashValidationAttempted] = useState(false);
   const [slashCommandIndex, setSlashCommandIndex] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const resizePromptInput = useCallback(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.style.height = '0px';
+    const height = Math.min(PROMPT_INPUT_MAX_HEIGHT, Math.max(PROMPT_INPUT_MIN_HEIGHT, input.scrollHeight));
+    input.style.height = `${height}px`;
+    input.style.overflowY = input.scrollHeight > PROMPT_INPUT_MAX_HEIGHT ? 'auto' : 'hidden';
+  }, []);
+  useLayoutEffect(() => { resizePromptInput(); }, [draft, resizePromptInput]);
   useEffect(() => { setDraft(task?.draft ?? ''); setSuggestions([]); setSuggestionIndex(0); setInputScrollTop(0); setSlashCommand(undefined); setSlashForm(createSlashCommandForm()); setSlashError(undefined); setSlashValidationAttempted(false); setSlashCommandIndex(0); window.requestAnimationFrame(() => inputRef.current?.focus()); }, [task?.id]);
   useEffect(() => { const focusPrompt = () => inputRef.current?.focus(); window.addEventListener('lotagate.focusPrompt', focusPrompt); return () => window.removeEventListener('lotagate.focusPrompt', focusPrompt); }, []);
   useEffect(() => { if (!workspace) { setSlashCommands([]); return; } let mounted = true; void listDesktopCommands(workspace.rootPath).then(descriptors => { if (mounted) setSlashCommands(availableSlashCommands(descriptors)); }).catch(() => { if (mounted) setSlashCommands([]); }); return () => { mounted = false; }; }, [workspace]);
