@@ -12,6 +12,7 @@ import { extractWorkspaceModels, type WorkspaceModelOption } from './model-catal
 import { toUserErrorMessage as toMessage } from '../../utils/errors.js';
 import { agentStatusForEvent } from './agent-status.js';
 import { turnTimingsFromActivities } from './turn-timings.js';
+import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, reconcilePendingAssistantStreams, type PendingAssistantStream } from './streaming-activity.js';
 
 type ContextCompactionPhase = 'compacting' | 'compacted' | 'failed';
 
@@ -48,6 +49,8 @@ export function useWorkspaceController() {
   const initialTasksLoadedRef = useRef(false);
   const activityRequestRef = useRef(0);
   const activityRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
+  const pendingAssistantStreamsRef = useRef(new Map<string, PendingAssistantStream>());
+  const activitiesRef = useRef<Activity[]>([]);
   const activeTurnRef = useRef<{ taskId: string; cwd: string; turnId: string } | undefined>();
   const messageQueueServiceRef = useRef(new MessageQueueService());
   const queuedMessages = useMessageQueue(messageQueueServiceRef.current);
@@ -55,12 +58,9 @@ export function useWorkspaceController() {
   const dispatchQueuedPromptRef = useRef<(message: QueuedMessage) => Promise<void>>();
   const steeringQueueIdRef = useRef<string | undefined>();
   const suppressQueueRef = useRef(false);
-  const contextStatusTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   useEffect(() => { draftTaskRef.current = task; }, [task]);
   const showContextCompactionStatus = useCallback((phase: ContextCompactionPhase | undefined) => {
-    if (contextStatusTimerRef.current !== undefined) { clearTimeout(contextStatusTimerRef.current); contextStatusTimerRef.current = undefined; }
     setContextCompactionStatus(phase);
-    if (phase !== undefined && phase !== 'compacting') contextStatusTimerRef.current = setTimeout(() => setContextCompactionStatus(undefined), phase === 'failed' ? 5_000 : 2_500);
   }, []);
 
   const reloadTasks = useCallback(async (workspaceId: string) => {
@@ -124,10 +124,15 @@ export function useWorkspaceController() {
   }, [models, task?.id, task?.model]);
   const loadActivities = useCallback(async (taskId: string): Promise<void> => {
     const requestId = ++activityRequestRef.current;
-    const next = await window.lotagate.tasks.activities(taskId);
+    const persisted = await window.lotagate.tasks.activities(taskId);
+    const pending = new Map(pendingAssistantStreamsRef.current);
+    for (const [key, stream] of pending) if (stream.taskId === taskId && isAssistantStreamPersisted(persisted, stream)) pending.delete(key);
+    pendingAssistantStreamsRef.current = pending;
+    const next = reconcilePendingAssistantStreams(persisted, [...pending.values()].filter(stream => stream.taskId === taskId));
     const nextActivityAttachments = await loadActivityAttachmentPreviews(taskId, next);
     if (requestId === activityRequestRef.current) {
       const summaries = fileChangeSummariesFromActivities(next);
+      activitiesRef.current = next;
       setActivities(next);
       setTurnTimings(turnTimingsFromActivities(next));
       setActivityAttachments(nextActivityAttachments);
@@ -149,7 +154,7 @@ export function useWorkspaceController() {
   useEffect(() => {
     let mounted = true;
     activityRequestRef.current += 1;
-    if (!task) { setActivities([]); setTurnTimings({}); setActivityAttachments({}); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); return; }
+    if (!task) { activitiesRef.current = []; pendingAssistantStreamsRef.current.clear(); setActivities([]); setTurnTimings({}); setActivityAttachments({}); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); return; }
     setActivitiesLoading(true);
     void loadActivities(task.id).catch(reason => { if (mounted) setError(toMessage(reason)); }).finally(() => { if (mounted) setActivitiesLoading(false); });
     void loadAttachmentPreviews(task.id, task.draftAttachmentIds).then(next => { if (mounted) setAttachments(next); }).catch(() => { if (mounted) setAttachments([]); });
@@ -161,7 +166,6 @@ export function useWorkspaceController() {
 
   useEffect(() => () => {
     if (taskReloadTimerRef.current !== undefined) { clearTimeout(taskReloadTimerRef.current); taskReloadTimerRef.current = undefined; }
-    if (contextStatusTimerRef.current !== undefined) { clearTimeout(contextStatusTimerRef.current); contextStatusTimerRef.current = undefined; }
   }, [workspace?.id]);
 
   useEffect(() => window.lotagate.agent.onEvent(envelope => {
@@ -171,7 +175,7 @@ export function useWorkspaceController() {
     const eventSessionId = typeof data['sessionId'] === 'string' ? data['sessionId'] : undefined;
     const turnId = typeof data['turnId'] === 'string' ? data['turnId'] : undefined;
     const currentTaskId = task?.id ?? draftTaskRef.current?.id;
-    const eventTask = tasks.find(item => eventSessionId !== undefined && item.sessionId === eventSessionId) ?? (task?.sessionId === eventSessionId ? task : undefined) ?? (draftTaskRef.current?.sessionId === eventSessionId ? draftTaskRef.current : undefined) ?? (tasks.length === 1 ? tasks[0] : undefined);
+    const eventTask = tasks.find(item => eventSessionId !== undefined && item.sessionId === eventSessionId) ?? (task?.sessionId === eventSessionId ? task : undefined) ?? (draftTaskRef.current?.sessionId === eventSessionId ? draftTaskRef.current : undefined) ?? (eventSessionId === undefined && turnId === undefined ? task : undefined) ?? (tasks.length === 1 ? tasks[0] : undefined);
     if (eventTask !== undefined && eventTask.id === currentTaskId) {
       if (turnId && envelope.event.event === 'turn.started') setTurnTimings(current => ({ ...current, [turnId]: { startedAt: Date.now() } }));
       if (turnId && terminal) setTurnTimings(current => ({ ...current, [turnId]: { startedAt: current[turnId]?.startedAt ?? Date.now(), endedAt: Date.now() } }));
@@ -179,15 +183,14 @@ export function useWorkspaceController() {
       const currentTurn = turnId === undefined || activeTurnRef.current?.turnId === turnId;
       if (terminal && currentTurn) activeTurnRef.current = undefined;
       const status = agentStatusForEvent(envelope.event.event, data);
-      if (envelope.event.event === 'turn.started') setAgentStatus(undefined);
+      if (envelope.event.event === 'turn.started') { setAgentStatus(undefined); setContextCompactionStatus(undefined); }
       else if (status !== undefined) setAgentStatus(status);
-      else if (terminal || envelope.event.event === 'tool.completed') setAgentStatus(undefined);
       if (envelope.event.event === 'turn.started') {
         setThinking(true);
         setThinkingStartedAt(current => current ?? Date.now());
       }
       if (terminal && currentTurn) {
-        setThinking(false); setThinkingStartedAt(undefined); setAgentStatus(undefined);
+        setThinking(false); setThinkingStartedAt(undefined);
         const steeredId = steeringQueueIdRef.current;
         const shouldDrain = !suppressQueueRef.current && (envelope.event.event !== 'turn.cancelled' || steeredId !== undefined);
         const queued = shouldDrain ? (steeredId === undefined ? messageQueueServiceRef.current.takeFirst() : messageQueueServiceRef.current.remove(steeredId)) : undefined;
@@ -206,6 +209,15 @@ export function useWorkspaceController() {
       if (envelope.event.event === 'file.changed') {
         setFileChanges(current => mergeFileChange(current, data['change']));
         if (turnId !== undefined) setFileChangesByTurn(current => mergeFileChangeForTurn(current, turnId, data['change']));
+      }
+      if (envelope.event.event === 'assistant.delta' && typeof data['content'] === 'string' && data['content'].length > 0) {
+        const input = { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), content: data['content'], createdAt: new Date().toISOString() };
+        const nextActivities = appendAssistantDelta(activitiesRef.current, input);
+        const streamed = nextActivities.find(activity => activity.id === `streaming:${eventTask.id}:${turnId ?? 'active'}`)
+          ?? [...nextActivities].reverse().find(activity => activity.taskId === eventTask.id && activity.kind === 'assistant' && activity.metadata['turnId'] === turnId);
+        if (streamed !== undefined) pendingAssistantStreamsRef.current.set(assistantStreamKey(eventTask.id, turnId), { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), text: streamed.text, createdAt: streamed.createdAt });
+        activitiesRef.current = nextActivities;
+        setActivities(nextActivities);
       }
       if (envelope.event.event === 'context.compacting') showContextCompactionStatus('compacting');
       if (envelope.event.event === 'context.compacted') showContextCompactionStatus('compacted');
@@ -275,7 +287,7 @@ export function useWorkspaceController() {
     setTasks(current => current.filter(item => item.workspaceId !== workspaceId));
     setWorkspace(current => current?.id === workspaceId ? undefined : current);
     setTask(current => current?.workspaceId === workspaceId ? undefined : current);
-    setActivities([]); setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); showContextCompactionStatus(undefined); setThinking(false); setThinkingStartedAt(undefined);
+    activitiesRef.current = []; pendingAssistantStreamsRef.current.clear(); setActivities([]); setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); showContextCompactionStatus(undefined); setThinking(false); setThinkingStartedAt(undefined);
   }, [showContextCompactionStatus]);
   const createTask = useCallback(async (prompt: string) => {
     if (workspace === undefined) throw new Error('Select a workspace first.');
@@ -517,8 +529,8 @@ export function useWorkspaceController() {
 async function loadAttachmentPreviews(taskId: string, attachmentIds: readonly string[] = [], availableArtifacts?: Artifact[]): Promise<AttachmentPreview[]> {
   const artifacts = (availableArtifacts ?? await window.lotagate.tasks.artifacts(taskId)).filter(artifact => attachmentIds.includes(artifact.id));
   return Promise.all(artifacts.map(async artifact => {
-    const preview: Record<string, unknown> = await window.lotagate.tasks.previewArtifact(taskId, artifact.id).catch(() => ({} as Record<string, unknown>));
-    const dataUrl = typeof preview['dataUrl'] === 'string' ? preview['dataUrl'] : undefined;
+    const preview = await window.lotagate.tasks.previewArtifact(taskId, artifact.id).catch(() => undefined);
+    const dataUrl = preview?.dataUrl;
     return { id: artifact.id, name: artifact.name, kind: artifact.kind, size: artifact.size, ...(dataUrl ? { dataUrl } : {}) };
   }));
 }

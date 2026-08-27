@@ -13,9 +13,11 @@ import { TaskStore } from './tasks/task-store.js';
 import { TaskEventProjector } from './tasks/task-event-projector.js';
 import { GitService } from './git/git-service.js';
 import { TerminalService } from './terminal/terminal-service.js';
+import { InteractiveTerminalService } from './terminal/interactive-terminal-service.js';
 import { SettingsService } from './settings/settings-service.js';
 import { ArtifactService } from './artifacts/artifact-service.js';
 import { BrowserService } from './browser/browser-service.js';
+import { BrowserHostToolBroker } from './agents/browser-host-tool-broker.js';
 import { AutomationService } from './automation/automation-service.js';
 import { DesktopOperations } from './operations/desktop-operations.js';
 import { WorkspaceFileSuggestions } from './workspaces/workspace-file-suggestions.js';
@@ -57,8 +59,15 @@ app.whenReady().then(() => {
   const extensionFiles = new ExtensionFileService(workspaces);
   const tasks = new TaskStore();
   const taskProjector = new TaskEventProjector(tasks);
-  const browser = new BrowserService();
+  const browser = new BrowserService(snapshot => {
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send('browser.state', snapshot);
+  });
   browserService = browser;
+  const browserHost = new BrowserHostToolBroker(browser, (cwd, activity) => {
+    logger.debug('agent.browser', { cwd, event: activity.event, action: activity.data['action'] });
+    const event = { version: 1 as const, type: 'event' as const, event: activity.event, data: activity.data };
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
+  });
   const operations = new DesktopOperations();
   operations.initializeDeepLinks();
   operations.initializeTray();
@@ -69,7 +78,9 @@ app.whenReady().then(() => {
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
     },
     onDiagnostic: (cwd, diagnostic) => { logger.warn('agent.diagnostic', { cwd, kind: diagnostic.kind, message: diagnostic.message }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic }); },
+    onHostRequest: (cwd, request) => browserHost.handle(cwd, request),
     onExit: (cwd, error) => {
+      void browserHost.closeForWorkspace(cwd);
       void tasks.interruptActiveByCwd(cwd, error.message).catch(() => undefined);
       logger.error('agent.process.exit', { cwd, error: error.message });
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic: { kind: 'protocol', message: error.message } });
@@ -89,11 +100,12 @@ app.whenReady().then(() => {
     await agents.turnStart(workspace.rootPath, { sessionId, prompt: automation.prompt });
   };
   const runAutomation = (id: string): Promise<Automation> => automations.run(id, executeAutomation);
-  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, extensionFiles, git: new GitService(), terminal: new TerminalService(workspaces, tasks), settings: new SettingsService(), artifacts: new ArtifactService(), browser, automations, operations, runAutomation, setMenuContext: setApplicationMenu, logger });
+  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, extensionFiles, git: new GitService(), terminal: new TerminalService(workspaces, tasks), interactiveTerminal: new InteractiveTerminalService(workspaces), settings: new SettingsService(), artifacts: new ArtifactService(), browser, automations, operations, runAutomation, setMenuContext: setApplicationMenu, logger });
   automations.start(executeAutomation, 15_000);
-  createMainWindow();
+  const openMainWindow = () => { const window = createMainWindow(); browser.attachWindow(window); return window; };
+  openMainWindow();
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+    if (BrowserWindow.getAllWindows().length === 0) openMainWindow();
   });
 });
 

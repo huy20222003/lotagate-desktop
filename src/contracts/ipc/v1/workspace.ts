@@ -88,6 +88,8 @@ export type TaskStatus = z.infer<typeof taskStatusSchema>;
 export type Task = z.infer<typeof taskSchema>;
 export type Activity = z.infer<typeof activitySchema>;
 export type Artifact = z.infer<typeof artifactSchema>;
+export interface ArtifactPreview { artifact: Artifact; content?: string; dataUrl?: string; }
+export interface ArtifactMedia { artifact: Artifact; mimeType: string; bytes: Uint8Array; }
 export type ApprovalRequest = z.infer<typeof approvalRequestSchema>;
 export type TrustRequest = z.infer<typeof trustRequestSchema>;
 export type AgentEventEnvelope = z.infer<typeof agentEventEnvelopeSchema>;
@@ -138,7 +140,9 @@ export interface DesktopTaskApi {
   createTextArtifact(taskId: string, name: string, content: string, kind?: 'text' | 'markdown' | 'patch' | 'json'): Promise<Artifact>;
   createImageArtifact(taskId: string, name: string, bytes: Uint8Array): Promise<Artifact>;
   deleteArtifact(taskId: string, artifactId: string, confirmed: boolean): Promise<void>;
-  previewArtifact(taskId: string, artifactId: string): Promise<Record<string, unknown>>;
+  previewArtifact(taskId: string, artifactId: string): Promise<ArtifactPreview>;
+  readArtifactMedia(taskId: string, artifactId: string): Promise<ArtifactMedia>;
+  downloadArtifact(taskId: string, artifactId: string): Promise<string | null>;
   openArtifact(taskId: string, artifactId: string): Promise<string>;
 }
 
@@ -160,7 +164,22 @@ export interface DesktopGitApi {
 export interface DesktopTerminalApi {
   execute(input: TerminalExecutionInput): Promise<Record<string, unknown>>;
   list(taskId?: string): Promise<Record<string, unknown>[]>;
+  open(input: TerminalSessionOpenInput): Promise<TerminalSession>;
+  write(sessionId: string, data: string): Promise<void>;
+  resize(sessionId: string, cols: number, rows: number): Promise<void>;
+  close(sessionId: string): Promise<void>;
+  onOutput(listener: (output: TerminalSessionOutput) => void): () => void;
 }
+
+export interface TerminalSession { id: string; cwd: string; shell: string; }
+export interface TerminalSessionOutput { sessionId: string; data: string; }
+
+export const terminalSessionOpenSchema = z.object({ cwd: z.string().min(1).max(4_096) });
+export const terminalSessionResizeSchema = z.object({ sessionId: z.string().uuid(), cols: z.number().int().min(1).max(400), rows: z.number().int().min(1).max(200) });
+export const terminalSessionWriteSchema = z.object({ sessionId: z.string().uuid(), data: z.string().min(1).max(128 * 1024) });
+export const terminalSessionIdSchema = z.string().uuid();
+export type TerminalSessionOpenInput = z.infer<typeof terminalSessionOpenSchema>;
+export type TerminalSessionResizeInput = z.infer<typeof terminalSessionResizeSchema>;
 
 export const terminalExecutionInputSchema = z.object({
   cwd: z.string().min(1).max(4_096),
@@ -187,12 +206,25 @@ export interface DesktopAutomationApi {
 
 export interface BrowserConsoleEntry { level: string; message: string; timestamp: string; }
 export interface BrowserEvidence { id: string; url: string; title: string; console: BrowserConsoleEntry[]; errors: string[]; screenshots: string[]; recordings: string[]; createdAt: string; }
+export interface BrowserViewBounds { x: number; y: number; width: number; height: number; }
+export interface BrowserTabSnapshot { id: string; title: string; url: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; }
+export interface BrowserSessionSnapshot { id: string; activeTabId: string; tabs: BrowserTabSnapshot[]; createdAt: string; }
 export interface DesktopBrowserApi {
+  create(): Promise<BrowserSessionSnapshot>;
   open(url: string, approved: boolean): Promise<{ id: string; url: string }>;
-  close(id: string): Promise<void>;
-  screenshot(id: string): Promise<{ evidenceId: string; path: string; dataUrl: string }>;
+  close(sessionId: string): Promise<void>;
+  createTab(sessionId: string): Promise<BrowserTabSnapshot>;
+  closeTab(sessionId: string, tabId: string): Promise<void>;
+  selectTab(sessionId: string, tabId: string): Promise<BrowserSessionSnapshot>;
+  navigate(sessionId: string, tabId: string, url: string, approved: boolean): Promise<BrowserTabSnapshot>;
+  goBack(sessionId: string, tabId: string): Promise<BrowserTabSnapshot>;
+  goForward(sessionId: string, tabId: string): Promise<BrowserTabSnapshot>;
+  reload(sessionId: string, tabId: string): Promise<BrowserTabSnapshot>;
+  setViewBounds(sessionId: string, tabId: string, bounds: BrowserViewBounds, visible: boolean): Promise<void>;
+  screenshot(sessionId: string, tabId?: string): Promise<{ evidenceId: string; path: string; dataUrl: string }>;
   startRecording(id: string): Promise<void>;
   stopRecording(id: string): Promise<BrowserEvidence>;
-  list(): Promise<BrowserEvidence[]>;
+  list(): Promise<BrowserSessionSnapshot[]>;
   evidence(id: string): Promise<BrowserEvidence>;
+  onState(listener: (snapshot: BrowserSessionSnapshot) => void): () => void;
 }

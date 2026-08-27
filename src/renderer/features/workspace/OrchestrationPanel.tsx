@@ -1,7 +1,9 @@
-import { AlertCircle, Bot, Check, ChevronRight, Circle, LoaderCircle, ListChecks } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
-import type { PlanSnapshot, PlanStepSnapshot, SubagentSnapshot } from '../../../contracts/ipc/v1/workspace.js';
-import { Scrollbar } from '../../components/Scrollbar.js';
+import { Bot, ChevronRight, ListChecks, LoaderCircle } from 'lucide-react';
+import { useState } from 'react';
+import type { PlanSnapshot, SubagentSnapshot } from '../../../contracts/ipc/v1/workspace.js';
+import { OrchestrationDrawer } from './OrchestrationDrawer.js';
+import { PlanDetails } from './PlanDetails.js';
+import { SubagentDetails } from './SubagentDetails.js';
 
 export function OrchestrationPanel({ plan, subagents }: { plan?: PlanSnapshot | undefined; subagents: SubagentSnapshot[] }) {
   const visiblePlan = plan !== undefined && plan.status !== 'completed' ? plan : undefined;
@@ -22,22 +24,6 @@ export function OrchestrationPanel({ plan, subagents }: { plan?: PlanSnapshot | 
     {drawer === 'plan' && visiblePlan ? <OrchestrationDrawer title={`Plan · Step ${planStepNumber(visiblePlan)} / ${visiblePlan.totalSteps}`} onClose={() => setDrawer(undefined)}><PlanDetails plan={visiblePlan} /></OrchestrationDrawer> : null}
     {selectedSubagent ? <OrchestrationDrawer title={selectedSubagent.displayName} onClose={() => setDrawer(undefined)}><SubagentDetails subagent={selectedSubagent} /></OrchestrationDrawer> : null}
   </>;
-}
-
-function OrchestrationDrawer({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return <aside className="orchestration-drawer" aria-label={title}><header><strong>{title}</strong><button type="button" className="icon-button" aria-label="Close orchestration details" onClick={onClose}><ChevronRight size={16} /></button></header><Scrollbar className="orchestration-drawer-scroll">{children}</Scrollbar></aside>;
-}
-
-function PlanDetails({ plan }: { plan: PlanSnapshot }) {
-  return <div className="plan-details"><p className="orchestration-drawer-goal">{plan.goal}</p>{plan.steps.map(step => <PlanStep key={step.id} step={step} />)}{plan.error ? <p className="orchestration-error">{plan.error}</p> : null}</div>;
-}
-
-function PlanStep({ step }: { step: PlanStepSnapshot }) {
-  return <div className={`plan-step plan-step-${step.status}`}>{step.status === 'completed' ? <Check size={13} /> : step.status === 'started' ? <LoaderCircle size={13} className="spin" /> : step.status === 'queued' ? <Circle size={11} /> : <AlertCircle size={13} />}<span><strong>{step.title}</strong><small>{step.description}</small></span></div>;
-}
-
-function SubagentDetails({ subagent }: { subagent: SubagentSnapshot }) {
-  return <div className="subagent-details"><div className="subagent-detail-status"><span className={`subagent-status subagent-status-${subagent.status}`}>{subagent.status.replaceAll('_', ' ')}</span><span>{subagent.model}</span></div><p>{subagent.task}</p>{subagent.lastAction ? <small>{subagent.lastAction.label}</small> : null}{subagent.summary ? <small>{subagent.summary}</small> : null}{subagent.handoff ? <div className="subagent-handoff"><span>{subagent.handoff.filesInspected.length} files inspected</span><span>{subagent.handoff.filesChanged.length} files changed</span><span>{subagent.handoff.commandsRun.length} commands</span></div> : null}</div>;
 }
 
 function planStepNumber(plan: PlanSnapshot): number {

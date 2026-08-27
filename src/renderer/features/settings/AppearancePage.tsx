@@ -1,20 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Check, Monitor, Moon, Sun } from 'lucide-react';
 import { Button, Card, Checkbox, Dropdown, useToast } from '../../components/ui.js';
 import { useTheme, type FontChoice, type ThemeColor, type ThemePreference } from '../../theme/theme.js';
 import { useLocale, type Language } from '../../i18n/locale.js';
-
-const themeOptions: Array<{ value: ThemePreference; label: string; detail: string; icon: typeof Sun }> = [
-  { value: 'system', label: 'System', detail: 'Follow the appearance setting of this device.', icon: Monitor },
-  { value: 'light', label: 'Light', detail: 'A bright interface for well-lit environments.', icon: Sun },
-  { value: 'dark', label: 'Dark', detail: 'A low-light interface for focused work.', icon: Moon },
-];
-
-const fontOptions: Array<{ value: FontChoice; label: string }> = [
-  { value: 'inter', label: 'Inter' },
-  { value: 'system', label: 'System default' },
-  { value: 'mono', label: 'Monospace' },
-];
+import { themeOptions } from './appearance-options.js';
+import { ThemeOption } from './ThemeOption.js';
+import { ColorSetting } from './ColorSetting.js';
+import { FontSetting } from './FontSetting.js';
 
 export function AppearancePage() {
   const { preference, setTheme, reducedMotion, setReducedMotion, contrast, setContrast, uiFont, setUiFont, codeFont, setCodeFont, colors, setColor } = useTheme();
@@ -76,23 +67,6 @@ export function AppearancePage() {
       <div className="appearance-setting-row appearance-font-row"><div><strong>Interface language</strong><span>Changes are saved to this device.</span></div><Dropdown value={language} options={[{ value: 'en', label: 'English' }, { value: 'vi', label: 'Tiếng Việt' }]} onChange={value => void updateLanguage(value)} disabled={languageBusy} aria-label="Interface language" /></div>
     </section>
   </div>;
-}
-
-function ThemeOption({ option, selected, onSelect }: { option: typeof themeOptions[number]; selected: boolean; onSelect: () => void }) {
-  const Icon = option.icon;
-  return <button type="button" role="radio" aria-checked={selected} className={`theme-option ${selected ? 'selected' : ''}`} onClick={onSelect}>
-    <span className={`theme-preview theme-preview-${option.value}`} aria-hidden="true"><span /><span /><span /></span>
-    <span className="theme-option-copy"><strong><Icon size={15} /> {option.label}</strong><small>{option.detail}</small></span>
-    {selected ? <Check className="theme-option-check" size={16} /> : null}
-  </button>;
-}
-
-function ColorSetting({ label, value, custom, onChange, onReset }: { label: string; value: string; custom: boolean; onChange: (value: string) => void; onReset: () => void }) {
-  return <div className="appearance-setting-row appearance-color-row"><div><strong>{label}</strong><span>{custom ? 'Custom color' : 'Theme default'}</span></div><div className="appearance-color-control"><input type="color" value={value} aria-label={label} onChange={event => onChange(event.target.value)} /><code>{value.toUpperCase()}</code>{custom ? <Button variant="ghost" onClick={onReset}>Reset</Button> : null}</div></div>;
-}
-
-function FontSetting({ label, value, onChange }: { label: string; value: FontChoice; onChange: (value: string) => void }) {
-  return <div className="appearance-setting-row appearance-font-row"><div><strong>{label}</strong><span>Font used in the {label === 'UI font' ? 'interface' : 'code editor and previews'}.</span></div><Dropdown value={value} options={fontOptions} aria-label={label} onChange={onChange} /></div>;
 }
 
 function readThemeColor(color: ThemeColor): string {

@@ -23,20 +23,25 @@
     "package:smoke": "npm run build && npm run check:file-size && electron-forge package"
   },
   "dependencies": {
-    "@lotagate/cli": "0.1.13",
+    "@lotagate/cli": "0.1.15",
     "@radix-ui/react-checkbox": "1.3.11",
     "@radix-ui/react-dialog": "1.1.23",
     "@radix-ui/react-dropdown-menu": "2.1.24",
     "@radix-ui/react-tabs": "1.1.21",
     "@radix-ui/react-tooltip": "1.2.16",
     "@vitejs/plugin-react": "5.0.4",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "clsx": "2.1.1",
     "electron-vite": "5.0.0",
     "lucide-react": "0.468.0",
+    "node-pty": "^1.1.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
+    "shiki": "^4.4.2",
+    "wavesurfer.js": "^7.12.11",
     "zod": "3.25.76"
   },
   "devDependencies": {

@@ -1,0 +1,7 @@
+import type { DesktopHookEvent } from '../../../contracts/ipc/v1/extensions.js';
+import { Dropdown, Field, TextInput } from '../../components/ui.js';
+import { hookEventOptions, type ValidationErrors } from './extensions-view-types.js';
+
+export function HookDetailFields({ event, command, args, timeoutMs, errors, editable, onEvent, onCommand, onArgs, onTimeout }: { event: DesktopHookEvent; command: string; args: string; timeoutMs: string; errors: ValidationErrors; editable: boolean; onEvent: (value: DesktopHookEvent) => void; onCommand: (value: string) => void; onArgs: (value: string) => void; onTimeout: (value: string) => void }) {
+  return <div className="extension-detail-fields extension-detail-hook-fields"><Field label="Event"><Dropdown value={event} options={hookEventOptions} disabled={!editable} onChange={value => onEvent(value as DesktopHookEvent)} /></Field><Field label="Command" required error={errors['command']}><TextInput value={command} readOnly={!editable} placeholder="node" onChange={eventValue => onCommand(eventValue.target.value)} /></Field><Field label="Args (comma-separated)" error={errors['args']}><TextInput value={args} readOnly={!editable} placeholder="script.js, --check" onChange={eventValue => onArgs(eventValue.target.value)} /></Field><Field label="Timeout (ms)" required error={errors['timeoutMs']}><TextInput type="number" min={100} max={120000} step={1} value={timeoutMs} readOnly={!editable} onChange={eventValue => onTimeout(eventValue.target.value)} /></Field></div>;
+}

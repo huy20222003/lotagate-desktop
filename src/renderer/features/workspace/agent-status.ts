@@ -14,6 +14,15 @@ export function agentStatusForEvent(event: string, data: Record<string, unknown>
     if (kind === 'subagent') return `I’ll delegate ${displayName} as an independent step.`;
     return `I’ll use ${displayName} to continue.`;
   }
+  if (event === 'tool.completed') {
+    const displayName = readString(data['displayName']) ?? readString(data['toolName']) ?? 'the tool';
+    return data['isError'] === true ? `Tool failed: ${displayName}.` : `Tool completed: ${displayName}.`;
+  }
+  if (event === 'command.started') return 'Running command…';
+  if (event === 'command.completed') return data['success'] === false ? 'Command failed.' : 'Command completed.';
+  if (event === 'command.failed') return 'Command failed.';
+  if (event === 'command.cancelled') return 'Command cancelled.';
+  if (event === 'command.activity.completed') return data['isError'] === true ? 'Command step failed.' : 'Command step completed.';
   if (event !== 'command.activity.started') return undefined;
   return readString(data['label']) ?? readString(data['message']) ?? readString(data['status']) ?? 'I’m working through the next step.';
 }

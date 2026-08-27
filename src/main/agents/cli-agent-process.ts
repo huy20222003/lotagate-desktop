@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { once } from 'node:events';
-import { desktopRequestSchema, parseDesktopEvent, parseDesktopResponse, type DesktopAgentResult, type DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js';
+import { desktopRequestSchema, parseDesktopEvent, parseDesktopHostRequest, parseDesktopResponse, type DesktopAgentResult, type DesktopEvent, type DesktopHostRequest, type DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
 
 const MAX_JSONL_LINE_BYTES = 4 * 1024 * 1024;
 const DESKTOP_ATTACHMENT_CHUNK_BYTES = 512 * 1024;
@@ -17,6 +17,7 @@ export interface CliAgentProcessOptions {
 
 export interface CliAgentEventHandler {
   onEvent(event: DesktopEvent): void;
+  onHostRequest?(request: DesktopHostRequest): Promise<DesktopHostResponse>;
   onDiagnostic?(diagnostic: { kind: 'stderr' | 'protocol'; message: string }): void;
   onExit?(error: CliAgentProcessError): void;
 }
@@ -32,7 +33,7 @@ export class CliAgentProcess {
 
   async initialize(): Promise<DesktopAgentResult> {
     this.ensureStarted();
-    const result = await this.request('initialize', { client: 'lotagate-desktop', version: 1 });
+    const result = await this.request('initialize', { client: 'lotagate-desktop', version: 1, browserHost: true });
     if (!isDesktopAgentResult(result)) throw new CliAgentProcessError('The CLI returned an invalid Desktop protocol handshake.');
     if (result.version !== 1) throw new CliAgentProcessError(`Unsupported Desktop protocol version: ${String(result.version)}.`);
     this.initialized = true;
@@ -130,6 +131,11 @@ export class CliAgentProcess {
     let value: unknown;
     try { value = JSON.parse(line); } catch { this.handler.onDiagnostic?.({ kind: 'protocol', message: 'CLI returned invalid JSONL.' }); return; }
     try {
+      if (isHostRequest(value)) {
+        const request = parseDesktopHostRequest(value);
+        void this.handleHostRequest(request);
+        return;
+      }
       if (isResponse(value)) {
         const response = parseDesktopResponse(value);
         const pending = this.pending.get(response.id);
@@ -146,6 +152,21 @@ export class CliAgentProcess {
     } catch {
       this.handler.onDiagnostic?.({ kind: 'protocol', message: 'CLI returned an invalid Desktop protocol message.' });
     }
+  }
+
+  private async handleHostRequest(request: DesktopHostRequest): Promise<void> {
+    const child = this.child;
+    if (child === undefined || this.stopping) return;
+    let response: DesktopHostResponse;
+    try {
+      response = this.handler.onHostRequest === undefined
+        ? deniedHostResponse(request, 'The Desktop browser host is unavailable.')
+        : await this.handler.onHostRequest(request);
+    } catch (error) {
+      response = deniedHostResponse(request, error instanceof Error ? error.message : 'The Desktop browser host failed.');
+    }
+    try { await writeLine(child, response); }
+    catch (error) { this.failProcess(new CliAgentProcessError('Unable to respond to the CLI browser request.', error)); }
   }
 
   private failProcess(error: CliAgentProcessError): void {
@@ -176,6 +197,8 @@ function isDesktopAgentResult(value: unknown): value is DesktopAgentResult {
     && capabilities.every((item: unknown) => typeof item === 'string');
 }
 function isResponse(value: unknown): value is { type: 'response'; id: string } { return typeof value === 'object' && value !== null && (value as Record<string, unknown>)['type'] === 'response'; }
+function isHostRequest(value: unknown): boolean { return typeof value === 'object' && value !== null && (value as Record<string, unknown>)['type'] === 'host.request'; }
+function deniedHostResponse(request: DesktopHostRequest, message: string): DesktopHostResponse { return { version: 1, type: 'host.response', requestId: request.requestId, tool: 'browser', ok: false, error: { code: 'BROWSER_HOST_UNAVAILABLE', category: 'browser', message, retryable: false } }; }
 async function writeLine(child: ChildProcessWithoutNullStreams, value: unknown): Promise<void> { if (child.stdin.write(`${JSON.stringify(value)}\n`)) return; await once(child.stdin, 'drain'); }
 function delay(milliseconds: number): Promise<void> { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 type PendingRequest = { method: string; resolve: (value: unknown) => void; reject: (error: CliAgentProcessError) => void };

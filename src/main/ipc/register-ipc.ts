@@ -10,6 +10,7 @@ import type { WorkspaceRegistry } from '../workspaces/workspace-registry.js';
 import type { TaskStore, TaskUpdate } from '../tasks/task-store.js';
 import type { GitService } from '../git/git-service.js';
 import type { TerminalService } from '../terminal/terminal-service.js';
+import type { InteractiveTerminalService } from '../terminal/interactive-terminal-service.js';
 import type { SettingsService } from '../settings/settings-service.js';
 import type { ArtifactService } from '../artifacts/artifact-service.js';
 import type { BrowserService } from '../browser/browser-service.js';
@@ -19,7 +20,7 @@ import type { DesktopOperations } from '../operations/desktop-operations.js';
 import { assertTrustedRenderer } from './sender-policy.js';
 import type { DesktopMenuContext } from '../windows/application-menu.js';
 import type { WorkspaceFileSuggestions } from '../workspaces/workspace-file-suggestions.js';
-import { terminalExecutionInputSchema } from '../../contracts/ipc/v1/workspace.js';
+import { terminalExecutionInputSchema, terminalSessionOpenSchema, terminalSessionResizeSchema } from '../../contracts/ipc/v1/workspace.js';
 import { registerLoggedIpcHandler } from './logged-ipc.js';
 import type { DesktopLogger } from '../observability/desktop-logger.js';
 import type { ExtensionFileService } from '../extensions/extension-file-service.js';
@@ -38,6 +39,7 @@ export interface DesktopIpcServices {
   extensionFiles: ExtensionFileService;
   git: GitService;
   terminal: TerminalService;
+  interactiveTerminal: InteractiveTerminalService;
   settings: SettingsService;
   artifacts: ArtifactService;
   browser: BrowserService;
@@ -49,7 +51,7 @@ export interface DesktopIpcServices {
 }
 
 export function registerIpc(services: DesktopIpcServices): void {
-  const { auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, extensionFiles, git, terminal, settings, artifacts, browser, automations, operations, runAutomation, setMenuContext, logger } = services;
+  const { auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, extensionFiles, git, terminal, interactiveTerminal, settings, artifacts, browser, automations, operations, runAutomation, setMenuContext, logger } = services;
   const handle = <TArgs extends unknown[], TResult>(channel: string, listener: (event: Electron.IpcMainInvokeEvent, ...args: TArgs) => TResult): void => registerLoggedIpcHandler(logger, channel, listener);
   const requireWorkspaceCwd = (input: unknown): Promise<string> => workspaces.requireRegisteredRoot(cwdSchema.parse(input));
   const taskUpdateSchema = z.object({
@@ -196,6 +198,17 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('task.createImageArtifact', async (event, taskId: unknown, name: unknown, bytes: unknown) => { assertTrustedRenderer(event); if (!(bytes instanceof Uint8Array)) throw new Error('Invalid image bytes.'); return artifacts.createImage(idSchema.parse(taskId), z.string().min(1).max(200).parse(name), bytes); });
   handle('task.deleteArtifact', async (event, taskId: unknown, artifactId: unknown, confirmed: unknown) => { assertTrustedRenderer(event); return artifacts.delete(idSchema.parse(taskId), idSchema.parse(artifactId), z.boolean().parse(confirmed)); });
   handle('task.previewArtifact', async (event, taskId: unknown, artifactId: unknown) => { assertTrustedRenderer(event); return artifacts.preview(idSchema.parse(taskId), idSchema.parse(artifactId)); });
+  handle('task.readArtifactMedia', async (event, taskId: unknown, artifactId: unknown) => { assertTrustedRenderer(event); return artifacts.readMedia(idSchema.parse(taskId), idSchema.parse(artifactId)); });
+  handle('task.downloadArtifact', async (event, taskId: unknown, artifactId: unknown) => {
+    assertTrustedRenderer(event);
+    const artifact = await artifacts.list(idSchema.parse(taskId));
+    const selected = artifact.find(item => item.id === idSchema.parse(artifactId));
+    if (selected === undefined) throw new Error('Artifact was not found.');
+    const destination = await dialog.showSaveDialog({ defaultPath: selected.name });
+    if (destination.canceled || destination.filePath === undefined) return null;
+    await artifacts.download(selected.taskId, selected.id, destination.filePath);
+    return destination.filePath;
+  });
   handle('task.openArtifact', async (event, taskId: unknown, artifactId: unknown) => { assertTrustedRenderer(event); const path = await artifacts.path(idSchema.parse(taskId), idSchema.parse(artifactId)); return shell.openPath(path); });
   handle('extension.readDetail', async (event, input: unknown) => { assertTrustedRenderer(event); return extensionFiles.readDetail(extensionDetailInputSchema.parse(input)); });
   handle('extension.writeDetail', async (event, input: unknown) => { assertTrustedRenderer(event); await extensionFiles.writeDetail(extensionDetailWriteInputSchema.parse(input)); });
@@ -222,11 +235,24 @@ export function registerIpc(services: DesktopIpcServices): void {
     return result;
   });
   handle('terminal.list', async (event, taskId?: unknown) => { assertTrustedRenderer(event); return terminal.list(taskId === undefined ? undefined : idSchema.parse(taskId)); });
+  handle('terminal.open', async (event, input: unknown) => { assertTrustedRenderer(event); const value = terminalSessionOpenSchema.parse(input); const session = await interactiveTerminal.open({ ...value, cwd: await requireWorkspaceCwd(value.cwd) }, event.sender.id, output => event.sender.send('terminal.output', output)); event.sender.once('destroyed', () => interactiveTerminal.closeOwner(event.sender.id)); return session; });
+   handle('terminal.write', async (event, sessionId: unknown, data: unknown) => { assertTrustedRenderer(event); interactiveTerminal.write(idSchema.parse(sessionId), z.string().min(1).max(128 * 1024).parse(data), event.sender.id); });
+   handle('terminal.resize', async (event, input: unknown) => { assertTrustedRenderer(event); const value = terminalSessionResizeSchema.parse(input); interactiveTerminal.resize(value.sessionId, value.cols, value.rows, event.sender.id); });
+   handle('terminal.close', async (event, sessionId: unknown) => { assertTrustedRenderer(event); interactiveTerminal.close(idSchema.parse(sessionId), event.sender.id); });
   handle('settings.get', async event => { assertTrustedRenderer(event); return settings.get(); });
   handle('settings.update', async (event, patch: unknown) => { assertTrustedRenderer(event); return settings.update(objectSchema.parse(patch)); });
+  handle('browser.create', async event => { assertTrustedRenderer(event); return browser.create(); });
   handle('browser.open', async (event, url: unknown, approved: unknown) => { assertTrustedRenderer(event); return browser.open(z.string().url().parse(url), z.boolean().parse(approved)); });
   handle('browser.close', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.close(idSchema.parse(id)); });
-  handle('browser.screenshot', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.screenshot(idSchema.parse(id)); });
+  handle('browser.createTab', async (event, sessionId: unknown) => { assertTrustedRenderer(event); return browser.createTab(idSchema.parse(sessionId)); });
+  handle('browser.closeTab', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.closeTab(idSchema.parse(sessionId), idSchema.parse(tabId)); });
+  handle('browser.selectTab', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.selectTab(idSchema.parse(sessionId), idSchema.parse(tabId)); });
+  handle('browser.navigate', async (event, sessionId: unknown, tabId: unknown, url: unknown, approved: unknown) => { assertTrustedRenderer(event); return browser.navigate(idSchema.parse(sessionId), idSchema.parse(tabId), z.string().url().parse(url), z.boolean().parse(approved)); });
+  handle('browser.goBack', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.goBack(idSchema.parse(sessionId), idSchema.parse(tabId)); });
+  handle('browser.goForward', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.goForward(idSchema.parse(sessionId), idSchema.parse(tabId)); });
+  handle('browser.reload', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.reload(idSchema.parse(sessionId), idSchema.parse(tabId)); });
+  handle('browser.setViewBounds', async (event, sessionId: unknown, tabId: unknown, bounds: unknown, visible: unknown) => { assertTrustedRenderer(event); const value = browserBoundsSchema.parse(bounds); browser.setViewBounds(idSchema.parse(sessionId), idSchema.parse(tabId), value, z.boolean().parse(visible)); });
+  handle('browser.screenshot', async (event, sessionId: unknown, tabId?: unknown) => { assertTrustedRenderer(event); return browser.screenshot(idSchema.parse(sessionId), tabId === undefined ? undefined : idSchema.parse(tabId)); });
   handle('browser.startRecording', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.startRecording(idSchema.parse(id)); });
   handle('browser.stopRecording', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.stopRecording(idSchema.parse(id)); });
   handle('browser.list', async event => { assertTrustedRenderer(event); return browser.list(); });
@@ -243,7 +269,8 @@ export function registerIpc(services: DesktopIpcServices): void {
 }
 
 const idSchema = z.string().min(1).max(256);
+const browserBoundsSchema = z.object({ x: z.number().finite().min(0).max(10_000), y: z.number().finite().min(0).max(10_000), width: z.number().finite().min(0).max(10_000), height: z.number().finite().min(0).max(10_000) }).strict();
 const paginationPageSchema = z.number().int().min(1);
 const paginationLimitSchema = z.number().int().min(1).max(100);
 const objectSchema = z.record(z.string(), z.unknown());
-function artifactKind(path: string): 'markdown' | 'text' | 'image' | 'audio' | 'video' | 'patch' | 'json' | 'binary' { const extension = path.split('.').pop()?.toLowerCase(); if (extension === 'md' || extension === 'markdown') return 'markdown'; if (extension === 'json') return 'json'; if (extension === 'patch' || extension === 'diff') return 'patch'; if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(extension ?? '')) return 'image'; if (['mp3', 'wav', 'm4a'].includes(extension ?? '')) return 'audio'; if (['mp4', 'webm', 'mov'].includes(extension ?? '')) return 'video'; if (['txt', 'log', 'csv'].includes(extension ?? '')) return 'text'; return 'binary'; }
+function artifactKind(path: string): 'markdown' | 'text' | 'image' | 'audio' | 'video' | 'patch' | 'json' | 'binary' { const extension = path.split('.').pop()?.toLowerCase(); if (extension === 'md' || extension === 'markdown') return 'markdown'; if (extension === 'json') return 'json'; if (extension === 'patch' || extension === 'diff') return 'patch'; if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(extension ?? '')) return 'image'; if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'].includes(extension ?? '')) return 'audio'; if (['mp4', 'webm', 'mov', 'm4v', 'avi'].includes(extension ?? '')) return 'video'; if (['txt', 'log', 'csv', 'js', 'jsx', 'ts', 'tsx', 'css', 'scss', 'html', 'htm', 'xml', 'yaml', 'yml', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'hpp', 'cs', 'sql', 'sh', 'ps1', 'vue', 'mdx', 'jsonl'].includes(extension ?? '')) return 'text'; return 'binary'; }

@@ -32,11 +32,12 @@ prompt. The composer owns approval decisions; CLI trust remains the authority.
 
 The renderer uses a code-owned component system based on Radix Primitives,
 Tailwind CSS v4, and CSS variables. Shared controls live in
-`src/renderer/components/ui.tsx`; feature components own layout and data flow,
-while `src/renderer/styles/ui.css` owns shared visual primitives and
-`src/renderer/styles/theme.css` plus `feature-layout.css` own application
-tokens and feature layout. Do not move business logic, API calls, IPC calls,
-or data mapping into shared UI components.
+`src/renderer/components/ui/`, with `ui.tsx` retained as a small export barrel;
+feature components own layout and data flow. Styles are loaded through
+`src/renderer/styles/index.css`, which composes ordered layers for tokens, base
+rules, workspace, settings, file changes, responsive rules, and shared UI
+styling. Do not move business logic, API calls, IPC calls, or data mapping into
+shared UI components.
 
 For a packaged Windows cold-start smoke test:
 

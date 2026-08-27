@@ -1,6 +1,5 @@
 import { defineConfig } from 'electron-vite';
 import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 
 const sourceDirectory = fileURLToPath(new URL('./src', import.meta.url));
@@ -12,7 +11,11 @@ const shared = { resolve: { alias: { '@desktop': sourceDirectory } } };
 export default defineConfig({
   main: {
     ...shared,
-    build: { outDir: electronBuildDirectory, lib: { entry: mainEntry } },
+    build: {
+      outDir: electronBuildDirectory,
+      lib: { entry: mainEntry },
+      rollupOptions: { external: ['node-pty'] },
+    },
   },
   preload: {
     ...shared,
@@ -21,6 +24,6 @@ export default defineConfig({
   renderer: {
     ...shared,
     root: fileURLToPath(new URL('./src/renderer', import.meta.url)),
-    plugins: [react(), tailwindcss()],
+    plugins: [react()],
   },
 });

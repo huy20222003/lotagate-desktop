@@ -1,12 +1,13 @@
 import { CliAgentProcess, type CliAgentEventHandler } from './cli-agent-process.js';
 import { resolveCliExecutable } from './cli-resolver.js';
-import type { DesktopAgentResult, DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js';
+import type { DesktopAgentResult, DesktopEvent, DesktopHostRequest, DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
 import { requireDirectory } from '../security/path-policy.js';
 import { CACHE_TTL_MS } from '../cache/cache-policy.js';
 import type { PersistentCache } from '../cache/persistent-cache.js';
 
 export interface AgentManagerHandler {
   onEvent(cwd: string, event: DesktopEvent): void;
+  onHostRequest?(cwd: string, request: DesktopHostRequest): Promise<DesktopHostResponse>;
   onDiagnostic?(cwd: string, diagnostic: { kind: 'stderr' | 'protocol'; message: string }): void;
   onExit?(cwd: string, error: Error): void;
 }
@@ -73,6 +74,9 @@ export class AgentManager {
     if (existing !== undefined) return existing;
     const eventHandler: CliAgentEventHandler = {
       onEvent: event => this.handler.onEvent(cwd, event),
+      onHostRequest: request => this.handler.onHostRequest === undefined
+        ? Promise.resolve({ version: 1, type: 'host.response', requestId: request.requestId, tool: 'browser', ok: false, error: { code: 'BROWSER_HOST_UNAVAILABLE', category: 'browser', message: 'The Desktop browser host is unavailable.', retryable: false } })
+        : this.handler.onHostRequest(cwd, request),
       onDiagnostic: diagnostic => this.handler.onDiagnostic?.(cwd, diagnostic),
       onExit: error => { this.handler.onExit?.(cwd, error); this.scheduleRecovery(cwd, agentProcess); },
     };

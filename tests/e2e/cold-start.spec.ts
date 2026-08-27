@@ -1,14 +1,17 @@
 import { test, expect } from '@playwright/test';
 import { _electron as electron } from 'playwright';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 
 test('cold start presents the normal login screen', async () => {
   const packagedExecutable = process.env['LOTAGATE_ELECTRON_PATH'];
   const executable = packagedExecutable ?? resolve('out/lotagate-desktop-win32-x64/lotagate-desktop.exe');
+  const userDataDir = await mkdtemp(resolve(tmpdir(), 'lotagate-desktop-e2e-'));
   const args: string[] = [];
   const application = await electron.launch({
     executablePath: executable,
-    args: [...args, '--disable-gpu', '--no-sandbox'],
+    args: [...args, '--disable-gpu', '--no-sandbox', `--user-data-dir=${userDataDir}`],
     env: { ...process.env, LOTAGATE_API_BASE_URL: '', LOTAGATE_TRUSTED_ORIGIN: '' },
   });
   try {
@@ -17,5 +20,8 @@ test('cold start presents the normal login screen', async () => {
     await expect(page.getByLabel(/Email or username|Email hoặc tên đăng nhập/u)).toBeVisible();
     await expect(page.getByLabel(/Password|Mật khẩu/u)).toBeVisible();
     await expect.poll(() => application.evaluate(({ Menu }) => Menu.getApplicationMenu()?.items.map(item => item.label) ?? [])).toEqual([]);
-  } finally { await application.close(); }
+  } finally {
+    await application.close();
+    await rm(userDataDir, { recursive: true, force: true });
+  }
 });

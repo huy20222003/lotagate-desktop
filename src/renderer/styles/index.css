@@ -1,0 +1,10 @@
+/* Renderer stylesheet entrypoint. Keep the layer order stable: tokens -> base -> feature styles. */
+@import './tokens.css';
+@import './base.css';
+@import './workspace.css';
+@import './layout-components.css';
+@import './settings.css';
+@import './file-changes.css';
+@import './browser.css';
+@import './responsive.css';
+@import './ui.css';

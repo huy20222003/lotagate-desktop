@@ -1,0 +1,2 @@
+export function activityLevel(count: number, peak: number): 0 | 1 | 2 | 3 { if (count === 0 || peak === 0) return 0; if (count <= peak * .25) return 1; if (count <= peak * .65) return 2; return 3; }
+export function formatTokens(value: number): string { if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`; if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`; return String(Math.round(value)); }

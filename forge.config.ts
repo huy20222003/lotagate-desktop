@@ -10,7 +10,7 @@ const config: ForgeConfig = {
     name: 'lotagate-desktop',
     executableName: 'lotagate-desktop',
     asar: true,
-    extraResource: ['.env', 'node_modules/@lotagate/cli/bin/lotagate.exe'],
+    extraResource: ['.env', 'node_modules/@lotagate/cli/bin/lotagate.exe', 'node_modules/node-pty'],
     icon: 'resources/icons/lotagate',
   },
   rebuildConfig: {},

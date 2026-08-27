@@ -1,5 +1,5 @@
 import { copyFile, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { artifactSchema, type Artifact } from '../../contracts/ipc/v1/workspace.js';
 import { JsonFileStore } from '../persistence/json-file-store.js';
@@ -13,8 +13,7 @@ export class ArtifactService {
   async list(taskId: string): Promise<Artifact[]> { return (await this.store.read()).filter(artifact => artifact.taskId === taskId && artifact.deletedAt === undefined); }
 
   async preview(taskId: string, artifactId: string): Promise<{ artifact: Artifact; content?: string; dataUrl?: string }> {
-    const artifact = (await this.list(taskId)).find(item => item.id === artifactId);
-    if (artifact === undefined) throw new Error('Artifact was not found.');
+    const artifact = await this.requireActive(taskId, artifactId);
     if (artifact.size > 2 * 1024 * 1024) return { artifact };
     const bytes = await readFile(artifact.path);
     if (['markdown', 'text', 'patch', 'json'].includes(artifact.kind)) return { artifact, content: bytes.toString('utf8') };
@@ -22,7 +21,21 @@ export class ArtifactService {
     return { artifact };
   }
 
-  async path(taskId: string, artifactId: string): Promise<string> { const artifact = (await this.list(taskId)).find(item => item.id === artifactId); if (artifact === undefined) throw new Error('Artifact was not found.'); return artifact.path; }
+  async readMedia(taskId: string, artifactId: string): Promise<{ artifact: Artifact; mimeType: string; bytes: Uint8Array }> {
+    const artifact = await this.requireActive(taskId, artifactId);
+    if (!['image', 'audio', 'video'].includes(artifact.kind)) throw new Error('The artifact is not a media file.');
+    if (artifact.size > MAX_ATTACHMENT_BYTES) throw new Error('The media artifact exceeds the supported preview size.');
+    const fileBytes = await readFile(artifact.path);
+    return { artifact, mimeType: artifactMimeType(artifact), bytes: Uint8Array.from(fileBytes) };
+  }
+
+  async path(taskId: string, artifactId: string): Promise<string> { return (await this.requireActive(taskId, artifactId)).path; }
+
+  async download(taskId: string, artifactId: string, destination: string): Promise<void> {
+    const artifact = await this.requireActive(taskId, artifactId);
+    if (resolve(artifact.path) === resolve(destination)) return;
+    await copyFile(artifact.path, destination);
+  }
 
   async attachmentInputs(taskId: string, artifactIds: string[]): Promise<Array<{ id: string; name: string; mimeType: string; sizeBytes: number; path: string }>> {
     const artifacts = await this.list(taskId);
@@ -89,6 +102,12 @@ export class ArtifactService {
     });
     if (path) await unlink(path).catch(() => undefined);
   }
+
+  private async requireActive(taskId: string, artifactId: string): Promise<Artifact> {
+    const artifact = (await this.list(taskId)).find(item => item.id === artifactId);
+    if (artifact === undefined) throw new Error('Artifact was not found.');
+    return artifact;
+  }
 }
 
 function artifactMimeType(artifact: Artifact): string {
@@ -100,12 +119,22 @@ function artifactMimeType(artifact: Artifact): string {
     if (extension === 'txt' || extension === 'log' || extension === 'csv') return 'text/plain';
     if (extension === 'xml') return 'application/xml';
     if (extension === 'html' || extension === 'htm') return 'text/html';
-    if (extension === 'js' || extension === 'ts' || extension === 'tsx' || extension === 'jsx' || extension === 'css') return 'text/plain';
+    if (['js', 'ts', 'tsx', 'jsx', 'css', 'scss', 'html', 'htm', 'xml', 'yaml', 'yml', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'hpp', 'cs', 'sql', 'sh', 'ps1', 'vue', 'mdx', 'jsonl'].includes(extension ?? '')) return 'text/plain';
     if (extension === 'zip') return 'application/zip';
     if (extension === 'doc') return 'application/msword';
     if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     if (extension === 'xls') return 'application/vnd.ms-excel';
     if (extension === 'xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    if (extension === 'mp3') return 'audio/mpeg';
+    if (extension === 'wav') return 'audio/wav';
+    if (extension === 'm4a') return 'audio/mp4';
+    if (extension === 'aac') return 'audio/aac';
+    if (extension === 'flac') return 'audio/flac';
+    if (extension === 'ogg') return 'audio/ogg';
+    if (extension === 'mp4' || extension === 'm4v') return 'video/mp4';
+    if (extension === 'webm') return 'video/webm';
+    if (extension === 'mov') return 'video/quicktime';
+    if (extension === 'avi') return 'video/x-msvideo';
     return 'application/octet-stream';
   }
   const name = artifact.name;
