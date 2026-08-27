@@ -38,7 +38,7 @@ export class GitService {
 
   async branchList(cwd: string): Promise<GitBranch[]> {
     const root = await requireDirectory(cwd);
-    const output = (await this.runChecked(['for-each-ref', '--format=%(refname:short)%09%(HEAD)%09%(upstream:short)%09%(upstream:trackshort)%00', 'refs/heads'], root, 'Unable to list Git branches.')).stdout;
+    const output = (await this.runChecked(['for-each-ref', '--format=%(refname:short)%09%(HEAD)%09%(upstream:short)%09%(upstream:track)%00', 'refs/heads'], root, 'Unable to list Git branches.')).stdout;
     return parseBranches(output);
   }
 
