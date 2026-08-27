@@ -18,12 +18,14 @@ describe('GitService', () => {
     await runGit(['init', '-b', 'main'], root);
     await runGit(['config', 'user.name', 'LotaGate Test'], root);
     await runGit(['config', 'user.email', 'test@lotagate.invalid'], root);
+    await runGit(['remote', 'add', 'origin', 'https://github.com/huy20222003/lotagate-desktop.git'], root);
     await writeFile(resolve(root, 'file.txt'), 'one\n', 'utf8');
     await runGit(['add', '.'], root);
     await runGit(['commit', '-m', 'initial'], root);
     await writeFile(resolve(root, 'file.txt'), 'two\n', 'utf8');
 
     const beforeStage = await service.status(root);
+    expect(beforeStage.repositoryName).toBe('lotagate-desktop');
     expect(beforeStage.branch).toBe('main');
     expect(beforeStage.changes).toEqual([expect.objectContaining({ path: 'file.txt', unstaged: true })]);
     await service.stage(root, 'file.txt');

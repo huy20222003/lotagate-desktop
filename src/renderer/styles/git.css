@@ -23,6 +23,8 @@
 .git-change-group { overflow: hidden; border: 1px solid var(--color-border-subtle); border-radius: 7px; background: var(--color-surface); }
 .git-change-group > header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--color-border-subtle); padding: 9px 10px; color: var(--color-text); font-size: 12px; }
 .git-change-group > header span { color: var(--color-text-tertiary); font-size: 10px; }
+.git-change-scroll { max-height: min(240px, 28vh); }
+.git-change-scroll .scrollbar-viewport { max-height: inherit; }
 .git-change-list { display: grid; }
 .git-change-row { display: flex; min-width: 0; align-items: center; gap: 6px; border-bottom: 1px solid var(--color-border-subtle); padding: 6px 8px; }
 .git-change-row:last-child { border-bottom: 0; }

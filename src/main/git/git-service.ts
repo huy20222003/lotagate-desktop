@@ -18,11 +18,13 @@ export class GitService {
     const root = await requireDirectory(cwd);
     const result = await runGitResult(['status', '--porcelain=v2', '--branch', '-z'], root);
     const snapshot = parseStatusV2(result.stdout, root, result.exitCode, sanitizeGitText(result.stderr));
+    const remote = await runGitResult(['remote', 'get-url', 'origin'], root);
+    const repositoryName = remote.exitCode === 0 ? repositoryNameFromRemote(remote.stdout) : undefined;
     const changes = await Promise.all(snapshot.changes.map(async change => {
       try { return { ...change, directory: (await lstat(assertPathInside(change.path, root))).isDirectory() }; }
       catch { return change; }
     }));
-    return { ...snapshot, changes };
+    return { ...snapshot, ...(repositoryName === undefined ? {} : { repositoryName }), changes };
   }
 
   async diff(cwd: string, staged = false): Promise<string> {
@@ -189,6 +191,12 @@ function validateBranch(branch: string): void {
 
 function validateReference(reference: string): void {
   if (!/^(?:stash@\{\d+\}|[A-Za-z0-9._/-]{1,200})$/u.test(reference)) throw new Error('Invalid Git reference.');
+}
+
+function repositoryNameFromRemote(remote: string): string | undefined {
+  const value = remote.trim().replace(/[\\/]+$/u, '');
+  const lastSegment = value.split(/[\\/:]/u).pop()?.replace(/\.git$/iu, '').trim();
+  return lastSegment || undefined;
 }
 
 function createGitError(result: GitResult, fallback: string): GitCommandError {

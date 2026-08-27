@@ -16,6 +16,7 @@ describe('Git parsers', () => {
     ].join('\0') + '\0';
 
     const snapshot = parseStatusV2(output, 'C:/repo', 0, '');
+    expect(snapshot.repositoryName).toBe('repo');
     expect(snapshot.branch).toBe('main');
     expect(snapshot.upstream).toBe('origin/main');
     expect(snapshot.ahead).toBe(2);
