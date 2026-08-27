@@ -18,6 +18,7 @@ describe('GitPanel', () => {
     Object.defineProperty(window, 'lotagate', { configurable: true, value: { agent: { onEvent: vi.fn(() => vi.fn()) }, git: { status: vi.fn().mockImplementation(() => Promise.resolve(currentSnapshot)), branchList: vi.fn().mockResolvedValue([{ name: 'main', current: true, remote: false, ahead: 1, behind: 0 }]), history: vi.fn().mockResolvedValue([]), stashList: vi.fn().mockResolvedValue([]), stageAll, stage, fileDiff, commit, readFile: vi.fn(), unstage: vi.fn(), unstageAll: vi.fn(), restore: vi.fn(), fetch: vi.fn(), pull: vi.fn(), push: vi.fn(), createBranch: vi.fn(), checkout: vi.fn(), stashSave: vi.fn(), stashApply: vi.fn(), stashDrop: vi.fn() } } });
     render(<GitPanel cwd="/workspace" onClose={vi.fn()} />);
     expect(await screen.findByText('src/file.ts')).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Commit message' })).toHaveClass('text-area');
     fireEvent.click(screen.getAllByRole('button', { name: 'Stage' })[0]!);
     await waitFor(() => expect(stage).toHaveBeenCalledWith('/workspace', 'src/file.ts'));
     fireEvent.click(screen.getByRole('button', { name: 'Stage all' }));
