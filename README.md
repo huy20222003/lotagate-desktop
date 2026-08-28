@@ -100,8 +100,39 @@ npm run package:smoke
 npm run make
 ```
 
-`npm run make` creates Windows Squirrel and ZIP artifacts under `out/make`.
+`npm run make` creates a Windows WiX MSI and ZIP artifact, a macOS DMG, and
+Linux DEB/RPM artifacts under `out/make`. A macOS PKG is also generated when
+`LOTAGATE_MAC_INSTALLER_IDENTITY` names an available installer certificate.
 Linux and macOS makers require their respective native build environments.
+
+For the complete validated native build flow, run:
+
+```bash
+npm run make:installers
+```
+
+This command installs dependencies only when `node_modules` is absent, then
+runs typecheck, lint, file-size checks, tests, the production bundle build, and
+the native Forge makers for the current operating system. It prints the exact
+artifact paths after a successful build. Run the same command on a Windows,
+macOS, and Linux build host to produce the complete multi-platform release set;
+native installers are not cross-compiled by this script.
+
+Useful options for local development or CI diagnostics:
+
+```bash
+node scripts/build-installers.mjs --dry-run
+node scripts/build-installers.mjs --skip-validation
+node scripts/build-installers.mjs --arch arm64
+```
+
+The Windows MSI uses the standard install wizard and the product license
+agreement from `resources/installer/eula.rtf`. Building the MSI requires WiX
+Toolset 3 (`candle.exe` and `light.exe`) on the Windows build host. The MSI
+uses a stable upgrade code so later versions can upgrade the same installation.
+The ZIP maker uses a small in-repository compatibility override at
+`vendor/cross-zip` to replace the deprecated recursive `fs.rmdir` call with
+`fs.rm` while preserving the Electron Forge maker API.
 
 The Electron main/preload bundle uses the CommonJS output emitted by the
 current electron-vite integration; the renderer remains Vite-managed.
