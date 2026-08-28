@@ -244,7 +244,7 @@ export function useWorkspaceController() {
     }
     if (eventTask !== undefined && eventTask.id === currentTaskId) {
       if (envelope.event.event === 'approval.requested') {
-        const request: ApprovalRequest = { approvalId: String(data['approvalId']), taskId: eventTask.id, turnId: String(data['turnId']), toolName: String(data['toolName'] ?? 'tool'), displayName: String(data['displayName'] ?? data['toolName'] ?? 'Tool'), kind: String(data['kind'] ?? 'action'), detail: (data['detail'] as Record<string, unknown> | undefined) ?? {} };
+        const request: ApprovalRequest = { approvalId: String(data['approvalId']), taskId: eventTask.id, turnId: String(data['turnId']), toolName: String(data['toolName'] ?? 'tool'), displayName: String(data['displayName'] ?? data['toolName'] ?? 'Tool'), kind: String(data['kind'] ?? 'action'), detail: (data['detail'] as Record<string, unknown> | undefined) ?? {}, ...(data['executionBoundary'] === 'host' || data['executionBoundary'] === 'sandbox' ? { executionBoundary: data['executionBoundary'] } : {}), ...(typeof data['fallbackReason'] === 'string' ? { fallbackReason: data['fallbackReason'] } : {}) };
         if (shouldAutoApprove(request, approvalMode)) void window.lotagate.agent.approvalRespond(workspace.rootPath, { approvalId: request.approvalId, approved: true }).catch(reason => setError(toMessage(reason)));
         else setApproval(request);
       }

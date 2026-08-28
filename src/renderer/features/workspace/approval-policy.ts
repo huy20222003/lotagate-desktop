@@ -4,6 +4,7 @@ import { isReadOnlyCommand } from '../../../contracts/command-policy.js';
 export type ApprovalMode = 'auto' | 'ask';
 
 export function shouldAutoApprove(request: ApprovalRequest, mode: ApprovalMode): boolean {
+  if (request.fallbackReason !== undefined) return false;
   return mode === 'auto' || isReadOnlyApproval(request);
 }
 

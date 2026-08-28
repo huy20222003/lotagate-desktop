@@ -1,0 +1,138 @@
+import { spawn } from 'node:child_process';
+import { realpath } from 'node:fs/promises';
+import type { FileChangeDiff } from '../../contracts/ipc/v1/workspace.js';
+
+const DEFAULT_RUNTIME = 'docker';
+const DEFAULT_IMAGE = 'node:22-bookworm-slim';
+const DEFAULT_TIMEOUT_MS = 30_000;
+const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+
+export interface SandboxExecutionInput {
+  root: string;
+  action: string;
+  params: Record<string, unknown>;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+export interface SandboxExecutionResult {
+  result: unknown;
+  fileChange?: FileChangeDiff;
+}
+
+export interface SandboxExecutionProvider {
+  execute(input: SandboxExecutionInput): Promise<SandboxExecutionResult>;
+}
+
+export class SandboxUnavailableError extends Error {
+  constructor(message: string) { super(message); this.name = 'SandboxUnavailableError'; }
+}
+
+export interface ContainerSandboxOptions {
+  runtimeExecutable?: string;
+  image?: string;
+  network?: 'none' | 'full';
+  memoryMb?: number;
+}
+
+/**
+ * Runs brokered filesystem and shell operations inside a disposable container.
+ * The workspace is the only mounted path. The CLI process never receives a
+ * host filesystem or shell executor when this provider is selected.
+ */
+export class ContainerSandboxExecutionProvider implements SandboxExecutionProvider {
+  private readonly runtimeExecutables: readonly string[];
+  private readonly image: string;
+  private readonly network: 'none' | 'full';
+  private readonly memoryMb: number;
+
+  constructor(options: ContainerSandboxOptions = {}) {
+    const configuredRuntime = options.runtimeExecutable ?? process.env['LOTAGATE_SANDBOX_RUNTIME'];
+    this.runtimeExecutables = [...new Set(configuredRuntime === undefined ? [DEFAULT_RUNTIME, 'podman'] : [configuredRuntime])];
+    this.image = options.image ?? process.env['LOTAGATE_SANDBOX_IMAGE'] ?? DEFAULT_IMAGE;
+    this.network = options.network ?? 'none';
+    this.memoryMb = options.memoryMb ?? 2_048;
+  }
+
+  async execute(input: SandboxExecutionInput): Promise<SandboxExecutionResult> {
+    const root = await realpath(input.root);
+    const payload = JSON.stringify({ action: input.action, params: input.params });
+    const timeoutMs = typeof input.timeoutMs === 'number' ? Math.min(Math.max(input.timeoutMs, 100), 120_000) : DEFAULT_TIMEOUT_MS;
+    let unavailable: SandboxUnavailableError | undefined;
+    for (const runtime of this.runtimeExecutables) {
+      const response = await runContainer(runtime, [
+        'run', '--rm', '--init', '--network', this.network === 'none' ? 'none' : 'bridge',
+        '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '128',
+        '--memory', `${this.memoryMb}m`, '--mount', `type=bind,source=${root},target=/workspace`,
+        '--workdir', '/workspace', this.image, 'node', '-e', CONTAINER_SCRIPT,
+      ], payload, timeoutMs, input.signal);
+      if (response.unavailable) { unavailable = new SandboxUnavailableError(response.message); continue; }
+      if (response.exitCode !== 0) throw new Error(response.stderr.trim() || `Sandbox process exited with code ${String(response.exitCode)}.`);
+      let parsed: unknown;
+      try { parsed = JSON.parse(response.stdout); }
+      catch { throw new Error('The sandbox returned an invalid execution result.'); }
+      if (!isSandboxResult(parsed)) throw new Error('The sandbox returned an incomplete execution result.');
+      if (parsed.ok !== true) throw new Error(parsed.error);
+      return { result: parsed.result, ...(parsed.fileChange === undefined ? {} : { fileChange: emptyFileChange(parsed.fileChange) }) };
+    }
+    throw unavailable ?? new SandboxUnavailableError('No supported sandbox runtime is available.');
+  }
+}
+
+function runContainer(executable: string, args: string[], input: string, timeoutMs: number, signal?: AbortSignal): Promise<{ stdout: string; stderr: string; exitCode: number | null; unavailable: boolean; message: string }> {
+  return new Promise(resolve => {
+    const child = spawn(executable, args, { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    let outputBytes = 0;
+    let timedOut = false;
+    let settled = false;
+    const append = (target: 'stdout' | 'stderr', chunk: Buffer): void => {
+      if (outputBytes >= MAX_OUTPUT_BYTES) return;
+      const remaining = MAX_OUTPUT_BYTES - outputBytes;
+      const text = chunk.toString('utf8');
+      const accepted = Buffer.from(text, 'utf8').subarray(0, remaining).toString('utf8');
+      outputBytes += Buffer.byteLength(accepted, 'utf8');
+      if (target === 'stdout') stdout += accepted; else stderr += accepted;
+    };
+    const finish = (exitCode: number | null, unavailable: boolean, message: string): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      resolve({ stdout, stderr, exitCode, unavailable, message });
+    };
+    const abort = (): void => { child.kill(); finish(null, false, 'Sandbox execution was cancelled.'); };
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
+    child.stdout.on('data', chunk => append('stdout', Buffer.from(chunk)));
+    child.stderr.on('data', chunk => append('stderr', Buffer.from(chunk)));
+    child.once('error', error => { const code = (error as NodeJS.ErrnoException).code; finish(null, code === 'ENOENT', code === 'ENOENT' ? `Sandbox runtime "${executable}" was not found.` : error.message); });
+    child.once('close', code => {
+      if (timedOut) finish(code, false, `Sandbox execution timed out after ${timeoutMs}ms.`);
+      else if (code === 125 || code === 126) finish(code, true, redactUnavailable(stderr, executable));
+      else finish(code, false, '');
+    });
+    child.stdin.end(input);
+    if (signal?.aborted === true) abort(); else signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
+function redactUnavailable(stderr: string, executable: string): string {
+  const detail = stderr.trim();
+  if (/daemon|cannot connect|image|pull access|not found|is not recognized/iu.test(detail)) return `Sandbox runtime "${executable}" is unavailable or the configured image is not ready.`;
+  return 'The sandbox runtime could not start the isolated process.';
+}
+
+function isSandboxResult(value: unknown): value is { ok: boolean; result?: unknown; error?: string; fileChange?: { path: string; kind: 'created' | 'modified' } } {
+  if (typeof value !== 'object' || value === null) return false;
+  const record = value as Record<string, unknown>;
+  const change = record['fileChange'];
+  return typeof record['ok'] === 'boolean'
+    && (change === undefined || (typeof change === 'object' && change !== null && typeof (change as Record<string, unknown>)['path'] === 'string' && ((change as Record<string, unknown>)['kind'] === 'created' || (change as Record<string, unknown>)['kind'] === 'modified')));
+}
+
+function emptyFileChange(change: { path: string; kind: 'created' | 'modified' }): FileChangeDiff {
+  return { path: change.path, lines: [], additions: 0, deletions: 0, truncated: true };
+}
+
+const CONTAINER_SCRIPT = String.raw`const fs=require('node:fs');const path=require('node:path');const cp=require('node:child_process');const input=JSON.parse(fs.readFileSync(0,'utf8'));const root='/workspace';const max=10*1024*1024;const inside=(value)=>{const target=path.resolve(root,value||'.');const rel=path.relative(root,target);if(rel==='..'||rel.startsWith('..'+path.sep)||path.isAbsolute(rel))throw new Error('Path is outside the workspace boundary.');return target};const output=(value,change)=>process.stdout.write(JSON.stringify({ok:true,result:value,...(change?{fileChange:change}:{})}));try{const p=input.params||{};if(input.action==='filesystem.read'){const target=inside(p.path);const info=fs.statSync(target);if(!info.isFile()||info.size>max)throw new Error('The requested path is not a supported text file.');output(fs.readFileSync(target,'utf8').slice(0,max));}else if(input.action==='filesystem.list'){const target=inside(p.path);if(!fs.statSync(target).isDirectory())throw new Error('The requested path is not a directory.');output(fs.readdirSync(target,{withFileTypes:true}).slice(0,2000).map(e=>({name:e.name,kind:e.isDirectory()?'directory':'file'})));}else if(input.action==='filesystem.exists'){try{fs.accessSync(inside(p.path));output(true)}catch{output(false)}}else if(input.action==='filesystem.write'){if(typeof p.content!=='string'||Buffer.byteLength(p.content,'utf8')>max)throw new Error('The requested file content is invalid or too large.');const target=inside(p.path);const existed=fs.existsSync(target);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,p.content,'utf8');output('Wrote '+Buffer.byteLength(p.content,'utf8')+' bytes.',{path:p.path,kind:existed?'modified':'created'});}else if(input.action==='shell.exec'){if(typeof p.command!=='string'||!Array.isArray(p.args)||p.args.some(a=>typeof a!=='string'))throw new Error('shell.exec parameters are invalid.');const child=cp.spawnSync(p.command,p.args,{cwd:inside(p.cwd||'.'),encoding:'utf8',timeout:120000,windowsHide:true});const stdout=String(child.stdout||'');const stderr=String(child.stderr||'');output({stdout,stderr,exitCode:typeof child.status==='number'?child.status:null,timedOut:Boolean(child.error&&child.error.code==='ETIMEDOUT'),truncated:false});}else throw new Error('Unsupported sandbox action.');}catch(error){process.stdout.write(JSON.stringify({ok:false,error:error instanceof Error?error.message:'Sandbox execution failed.'}))}`;

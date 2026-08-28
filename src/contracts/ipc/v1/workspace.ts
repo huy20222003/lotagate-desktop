@@ -65,6 +65,8 @@ export const approvalRequestSchema = z.object({
   displayName: z.string().min(1),
   kind: z.string().min(1),
   detail: z.record(z.string(), z.unknown()),
+  executionBoundary: z.enum(['sandbox', 'host']).optional(),
+  fallbackReason: z.string().max(512).optional(),
 });
 
 export const trustRequestSchema = z.object({
@@ -77,7 +79,7 @@ export const trustRequestSchema = z.object({
 export const agentEventEnvelopeSchema = z.object({
   cwd: z.string().min(1),
   event: z.object({
-    version: z.literal(1),
+    version: z.literal(2),
     type: z.literal('event'),
     event: z.string().min(1),
     data: z.record(z.string(), z.unknown()),

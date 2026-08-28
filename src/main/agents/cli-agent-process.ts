@@ -8,7 +8,7 @@ const MAX_JSONL_LINE_BYTES = 4 * 1024 * 1024;
 const DESKTOP_ATTACHMENT_CHUNK_BYTES = 512 * 1024;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const PROCESS_CLOSE_TIMEOUT_MS = 3_000;
-const REQUIRED_DESKTOP_CAPABILITIES = ['execution-context', 'tool-allowlist', 'approval-reviews', 'lifecycle-controls', 'browser-host'] as const;
+const REQUIRED_DESKTOP_CAPABILITIES = ['execution-context', 'tool-allowlist', 'approval-reviews', 'lifecycle-controls', 'browser-host', 'execution-broker'] as const;
 
 export interface CliAgentProcessOptions {
   cwd: string;
@@ -34,9 +34,9 @@ export class CliAgentProcess {
 
   async initialize(): Promise<DesktopAgentResult> {
     this.ensureStarted();
-    const result = await this.request('initialize', { client: 'lotagate-desktop', version: 1, browserHost: true });
+    const result = await this.request('initialize', { client: 'lotagate-desktop', version: 2, browserHost: true, executionBroker: true });
     if (!isDesktopAgentResult(result)) throw new CliAgentProcessError('The CLI returned an invalid Desktop protocol handshake.');
-    if (result.version !== 1) throw new CliAgentProcessError(`Unsupported Desktop protocol version: ${String(result.version)}.`);
+    if (result.version !== 2) throw new CliAgentProcessError(`Unsupported Desktop protocol version: ${String(result.version)}.`);
     const missing = REQUIRED_DESKTOP_CAPABILITIES.filter(capability => !result.capabilities.includes(capability));
     if (missing.length > 0) {
       await this.shutdown();
@@ -53,7 +53,7 @@ export class CliAgentProcess {
     const id = randomUUID();
     const operation = new Promise<unknown>((resolve, reject) => this.pending.set(id, { method, resolve, reject }));
     try {
-      await writeLine(child, desktopRequestSchema.parse({ version: 1, id, method, params: requestParams }));
+      await writeLine(child, desktopRequestSchema.parse({ version: 2, id, method, params: requestParams }));
     } catch (error) {
       this.pending.delete(id);
       throw new CliAgentProcessError('Unable to write to the CLI agent process.', error);
@@ -198,13 +198,13 @@ function isDesktopAgentResult(value: unknown): value is DesktopAgentResult {
   const record = value as Record<string, unknown>;
   const capabilities = record['capabilities'];
   return record['protocol'] === 'lotagate.desktop'
-    && record['version'] === 1
+    && record['version'] === 2
     && Array.isArray(capabilities)
     && capabilities.every((item: unknown) => typeof item === 'string');
 }
 function isResponse(value: unknown): value is { type: 'response'; id: string } { return typeof value === 'object' && value !== null && (value as Record<string, unknown>)['type'] === 'response'; }
 function isHostRequest(value: unknown): boolean { return typeof value === 'object' && value !== null && (value as Record<string, unknown>)['type'] === 'host.request'; }
-function deniedHostResponse(request: DesktopHostRequest, message: string): DesktopHostResponse { return { version: 1, type: 'host.response', requestId: request.requestId, tool: 'browser', ok: false, error: { code: 'BROWSER_HOST_UNAVAILABLE', category: 'browser', message, retryable: false } }; }
+function deniedHostResponse(request: DesktopHostRequest, message: string): DesktopHostResponse { return { version: 2, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message, retryable: false } }; }
 async function writeLine(child: ChildProcessWithoutNullStreams, value: unknown): Promise<void> { if (child.stdin.write(`${JSON.stringify(value)}\n`)) return; await once(child.stdin, 'drain'); }
 function delay(milliseconds: number): Promise<void> { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 type PendingRequest = { method: string; resolve: (value: unknown) => void; reject: (error: CliAgentProcessError) => void };

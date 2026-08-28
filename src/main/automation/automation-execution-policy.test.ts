@@ -9,6 +9,8 @@ describe('automation execution policy', () => {
     expect(buildAutomationExecutionPolicy(automation, 1)).toEqual({
       permissionPolicy: 'ask',
       browserAccess: 'disabled',
+      isolation: 'sandbox',
+      hostFallback: 'ask',
       timeoutMs: 60 * 60 * 1_000,
       retryAttempt: 0,
     });
@@ -19,6 +21,8 @@ describe('automation execution policy', () => {
       permissionPolicy: 'allowlist',
       allowedTools: ['filesystem.read'],
       browserAccess: 'disabled',
+      isolation: 'sandbox',
+      hostFallback: 'ask',
       timeoutMs: 60 * 60 * 1_000,
       retryAttempt: 1,
     });
@@ -26,6 +30,7 @@ describe('automation execution policy', () => {
 
   it('detects the CLI capability required for the Desktop execution protocol', () => {
     expect(supportsAutomationExecution(['sessions', 'browser-host'])).toBe(false);
-    expect(supportsAutomationExecution(['sessions', 'execution-context'])).toBe(true);
+    expect(supportsAutomationExecution(['sessions', 'execution-context'])).toBe(false);
+    expect(supportsAutomationExecution(['sessions', 'execution-context', 'execution-broker'])).toBe(true);
   });
 });

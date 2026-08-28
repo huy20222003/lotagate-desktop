@@ -27,7 +27,7 @@ function createProjector(task: Task) {
 describe('TaskEventProjector turn lifecycle', () => {
   it('persists the turn id as soon as the CLI reports turn.started', async () => {
     const { projector, tasks } = createProjector(createTask());
-    await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'turn.started', data: { sessionId: 'session-1', turnId: 'turn-1' } });
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'turn.started', data: { sessionId: 'session-1', turnId: 'turn-1' } });
     expect(tasks.setStatus).toHaveBeenCalledWith('task-1', 'active');
     expect(tasks.update).toHaveBeenCalledWith('task-1', { turnId: 'turn-1' });
     expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Desktop turn timing marker.', expect.objectContaining({ turnId: 'turn-1', desktopTurnTiming: expect.objectContaining({ phase: 'started', timestampMs: expect.any(Number) }) }));
@@ -35,7 +35,7 @@ describe('TaskEventProjector turn lifecycle', () => {
 
   it('clears stale turn state after a failed turn', async () => {
     const { projector, tasks } = createProjector({ ...createTask(), turnId: 'turn-1', status: 'active' });
-    await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'turn.failed', data: { sessionId: 'session-1', turnId: 'turn-1', error: 'Agent failed.' } });
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'turn.failed', data: { sessionId: 'session-1', turnId: 'turn-1', error: 'Agent failed.' } });
     expect(tasks.setStatus).toHaveBeenCalledWith('task-1', 'failed');
     expect(tasks.update).toHaveBeenCalledWith('task-1', { turnId: undefined, interruptedReason: 'Agent failed.' });
     expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Desktop turn timing marker.', expect.objectContaining({ turnId: 'turn-1', desktopTurnTiming: expect.objectContaining({ phase: 'failed', timestampMs: expect.any(Number) }) }));
@@ -43,26 +43,26 @@ describe('TaskEventProjector turn lifecycle', () => {
 
   it('persists the compacted marker emitted by the CLI context manager', async () => {
     const { projector, tasks } = createProjector(createTask());
-    await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'context.compacted', data: { sessionId: 'session-1', turnId: 'turn-1' } });
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'context.compacted', data: { sessionId: 'session-1', turnId: 'turn-1' } });
     expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Agent context was compacted.', expect.objectContaining({ sessionId: 'session-1', turnId: 'turn-1' }));
   });
 
   it('does not persist transient tool progress in the conversation transcript', async () => {
     const { projector, tasks } = createProjector(createTask());
-    await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'tool.completed', data: { sessionId: 'session-1', toolName: 'browser.newTab', displayName: 'browser.newTab', isError: true } });
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'tool.completed', data: { sessionId: 'session-1', toolName: 'browser.newTab', displayName: 'browser.newTab', isError: true } });
     expect(tasks.appendEvent).not.toHaveBeenCalled();
   });
 
   it('routes command output without a session id to the task that owns the active turn', async () => {
     const { projector, tasks } = createProjector(createTask());
-    await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'turn.started', data: { sessionId: 'session-1', turnId: 'turn-1' } });
-    await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'command.output', data: { content: 'command output' } });
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'turn.started', data: { sessionId: 'session-1', turnId: 'turn-1' } });
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'command.output', data: { content: 'command output' } });
     expect(tasks.appendEvent).toHaveBeenLastCalledWith('task-1', 'command', 'command output', expect.any(Object));
   });
 
   it('does not fall back to the latest cwd task for an event from an unknown session', async () => {
     const { projector, tasks } = createProjector(createTask());
-    await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'command.output', data: { sessionId: 'unknown-session', content: 'unrelated output' } });
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'command.output', data: { sessionId: 'unknown-session', content: 'unrelated output' } });
     expect(tasks.appendEvent).not.toHaveBeenCalled();
     expect(tasks.findByCwd).not.toHaveBeenCalled();
   });

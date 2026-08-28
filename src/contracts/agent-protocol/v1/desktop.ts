@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-export const DESKTOP_PROTOCOL_VERSION = 1 as const;
+/**
+ * Protocol v2 is the first protocol that models the Desktop execution
+ * boundary.  The CLI standalone protocol is intentionally unaffected.
+ */
+export const DESKTOP_PROTOCOL_VERSION = 2 as const;
 
 const id = z.string().min(1).max(256);
 const params = z.record(z.string(), z.unknown());
@@ -56,18 +60,20 @@ export const desktopHostRequestSchema = z.object({
   version: z.literal(DESKTOP_PROTOCOL_VERSION),
   type: z.literal('host.request'),
   requestId: id,
-  tool: z.literal('browser'),
+  tool: z.enum(['browser', 'filesystem', 'shell', 'git', 'artifact']),
   sessionId: id,
   runId: id,
   action: z.string().min(1).max(128),
   params,
+  executionBoundary: z.enum(['sandbox', 'host']),
+  hostFallback: z.enum(['ask', 'deny', 'allow']).default('deny'),
 });
 
 export const desktopHostResponseSchema = z.object({
   version: z.literal(DESKTOP_PROTOCOL_VERSION),
   type: z.literal('host.response'),
   requestId: id,
-  tool: z.literal('browser'),
+  tool: z.enum(['browser', 'filesystem', 'shell', 'git', 'artifact']),
   ok: z.boolean(),
   result: z.unknown().optional(),
   error: z.object({
@@ -76,6 +82,15 @@ export const desktopHostResponseSchema = z.object({
     message: z.string().min(1).max(4096),
     retryable: z.boolean(),
   }).optional(),
+  executionBoundary: z.enum(['sandbox', 'host']).optional(),
+  fallbackReason: z.string().max(512).optional(),
+  fileChange: z.object({
+    path: z.string().min(1).max(4_096),
+    lines: z.array(z.object({ kind: z.enum(['context', 'addition', 'deletion']), text: z.string(), oldLine: z.number().int().positive().optional(), newLine: z.number().int().positive().optional() })).max(512),
+    additions: z.number().int().nonnegative(),
+    deletions: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+  }).optional(),
 });
 
 export type DesktopRequest = z.infer<typeof desktopRequestSchema>;
@@ -83,11 +98,13 @@ export type DesktopResponse = z.infer<typeof desktopResponseSchema>;
 export type DesktopEvent = z.infer<typeof desktopEventSchema>;
 export type DesktopHostRequest = z.infer<typeof desktopHostRequestSchema>;
 export type DesktopHostResponse = z.infer<typeof desktopHostResponseSchema>;
-export type DesktopAgentResult = { protocol: 'lotagate.desktop'; version: 1; capabilities: string[] };
+export type DesktopAgentResult = { protocol: 'lotagate.desktop'; version: 2; capabilities: string[] };
 export type DesktopExecutionPolicy = {
   permissionPolicy: 'ask' | 'allowlist' | 'review' | 'autonomous';
   allowedTools?: readonly string[];
   browserAccess: 'disabled' | 'read-only' | 'interactive' | 'autonomous';
+  isolation: 'sandbox' | 'host';
+  hostFallback: 'ask' | 'deny' | 'allow';
   timeoutMs: number;
   retryAttempt?: number;
 };

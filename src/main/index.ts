@@ -18,6 +18,8 @@ import { SettingsService } from './settings/settings-service.js';
 import { ArtifactService } from './artifacts/artifact-service.js';
 import { BrowserService } from './browser/browser-service.js';
 import { BrowserHostToolBroker } from './agents/browser-host-tool-broker.js';
+import { DesktopHostExecutionBroker } from './agents/desktop-host-execution-broker.js';
+import { ContainerSandboxExecutionProvider } from './agents/sandbox-execution-provider.js';
 import { AutomationService } from './automation/automation-service.js';
 import { DesktopOperations } from './operations/desktop-operations.js';
 import { WorkspaceFileSuggestions } from './workspaces/workspace-file-suggestions.js';
@@ -84,8 +86,12 @@ app.whenReady().then(async () => {
   browserService = browser;
   const browserHost = new BrowserHostToolBroker(browser, (cwd, activity) => {
     logger.debug('agent.browser', { cwd, event: activity.event, action: activity.data['action'] });
-    const event = { version: 1 as const, type: 'event' as const, event: activity.event, data: activity.data };
+    const event = { version: 2 as const, type: 'event' as const, event: activity.event, data: activity.data };
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
+  });
+  const hostExecution = new DesktopHostExecutionBroker({
+    sandbox: new ContainerSandboxExecutionProvider(),
+    onFileChanged: (cwd, change) => logger.debug('agent.host.file.changed', { cwd, path: change.path, kind: change.kind }),
   });
   const operations = new DesktopOperations();
   if (!automationDispatchRequested) { operations.initializeDeepLinks(); operations.initializeTray(); }
@@ -99,7 +105,9 @@ app.whenReady().then(async () => {
         const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
         const binding = sessionId === undefined ? undefined : automationSessions.get(sessionId);
         if (binding !== undefined) {
-          const approval: Omit<AutomationApproval, 'requestedAt'> = { approvalId: String(event.data['approvalId']), toolName: String(event.data['toolName'] ?? 'tool'), displayName: formatToolDisplayName(event.data['toolName'], event.data['displayName']), kind: String(event.data['kind'] ?? 'action'), detail: typeof event.data['detail'] === 'object' && event.data['detail'] !== null && !Array.isArray(event.data['detail']) ? event.data['detail'] as Record<string, unknown> : {} };
+          const executionBoundary = event.data['executionBoundary'] === 'sandbox' || event.data['executionBoundary'] === 'host' ? event.data['executionBoundary'] : undefined;
+          const fallbackReason = typeof event.data['fallbackReason'] === 'string' ? event.data['fallbackReason'] : undefined;
+          const approval: Omit<AutomationApproval, 'requestedAt'> = { approvalId: String(event.data['approvalId']), toolName: String(event.data['toolName'] ?? 'tool'), displayName: formatToolDisplayName(event.data['toolName'], event.data['displayName']), kind: String(event.data['kind'] ?? 'action'), detail: typeof event.data['detail'] === 'object' && event.data['detail'] !== null && !Array.isArray(event.data['detail']) ? event.data['detail'] as Record<string, unknown> : {}, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }) };
           void automations.requestApproval(binding.runId, approval, approved => agents.approvalRespond(binding.cwd, { approvalId: approval.approvalId, approved })).catch(error => logger.warn('automation.approval.registration.failed', { runId: binding.runId, message: error instanceof Error ? error.message : 'Unable to register automation approval.' }));
         }
       }
@@ -107,7 +115,9 @@ app.whenReady().then(async () => {
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
     },
     onDiagnostic: (cwd, diagnostic) => { logger.warn('agent.diagnostic', { cwd, kind: diagnostic.kind, message: diagnostic.message }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic }); },
-    onHostRequest: (cwd, request) => browserHost.handle(cwd, request),
+    onHostRequest: async (cwd, request) => request.tool === 'browser'
+      ? browserHost.handle(cwd, request)
+      : hostExecution.handle(cwd, request),
     onExit: (cwd, error) => {
       void browserHost.closeForWorkspace(cwd);
       void tasks.interruptActiveByCwd(cwd, error.message).catch(() => undefined);

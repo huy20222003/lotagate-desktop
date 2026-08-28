@@ -3,5 +3,7 @@ import type { DesktopExecutionPolicy } from '../../contracts/agent-protocol/v1/d
 export const INTERACTIVE_DESKTOP_EXECUTION_POLICY: DesktopExecutionPolicy = {
   permissionPolicy: 'ask',
   browserAccess: 'interactive',
+  isolation: 'sandbox',
+  hostFallback: 'ask',
   timeoutMs: 60 * 60 * 1_000,
 };

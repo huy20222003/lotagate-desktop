@@ -51,7 +51,7 @@ export const automationSchema = z.object({
 
 export const automationRunStatusSchema = z.enum(['queued', 'running', 'awaiting_approval', 'succeeded', 'failed', 'cancelled', 'timed_out', 'awaiting_review', 'skipped']);
 export const automationReviewStatusSchema = z.enum(['not_required', 'pending', 'approved', 'rejected']);
-export const automationApprovalSchema = z.object({ approvalId: z.string().min(1).max(256), toolName: z.string().min(1).max(256), displayName: z.string().min(1).max(256), kind: z.string().min(1).max(128), detail: z.record(z.string(), z.unknown()), requestedAt: z.string().datetime() }).strict();
+export const automationApprovalSchema = z.object({ approvalId: z.string().min(1).max(256), toolName: z.string().min(1).max(256), displayName: z.string().min(1).max(256), kind: z.string().min(1).max(128), detail: z.record(z.string(), z.unknown()), executionBoundary: z.enum(['sandbox', 'host']).optional(), fallbackReason: z.string().max(512).optional(), requestedAt: z.string().datetime() }).strict();
 export const automationRunSchema = z.object({
   id: automationId,
   automationId,

@@ -28,6 +28,19 @@ npm run dev
 After login, add a local workspace, select or create a task, and submit a
 prompt. The composer owns approval decisions; CLI trust remains the authority.
 
+## Execution boundaries
+
+Desktop protocol v2 sends filesystem and shell actions through the Desktop
+execution broker. Interactive turns and automations request the sandbox by
+default; the broker mounts only the selected workspace into a disposable
+Docker/Podman container, disables networking by default, applies memory and
+process limits, and never passes Desktop credentials into the container. Set
+`LOTAGATE_SANDBOX_RUNTIME` or `LOTAGATE_SANDBOX_IMAGE` when a non-default
+runtime or image is required. If the sandbox is unavailable, `ask` policies
+reuse the existing approval card before retrying the exact action on the host;
+`deny` policies fail closed. Standalone CLI execution remains local because it
+does not receive the Desktop host bridge.
+
 ## UI architecture
 
 The renderer uses a code-owned component system based on Radix Primitives,

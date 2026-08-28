@@ -76,7 +76,7 @@ export class AgentManager {
     const eventHandler: CliAgentEventHandler = {
       onEvent: event => this.handler.onEvent(cwd, event),
       onHostRequest: request => this.handler.onHostRequest === undefined
-        ? Promise.resolve({ version: 1, type: 'host.response', requestId: request.requestId, tool: 'browser', ok: false, error: { code: 'BROWSER_HOST_UNAVAILABLE', category: 'browser', message: 'The Desktop browser host is unavailable.', retryable: false } })
+        ? Promise.resolve({ version: 2, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message: 'The Desktop host is unavailable.', retryable: false } })
         : this.handler.onHostRequest(cwd, request),
       onDiagnostic: diagnostic => this.handler.onDiagnostic?.(cwd, diagnostic),
       onExit: error => { this.handler.onExit?.(cwd, error); this.scheduleRecovery(cwd, agentProcess); },
