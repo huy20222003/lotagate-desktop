@@ -47,6 +47,12 @@ describe('TaskEventProjector turn lifecycle', () => {
     expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Agent context was compacted.', expect.objectContaining({ sessionId: 'session-1', turnId: 'turn-1' }));
   });
 
+  it('does not persist transient tool progress in the conversation transcript', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'tool.completed', data: { sessionId: 'session-1', toolName: 'browser.newTab', displayName: 'browser.newTab', isError: true } });
+    expect(tasks.appendEvent).not.toHaveBeenCalled();
+  });
+
   it('routes command output without a session id to the task that owns the active turn', async () => {
     const { projector, tasks } = createProjector(createTask());
     await projector.apply('C:\\workspace', { version: 1, type: 'event', event: 'turn.started', data: { sessionId: 'session-1', turnId: 'turn-1' } });

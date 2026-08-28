@@ -84,6 +84,13 @@ export type DesktopEvent = z.infer<typeof desktopEventSchema>;
 export type DesktopHostRequest = z.infer<typeof desktopHostRequestSchema>;
 export type DesktopHostResponse = z.infer<typeof desktopHostResponseSchema>;
 export type DesktopAgentResult = { protocol: 'lotagate.desktop'; version: 1; capabilities: string[] };
+export type DesktopExecutionPolicy = {
+  permissionPolicy: 'ask' | 'allowlist' | 'review' | 'autonomous';
+  allowedTools?: readonly string[];
+  browserAccess: 'disabled' | 'read-only' | 'interactive' | 'autonomous';
+  timeoutMs: number;
+  retryAttempt?: number;
+};
 
 export function parseDesktopResponse(value: unknown): DesktopResponse {
   return desktopResponseSchema.parse(value);

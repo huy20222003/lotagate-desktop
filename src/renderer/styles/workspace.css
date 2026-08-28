@@ -16,6 +16,7 @@
 .sidebar-action { width: calc(100% - 32px); justify-content: flex-start; margin-right: 16px; margin-left: 16px; padding-right: 8px; padding-left: 8px; }
 .new-task { margin-top: 16px; margin-bottom: 2px; }
 .sidebar-plugin { margin-top: 0; margin-bottom: 12px; }
+.sidebar-automation { margin-top: -8px; margin-bottom: 12px; }
 .ui-button.sidebar-action { justify-content: flex-start; }
 .ui-button.sidebar-action:hover:not(:disabled) { background: var(--color-surface); color: var(--color-text); }
 .workspace-list { min-height: 0; flex: 1; overflow: auto; }

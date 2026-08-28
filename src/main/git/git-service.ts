@@ -1,4 +1,5 @@
-import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type { GitBranch, GitCommit, GitOperationResult, GitRepositorySnapshot, GitStash } from '../../contracts/ipc/v1/workspace.js';
 import { requireDirectory, assertPathInside } from '../security/path-policy.js';
 import { runGitResult, type GitResult } from './git-process.js';
@@ -160,6 +161,35 @@ export class GitService {
     await this.runChecked(['worktree', 'remove', '--force', target], root, 'Unable to remove worktree.');
   }
 
+  /**
+   * Creates an automation worktree outside the repository. The caller must
+   * provide the dedicated parent controlled by Desktop; this keeps the
+   * general Git IPC surface workspace-bound while allowing linked worktrees
+   * to live outside the project tree.
+   */
+  async automationWorktreeAdd(cwd: string, managedRoot: string, worktreePath: string, branch: string, baseBranch?: string): Promise<Record<string, unknown>> {
+    const root = await requireDirectory(cwd);
+    const parent = await ensureDirectory(managedRoot);
+    await requireDirectory(parent);
+    const target = assertPathInside(worktreePath, parent);
+    if (target === root || target === parent) throw new Error('An automation worktree must be a unique child of the managed worktree directory.');
+    validateBranch(branch);
+    await assertMissing(target);
+    if (baseBranch !== undefined) validateBranch(baseBranch);
+    const args = ['worktree', 'add', '-b', branch, target, baseBranch ?? 'HEAD'];
+    await this.runChecked(args, root, 'Unable to create the automation worktree.');
+    return { path: target, branch };
+  }
+
+  async automationWorktreeRemove(cwd: string, managedRoot: string, worktreePath: string): Promise<void> {
+    const root = await requireDirectory(cwd);
+    const parent = resolve(managedRoot);
+    await requireDirectory(parent);
+    const target = assertPathInside(worktreePath, parent);
+    if (target === root || target === parent) throw new Error('The repository root cannot be removed as an automation worktree.');
+    await this.runChecked(['worktree', 'remove', '--force', target], root, 'Unable to remove the automation worktree.');
+  }
+
   async writeFile(cwd: string, path: string, content: string): Promise<void> {
     const root = await requireDirectory(cwd);
     await writeFile(assertPathInside(path, root), content, 'utf8');
@@ -183,6 +213,22 @@ export class GitService {
   }
 
   private operation(result: GitResult): GitOperationResult { return { output: sanitizeGitText(result.stdout.trim()), exitCode: result.exitCode, stderr: sanitizeGitText(result.stderr.trim()) }; }
+}
+
+async function ensureDirectory(path: string): Promise<string> {
+  await mkdir(path, { recursive: true });
+  return path;
+}
+
+async function assertMissing(path: string): Promise<void> {
+  try {
+    await access(path);
+    throw new Error('The automation worktree destination already exists.');
+  } catch (error) {
+    if (error instanceof Error && error.message === 'The automation worktree destination already exists.') throw error;
+    // ENOENT is the expected state. Other filesystem errors must surface.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
 }
 
 function validateBranch(branch: string): void {

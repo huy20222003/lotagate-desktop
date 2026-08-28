@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { DesktopEvent } from '../../agent-protocol/v1/desktop.js';
+import type { Automation, AutomationCreateInput, AutomationRun, AutomationStateEvent, AutomationUpdateInput } from './automation.js';
 
 export const workspaceSchema = z.object({
   id: z.string().min(1),
@@ -218,11 +219,20 @@ export interface DesktopSettingsApi {
 }
 
 export interface DesktopAutomationApi {
-  list(): Promise<Record<string, unknown>[]>;
-  create(input: Record<string, unknown>): Promise<Record<string, unknown>>;
-  update(id: string, patch: Record<string, unknown>): Promise<Record<string, unknown>>;
+  list(): Promise<Automation[]>;
+  get(id: string): Promise<Automation>;
+  create(input: AutomationCreateInput): Promise<Automation>;
+  update(id: string, patch: AutomationUpdateInput): Promise<Automation>;
   remove(id: string): Promise<void>;
-  run(id: string): Promise<Record<string, unknown>>;
+  run(id: string): Promise<AutomationRun>;
+  pause(id: string): Promise<Automation>;
+  resume(id: string): Promise<Automation>;
+  cancel(runId: string): Promise<AutomationRun>;
+  retry(runId: string): Promise<AutomationRun>;
+  review(runId: string, approved: boolean): Promise<AutomationRun>;
+  approvalRespond(runId: string, approvalId: string, approved: boolean): Promise<AutomationRun>;
+  runs(automationId: string, limit?: number): Promise<AutomationRun[]>;
+  onState(listener: (event: AutomationStateEvent) => void): () => void;
 }
 
 export interface BrowserConsoleEntry { level: string; message: string; timestamp: string; }

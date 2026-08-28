@@ -31,7 +31,10 @@ export function BrowserPanel({ taskId, sessionId, onClose }: { taskId?: string; 
       activeSessionId = snapshot.id;
       if (sessionId === undefined) ownedSessionId = snapshot.id;
       if (!disposed) setBrowserSession(snapshot);
-      else void window.lotagate.browser.close(snapshot.id).catch(() => undefined);
+      // A session supplied by the agent is owned by the main-process broker.
+      // React StrictMode and prop changes can settle an older load after its
+      // effect has been disposed, so only close sessions created by this panel.
+      else if (sessionId === undefined) void window.lotagate.browser.close(snapshot.id).catch(() => undefined);
     }).catch(reason => { if (!disposed) setError(toBrowserError(reason, 'Unable to start browser.')); });
     return () => {
       disposed = true;

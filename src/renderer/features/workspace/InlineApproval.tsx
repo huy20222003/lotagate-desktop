@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
 import type { ApprovalRequest } from '../../../contracts/ipc/v1/workspace.js';
 import { Button } from '../../components/ui.js';
+import { formatToolDisplayName } from '../../../shared/tool-display.js';
 
 export function InlineApproval({ request, onDecision }: { request: ApprovalRequest; onDecision: (approved: boolean) => Promise<void> }) {
   const [submitting, setSubmitting] = useState(false);
   const allowButtonRef = useRef<HTMLButtonElement>(null);
   const denyButtonRef = useRef<HTMLButtonElement>(null);
-  const action = request.displayName.trim().toLowerCase();
+  const action = formatToolDisplayName(request.toolName, request.displayName).toLowerCase();
   const decide = async (approved: boolean) => { if (submitting) return; setSubmitting(true); try { await onDecision(approved); } finally { setSubmitting(false); } };
   const moveDecisionFocus = (direction: 'next' | 'previous') => { const active = document.activeElement; const next = direction === 'next' ? active === allowButtonRef.current ? denyButtonRef.current : allowButtonRef.current : active === denyButtonRef.current ? allowButtonRef.current : denyButtonRef.current; next?.focus(); };
   return <section className="composer-approval" role="alertdialog" aria-labelledby="composer-approval-title" aria-describedby="composer-approval-summary" aria-busy={submitting} onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); moveDecisionFocus(event.key === 'ArrowDown' ? 'next' : 'previous'); } }}><div className="composer-approval-header"><strong id="composer-approval-title">Do you want to allow {action || 'this action'}?</strong><p id="composer-approval-summary">{approvalSummary(request)}</p></div><div className="composer-approval-options" role="group" aria-label="Approval decision"><Button ref={allowButtonRef} variant="primary" autoFocus disabled={submitting} onClick={() => void decide(true)}>Yes, allow</Button><Button ref={denyButtonRef} variant="secondary" disabled={submitting} onClick={() => void decide(false)}>No, deny</Button></div></section>;

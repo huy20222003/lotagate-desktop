@@ -16,7 +16,7 @@ export function createMainWindow(): BrowserWindow {
     minHeight: 640,
     backgroundColor: '#10151c',
     icon,
-    title: 'LotaGate Agent Workspace',
+    title: 'LotaGate Desktop',
     webPreferences: {
       preload,
       contextIsolation: true,

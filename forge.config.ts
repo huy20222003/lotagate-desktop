@@ -9,6 +9,13 @@ const config: ForgeConfig = {
   packagerConfig: {
     name: 'lotagate-desktop',
     executableName: 'lotagate-desktop',
+    win32metadata: {
+      CompanyName: 'LotaGate',
+      FileDescription: 'LotaGate Desktop',
+      InternalName: 'lotagate-desktop',
+      OriginalFilename: 'lotagate-desktop.exe',
+      ProductName: 'LotaGate Desktop',
+    },
     asar: true,
     extraResource: ['.env', 'node_modules/@lotagate/cli/bin/lotagate.exe', 'node_modules/node-pty'],
     icon: 'resources/icons/lotagate',

@@ -22,9 +22,17 @@ import { AutomationService } from './automation/automation-service.js';
 import { DesktopOperations } from './operations/desktop-operations.js';
 import { WorkspaceFileSuggestions } from './workspaces/workspace-file-suggestions.js';
 import type { Automation } from './automation/automation-service.js';
+import type { AutomationExecutionResult } from './automation/automation-service.js';
+import type { AutomationRun } from '../contracts/ipc/v1/automation.js';
+import type { AutomationApproval } from '../contracts/ipc/v1/automation.js';
 import { DesktopLogger } from './observability/desktop-logger.js';
 import { PersistentCache } from './cache/persistent-cache.js';
 import { ExtensionFileService } from './extensions/extension-file-service.js';
+import { buildAutomationExecutionPolicy, supportsAutomationExecution } from './automation/automation-execution-policy.js';
+import { cleanupAutomationWorkspace, prepareAutomationWorkspace } from './automation/automation-workspace.js';
+import { requireExistingPath } from './security/path-policy.js';
+import { artifactKind } from './artifacts/artifact-kind.js';
+import { formatToolDisplayName } from '../shared/tool-display.js';
 
 loadRuntimeEnvironment();
 const runtimeConfig = readRuntimeConfig();
@@ -34,6 +42,8 @@ let automationService: AutomationService | undefined;
 let shuttingDown = false;
 const logger = new DesktopLogger();
 const cache = new PersistentCache();
+
+app.setAppUserModelId('com.lotagate.desktop');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.on('second-instance', (_event, commandLine) => {
@@ -58,6 +68,7 @@ app.whenReady().then(() => {
   const workspaces = new WorkspaceRegistry();
   const extensionFiles = new ExtensionFileService(workspaces);
   const tasks = new TaskStore();
+  const artifacts = new ArtifactService();
   const taskProjector = new TaskEventProjector(tasks);
   const browser = new BrowserService(snapshot => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('browser.state', snapshot);
@@ -71,9 +82,20 @@ app.whenReady().then(() => {
   const operations = new DesktopOperations();
   operations.initializeDeepLinks();
   operations.initializeTray();
+  const automations = new AutomationService();
+  automationService = automations;
+  const automationSessions = new Map<string, { runId: string; cwd: string }>();
   const agents = new AgentManager({
     onEvent: (cwd, event) => {
       logger.debug('agent.event', { cwd, event: event.event });
+      if (event.event === 'approval.requested') {
+        const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
+        const binding = sessionId === undefined ? undefined : automationSessions.get(sessionId);
+        if (binding !== undefined) {
+          const approval: Omit<AutomationApproval, 'requestedAt'> = { approvalId: String(event.data['approvalId']), toolName: String(event.data['toolName'] ?? 'tool'), displayName: formatToolDisplayName(event.data['toolName'], event.data['displayName']), kind: String(event.data['kind'] ?? 'action'), detail: typeof event.data['detail'] === 'object' && event.data['detail'] !== null && !Array.isArray(event.data['detail']) ? event.data['detail'] as Record<string, unknown> : {} };
+          void automations.requestApproval(binding.runId, approval, approved => agents.approvalRespond(binding.cwd, { approvalId: approval.approvalId, approved })).catch(error => logger.warn('automation.approval.registration.failed', { runId: binding.runId, message: error instanceof Error ? error.message : 'Unable to register automation approval.' }));
+        }
+      }
       void taskProjector.apply(cwd, event).catch(() => undefined);
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
     },
@@ -87,21 +109,52 @@ app.whenReady().then(() => {
     },
   }, cache);
   agentManager = agents;
-  const automations = new AutomationService();
-  automationService = automations;
-  const executeAutomation = async (automation: Automation): Promise<void> => {
+  const git = new GitService();
+  const executeAutomation = async (automation: Automation, run: AutomationRun, signal: AbortSignal): Promise<AutomationExecutionResult> => {
     const workspace = await workspaces.require(automation.workspaceId);
-    const task = await tasks.create({ workspaceId: workspace.id, cwd: workspace.rootPath, title: automation.name, prompt: automation.prompt });
-    await agents.initialize(workspace.rootPath);
-    const session = await agents.sessionCreate(workspace.rootPath, { name: task.title });
+    if (!workspace.trusted) throw new Error('Trust the automation workspace before running it.');
+    const executionWorkspace = await prepareAutomationWorkspace(git, workspace, automation, run.id);
+    let preserveWorkspace = true;
+    const task = await tasks.create({ workspaceId: workspace.id, cwd: executionWorkspace.cwd, title: automation.name, prompt: automation.prompt });
+    const cli = await agents.initialize(executionWorkspace.cwd);
+    const execution = buildAutomationExecutionPolicy(automation, run.attempt);
+    if (!supportsAutomationExecution(cli.capabilities)) throw new Error('The installed CLI does not support the required Desktop execution protocol. Update the Desktop CLI runtime before running this automation.');
+    const session = await agents.sessionCreate(executionWorkspace.cwd, { name: task.title });
     const sessionId = extractSessionId(session);
     if (sessionId === undefined) throw new Error('Automation could not create a CLI session.');
+    automationSessions.set(sessionId, { runId: run.id, cwd: executionWorkspace.cwd });
     await tasks.update(task.id, { sessionId });
-    await agents.turnStart(workspace.rootPath, { sessionId, prompt: automation.prompt });
+    const cancelTurn = () => { void cancelTaskTurn(agents, tasks, executionWorkspace.cwd, task.id); };
+    signal.addEventListener('abort', cancelTurn, { once: true });
+    browserHost.setRunPolicy(run.id, automation.browserAccess);
+    browserHost.bindSessionToRun(executionWorkspace.cwd, sessionId, run.id);
+    try {
+      await agents.turnStart(executionWorkspace.cwd, { sessionId, prompt: automation.prompt, ...(automation.model === undefined ? {} : { model: automation.model }), runId: run.id, execution });
+      const completedTask = await waitForAutomationTask(tasks, task.id, signal);
+      const outputs = await collectAutomationOutputs(tasks, artifacts, task.id, executionWorkspace.cwd);
+      preserveWorkspace = automation.permissionPolicy === 'review';
+      return { taskId: completedTask.id, sessionId, executionCwd: executionWorkspace.cwd, ...(executionWorkspace.branch === undefined ? {} : { branch: executionWorkspace.branch }), ...(executionWorkspace.worktreePath === undefined ? {} : { worktreePath: executionWorkspace.worktreePath }), ...outputs, ...(completedTask.status === 'completed' ? { summary: 'Automation completed successfully.' } : {}), reviewRequired: automation.permissionPolicy === 'review' };
+    } finally {
+      signal.removeEventListener('abort', cancelTurn);
+      if (!automation.keepSession) await browserHost.closeRun(run.id);
+      else browserHost.clearRunPolicy(run.id);
+      if (sessionId !== undefined) automationSessions.delete(sessionId);
+      await executionWorkspace.cleanup(preserveWorkspace).catch(error => logger.warn('automation.worktree.cleanup.failed', { runId: run.id, message: error instanceof Error ? error.message : 'Unable to clean automation worktree.' }));
+    }
   };
-  const runAutomation = (id: string): Promise<Automation> => automations.run(id, executeAutomation);
-  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, extensionFiles, git: new GitService(), terminal: new TerminalService(workspaces, tasks), interactiveTerminal: new InteractiveTerminalService(workspaces), settings: new SettingsService(), artifacts: new ArtifactService(), browser, automations, operations, runAutomation, setMenuContext: setApplicationMenu, logger });
-  automations.start(executeAutomation, 15_000);
+  const runAutomation = (id: string): Promise<AutomationRun> => automations.runNow(id, executeAutomation);
+  const retryAutomation = (runId: string): Promise<AutomationRun> => automations.retry(runId, executeAutomation);
+  automations.onState(event => {
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send('automation.state', event);
+    const run = event.run;
+    if (event.type === 'reviewed' && run?.worktreePath !== undefined) void workspaces.require(event.automationId).then(workspace => cleanupAutomationWorkspace(git, workspace, run)).catch(error => logger.warn('automation.review.worktree.cleanup.failed', { runId: run?.id, message: error instanceof Error ? error.message : 'Unable to clean reviewed automation worktree.' }));
+    if (run !== undefined && event.automation?.notifications && ['completed', 'failed', 'cancelled', 'reviewed'].includes(event.type)) {
+      const detail = run.status === 'succeeded' ? 'completed successfully.' : run.status === 'awaiting_review' ? 'is waiting for review.' : `${run.status.replace('_', ' ')}.`;
+      operations.notify(`Automation · ${event.automation.name}`, detail);
+    }
+  });
+  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, extensionFiles, git, terminal: new TerminalService(workspaces, tasks), interactiveTerminal: new InteractiveTerminalService(workspaces), settings: new SettingsService(), artifacts, browser, automations, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger });
+  automations.start(executeAutomation, 60_000);
   const openMainWindow = () => { const window = createMainWindow(); browser.attachWindow(window); return window; };
   openMainWindow();
   app.on('activate', () => {
@@ -127,4 +180,39 @@ function extractSessionId(value: unknown): string | undefined {
   if (typeof session !== 'object' || session === null) return undefined;
   const id = (session as Record<string, unknown>)['id'];
   return typeof id === 'string' ? id : undefined;
+}
+
+async function waitForAutomationTask(tasks: TaskStore, taskId: string, signal: AbortSignal): Promise<Awaited<ReturnType<TaskStore['require']>>> {
+  while (true) {
+    if (signal.aborted) throw new Error('Automation run was cancelled.');
+    const task = await tasks.require(taskId);
+    if (task.status === 'completed') return task;
+    if (task.status === 'failed' || task.status === 'interrupted') throw new Error(task.interruptedReason ?? 'The automation task failed.');
+    if (task.status === 'cancelled') throw new Error('The automation task was cancelled.');
+    await delay(250);
+  }
+}
+
+function delay(milliseconds: number): Promise<void> { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
+
+async function collectAutomationOutputs(tasks: TaskStore, artifacts: ArtifactService, taskId: string, cwd: string): Promise<{ changedFiles: string[]; artifactIds: string[] }> {
+  const activities = await tasks.activities(taskId);
+  const changedFiles = [...new Set(activities.flatMap(activity => {
+    const change = activity.metadata['change'];
+    if (typeof change !== 'object' || change === null || Array.isArray(change)) return [];
+    const path = (change as Record<string, unknown>)['path'];
+    return typeof path === 'string' && path.length > 0 ? [path] : [];
+  }))];
+  for (const changedFile of changedFiles) {
+    const sourcePath = await requireExistingPath(changedFile, cwd).catch(() => undefined);
+    if (sourcePath === undefined) continue;
+    await artifacts.importFile(taskId, sourcePath, artifactKind(sourcePath)).catch(() => undefined);
+  }
+  const artifactIds = (await artifacts.list(taskId)).map(artifact => artifact.id);
+  return { changedFiles, artifactIds };
+}
+
+async function cancelTaskTurn(agents: AgentManager, tasks: TaskStore, cwd: string, taskId: string): Promise<void> {
+  const task = await tasks.require(taskId).catch(() => undefined);
+  if (task?.turnId !== undefined) await agents.turnCancel(cwd, task.turnId).catch(() => undefined);
 }

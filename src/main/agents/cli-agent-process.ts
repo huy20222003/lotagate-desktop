@@ -8,6 +8,7 @@ const MAX_JSONL_LINE_BYTES = 4 * 1024 * 1024;
 const DESKTOP_ATTACHMENT_CHUNK_BYTES = 512 * 1024;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const PROCESS_CLOSE_TIMEOUT_MS = 3_000;
+const REQUIRED_DESKTOP_CAPABILITIES = ['execution-context', 'tool-allowlist', 'approval-reviews', 'lifecycle-controls', 'browser-host'] as const;
 
 export interface CliAgentProcessOptions {
   cwd: string;
@@ -36,6 +37,11 @@ export class CliAgentProcess {
     const result = await this.request('initialize', { client: 'lotagate-desktop', version: 1, browserHost: true });
     if (!isDesktopAgentResult(result)) throw new CliAgentProcessError('The CLI returned an invalid Desktop protocol handshake.');
     if (result.version !== 1) throw new CliAgentProcessError(`Unsupported Desktop protocol version: ${String(result.version)}.`);
+    const missing = REQUIRED_DESKTOP_CAPABILITIES.filter(capability => !result.capabilities.includes(capability));
+    if (missing.length > 0) {
+      await this.shutdown();
+      throw new CliAgentProcessError(`The CLI does not support the required Desktop execution protocol. Missing capabilities: ${missing.join(', ')}.`);
+    }
     this.initialized = true;
     return result;
   }

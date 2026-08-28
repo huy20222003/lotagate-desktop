@@ -1,5 +1,6 @@
 import { DESKTOP_TURN_TIMING_METADATA_KEY, type DesktopTurnTimingMarker } from '../../contracts/ipc/v1/workspace.js';
 import type { DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js';
+import { formatToolDisplayName } from '../../shared/tool-display.js';
 import type { TaskStore } from './task-store.js';
 
 export class TaskEventProjector {
@@ -49,9 +50,12 @@ export class TaskEventProjector {
 
 function eventText(event: string, data: Record<string, unknown>): string | undefined {
   if (event === 'assistant.delta') return typeof data['content'] === 'string' ? data['content'] : undefined;
-  if (event === 'approval.requested') return `Approval requested for ${String(data['displayName'] ?? data['toolName'] ?? 'tool')}.`;
+  if (event === 'approval.requested') return `Approval requested for ${formatToolDisplayName(data['toolName'], data['displayName'])}.`;
   if (event === 'trust.requested') return `Project trust requested for ${String(data['path'] ?? 'workspace')}.`;
-  if (event === 'tool.started' || event === 'tool.completed') return `${event}: ${String(data['displayName'] ?? data['toolName'] ?? 'tool')}`;
+  // Tool progress belongs to the live status region. Persisting it as a
+  // transcript activity makes completed/failed messages reappear at the end
+  // of an otherwise completed assistant response.
+  if (event === 'tool.started' || event === 'tool.completed') return undefined;
   if (event === 'file.changed') return 'Workspace files changed.';
   if (event === 'command.output') return typeof data['content'] === 'string' ? data['content'] : 'Command output received.';
   if (event === 'context.compacted') return 'Agent context was compacted.';

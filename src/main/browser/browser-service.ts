@@ -155,8 +155,12 @@ export class BrowserService {
   }
 
   setViewBounds(sessionId: string, tabId: string, bounds: BrowserViewBounds, visible: boolean): void {
-    const entry = this.require(sessionId);
-    const tab = this.requireTab(entry, tabId);
+    // Layout updates are best-effort. A renderer resize callback can arrive
+    // after the browser drawer or its session has already been closed.
+    const entry = this.sessions.get(sessionId);
+    if (entry === undefined) return;
+    const tab = entry.tabs.get(tabId);
+    if (tab === undefined) return;
     const isVisible = visible && entry.activeTabId === tabId && tab.snapshot.url !== 'about:blank' && bounds.width > 0 && bounds.height > 0 && this.hostWindow !== undefined;
     tab.view.setVisible(isVisible);
     tab.view.setBounds(isVisible ? normalizeBounds(bounds) : EMPTY_BOUNDS);
@@ -288,7 +292,7 @@ export class BrowserService {
     const contents = tab.view.webContents;
     contents.on('will-navigate', (event, destination) => { if (!isHttpUrl(destination) && destination !== 'about:blank') event.preventDefault(); });
     contents.setWindowOpenHandler(({ url }) => { appendCapped(entry.evidence.errors, `Blocked popup navigation: ${redact(url)}`, MAX_ERROR_ENTRIES); this.emit(entry); return { action: 'deny' }; });
-    contents.on('console-message', (_event, level, message) => { appendCapped(entry.evidence.console, { level: consoleLevel(level), message: redact(message), timestamp: new Date().toISOString() }, MAX_CONSOLE_ENTRIES); this.emit(entry); });
+    contents.on('console-message', details => { appendCapped(entry.evidence.console, { level: consoleLevel(details.level), message: redact(details.message), timestamp: new Date().toISOString() }, MAX_CONSOLE_ENTRIES); this.emit(entry); });
     contents.on('did-start-loading', () => { tab.snapshot.loading = true; this.emit(entry); });
     contents.on('did-stop-loading', () => { tab.snapshot.loading = false; this.refreshTabState(entry, tab); });
     contents.on('did-navigate', (_event, destination) => { tab.snapshot.url = destination; this.refreshTabState(entry, tab); });
@@ -431,7 +435,7 @@ export class BrowserService {
 function parseHttpUrl(value: string): URL { const parsed = new URL(value); if (!isHttpUrl(parsed.toString())) throw new Error('Browser navigation only supports HTTP(S) URLs.'); return parsed; }
 function isHttpUrl(value: string): boolean { try { const protocol = new URL(value).protocol; return protocol === 'http:' || protocol === 'https:'; } catch { return false; } }
 function normalizeBounds(bounds: BrowserViewBounds): BrowserViewBounds { return { x: Math.max(0, Math.floor(bounds.x)), y: Math.max(0, Math.floor(bounds.y)), width: Math.min(10_000, Math.max(1, Math.floor(bounds.width))), height: Math.min(10_000, Math.max(1, Math.floor(bounds.height))) }; }
-function consoleLevel(level: number): string { return ['log', 'warning', 'error', 'debug', 'info'][level] ?? 'log'; }
+function consoleLevel(level: 'info' | 'warning' | 'error' | 'debug'): string { return level; }
 function redact(value: string): string { return value.replace(/Bearer\s+[^\s]+/giu, 'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]{8,}/gu, '[REDACTED]').slice(0, 4_096); }
 function cloneEvidence(value: BrowserEvidence): BrowserEvidence { return { ...value, console: [...value.console], errors: [...value.errors], screenshots: [...value.screenshots], recordings: [...value.recordings] }; }
 function appendCapped<T>(items: T[], value: T, limit: number): void { items.push(value); if (items.length > limit) items.splice(0, items.length - limit); }

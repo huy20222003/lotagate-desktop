@@ -15,8 +15,8 @@ export class DesktopOperations {
     const image = nativeImage.createFromPath(iconPath);
     if (image.isEmpty()) return;
     this.tray = new Tray(image);
-    this.tray.setToolTip('LotaGate Agent Workspace');
-    this.tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Show LotaGate', click: () => this.showWindow() }, { type: 'separator' }, { label: 'Quit', click: () => app.quit() }]));
+    this.tray.setToolTip('LotaGate Desktop');
+    this.tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Show LotaGate Desktop', click: () => this.showWindow() }, { type: 'separator' }, { label: 'Quit', click: () => app.quit() }]));
     this.tray.on('click', () => this.showWindow());
   }
 

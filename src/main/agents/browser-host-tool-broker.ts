@@ -1,4 +1,5 @@
 import type { DesktopHostRequest, DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
+import type { AutomationBrowserAccess } from '../../contracts/ipc/v1/automation.js';
 import { BrowserService, type BrowserTarget, type BrowserWaitCondition } from '../browser/browser-service.js';
 
 export interface BrowserHostActivity {
@@ -13,9 +14,31 @@ export interface BrowserHostActivity {
  */
 export class BrowserHostToolBroker {
   private readonly sessions = new Map<string, string>();
+  private readonly sessionRuns = new Map<string, string>();
+  private readonly runSessions = new Map<string, Set<string>>();
+  private readonly runPolicies = new Map<string, AutomationBrowserAccess>();
   private readonly serial = new Map<string, Promise<void>>();
 
   constructor(private readonly browser: BrowserService, private readonly onActivity?: (cwd: string, activity: BrowserHostActivity) => void) {}
+
+  setRunPolicy(runId: string, access: AutomationBrowserAccess): void { this.runPolicies.set(runId, access); }
+  bindSessionToRun(cwd: string, sessionId: string, runId: string): void { this.sessionRuns.set(`${cwd}\u0000${sessionId}`, runId); }
+  clearRunPolicy(runId: string): void {
+    this.runPolicies.delete(runId);
+    for (const [key, sessionRunId] of this.sessionRuns) if (sessionRunId === runId) this.sessionRuns.delete(key);
+  }
+  async closeRun(runId: string): Promise<void> {
+    const sessionIds = this.runSessions.get(runId);
+    if (sessionIds !== undefined) {
+      for (const sessionId of sessionIds) {
+        for (const [key, mappedSessionId] of this.sessions) if (mappedSessionId === sessionId) this.sessions.delete(key);
+        await this.browser.close(sessionId);
+      }
+    }
+    this.runSessions.delete(runId);
+    this.runPolicies.delete(runId);
+    for (const [key, sessionRunId] of this.sessionRuns) if (sessionRunId === runId) this.sessionRuns.delete(key);
+  }
 
   async handle(cwd: string, request: DesktopHostRequest): Promise<DesktopHostResponse> {
     const key = `${cwd}\u0000${request.sessionId}`;
@@ -46,14 +69,23 @@ export class BrowserHostToolBroker {
 
   async closeForWorkspace(cwd: string): Promise<void> {
     const prefix = `${cwd}\u0000`;
+    const closedSessionIds = new Set<string>();
     for (const [key, browserSessionId] of this.sessions) {
       if (!key.startsWith(prefix)) continue;
       this.sessions.delete(key);
+      closedSessionIds.add(browserSessionId);
       await this.browser.close(browserSessionId);
+    }
+    for (const key of this.sessionRuns.keys()) if (key.startsWith(prefix)) this.sessionRuns.delete(key);
+    for (const [runId, sessionIds] of this.runSessions) {
+      for (const sessionId of closedSessionIds) sessionIds.delete(sessionId);
+      if (sessionIds.size === 0) this.runSessions.delete(runId);
     }
   }
 
   private async execute(cwd: string, request: DesktopHostRequest): Promise<DesktopHostResponse> {
+    const policyRunId = this.sessionRuns.get(`${cwd}\u0000${request.sessionId}`) ?? request.runId;
+    assertBrowserAccess(request, this.runPolicies.get(policyRunId));
     const browserSessionId = await this.ensureSession(cwd, request);
     const tabId = optionalId(request.params['tabId']);
     const activeTabId = tabId ?? this.browser.get(browserSessionId).activeTabId;
@@ -74,6 +106,10 @@ export class BrowserHostToolBroker {
     if (existing !== undefined) return existing;
     const snapshot = await this.browser.create();
     this.sessions.set(key, snapshot.id);
+    const policyRunId = this.sessionRuns.get(`${cwd}\u0000${request.sessionId}`) ?? request.runId;
+    const runSessions = this.runSessions.get(policyRunId) ?? new Set<string>();
+    runSessions.add(snapshot.id);
+    this.runSessions.set(policyRunId, runSessions);
     this.onActivity?.(cwd, { event: 'browser.session.created', data: { sessionId: request.sessionId, runId: request.runId, browserSessionId: snapshot.id, tabId: snapshot.activeTabId } });
     return snapshot.id;
   }
@@ -131,6 +167,13 @@ export class BrowserHostToolBroker {
         throw new Error(`Unsupported browser action: ${action}.`);
     }
   }
+}
+
+function assertBrowserAccess(request: DesktopHostRequest, access: AutomationBrowserAccess | undefined): void {
+  if (access === undefined || access === 'autonomous' || access === 'interactive') return;
+  if (access === 'disabled') throw new Error('Browser access is disabled for this automation.');
+  const readOnlyActions = new Set(['browser.navigate', 'browser.inspect', 'browser.screenshot', 'browser.readField', 'browser.waitFor', 'browser.tabs', 'browser.back', 'browser.forward', 'browser.reload']);
+  if (!readOnlyActions.has(request.action)) throw new Error('This automation only has read-only browser access.');
 }
 
 function requiredString(params: Record<string, unknown>, key: string, maxLength: number): string {

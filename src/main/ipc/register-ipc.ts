@@ -15,7 +15,7 @@ import type { SettingsService } from '../settings/settings-service.js';
 import type { ArtifactService } from '../artifacts/artifact-service.js';
 import type { BrowserService } from '../browser/browser-service.js';
 import type { AutomationService } from '../automation/automation-service.js';
-import type { Automation } from '../automation/automation-service.js';
+import type { AutomationRun } from '../../contracts/ipc/v1/automation.js';
 import type { DesktopOperations } from '../operations/desktop-operations.js';
 import { assertTrustedRenderer } from './sender-policy.js';
 import type { DesktopMenuContext } from '../windows/application-menu.js';
@@ -25,7 +25,9 @@ import { registerLoggedIpcHandler } from './logged-ipc.js';
 import type { DesktopLogger } from '../observability/desktop-logger.js';
 import type { ExtensionFileService } from '../extensions/extension-file-service.js';
 import { extensionDetailInputSchema, extensionDetailWriteInputSchema, hookCreateInputSchema, hookRemoveInputSchema } from '../../contracts/ipc/v1/extensions-schema.js';
+import { automationCreateInputSchema, automationUpdateInputSchema } from '../../contracts/ipc/v1/automation.js';
 import { requireDirectory, requireExistingPath } from '../security/path-policy.js';
+import { artifactKind } from '../artifacts/artifact-kind.js';
 
 const cwdSchema = z.string().min(1).max(4_096);
 
@@ -45,13 +47,14 @@ export interface DesktopIpcServices {
   browser: BrowserService;
   automations: AutomationService;
   operations: DesktopOperations;
-  runAutomation(id: string): Promise<Automation>;
+  runAutomation(id: string): Promise<AutomationRun>;
+  retryAutomation(runId: string): Promise<AutomationRun>;
   setMenuContext(context: DesktopMenuContext): void;
   logger: DesktopLogger;
 }
 
 export function registerIpc(services: DesktopIpcServices): void {
-  const { auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, extensionFiles, git, terminal, interactiveTerminal, settings, artifacts, browser, automations, operations, runAutomation, setMenuContext, logger } = services;
+  const { auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, extensionFiles, git, terminal, interactiveTerminal, settings, artifacts, browser, automations, operations, runAutomation, retryAutomation, setMenuContext, logger } = services;
   const handle = <TArgs extends unknown[], TResult>(channel: string, listener: (event: Electron.IpcMainInvokeEvent, ...args: TArgs) => TResult): void => registerLoggedIpcHandler(logger, channel, listener);
   const requireWorkspaceCwd = (input: unknown): Promise<string> => workspaces.requireRegisteredRoot(cwdSchema.parse(input));
   const taskUpdateSchema = z.object({
@@ -271,10 +274,18 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('browser.list', async event => { assertTrustedRenderer(event); return browser.list(); });
   handle('browser.evidence', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.evidence(idSchema.parse(id)); });
   handle('automation.list', async event => { assertTrustedRenderer(event); return automations.list(); });
-  handle('automation.create', async (event, input: unknown) => { assertTrustedRenderer(event); return automations.create(objectSchema.parse(input) as never); });
-  handle('automation.update', async (event, id: unknown, patch: unknown) => { assertTrustedRenderer(event); return automations.update(idSchema.parse(id), objectSchema.parse(patch)); });
+  handle('automation.get', async (event, id: unknown) => { assertTrustedRenderer(event); return automations.get(idSchema.parse(id)); });
+  handle('automation.create', async (event, input: unknown) => { assertTrustedRenderer(event); return automations.create(automationCreateInputSchema.parse(input)); });
+  handle('automation.update', async (event, id: unknown, patch: unknown) => { assertTrustedRenderer(event); return automations.update(idSchema.parse(id), automationUpdateInputSchema.parse(patch)); });
   handle('automation.remove', async (event, id: unknown) => { assertTrustedRenderer(event); return automations.remove(idSchema.parse(id)); });
   handle('automation.run', async (event, id: unknown) => { assertTrustedRenderer(event); return runAutomation(idSchema.parse(id)); });
+  handle('automation.pause', async (event, id: unknown) => { assertTrustedRenderer(event); return automations.pause(idSchema.parse(id)); });
+  handle('automation.resume', async (event, id: unknown) => { assertTrustedRenderer(event); return automations.resume(idSchema.parse(id)); });
+  handle('automation.cancel', async (event, runId: unknown) => { assertTrustedRenderer(event); return automations.cancel(idSchema.parse(runId)); });
+  handle('automation.retry', async (event, runId: unknown) => { assertTrustedRenderer(event); return retryAutomation(idSchema.parse(runId)); });
+  handle('automation.review', async (event, runId: unknown, approved: unknown) => { assertTrustedRenderer(event); return automations.review(idSchema.parse(runId), z.boolean().parse(approved)); });
+  handle('automation.approvalRespond', async (event, runId: unknown, approvalId: unknown, approved: unknown) => { assertTrustedRenderer(event); return automations.respondApproval(idSchema.parse(runId), idSchema.parse(approvalId), z.boolean().parse(approved)); });
+  handle('automation.runs', async (event, id: unknown, limit?: unknown) => { assertTrustedRenderer(event); return automations.runs(idSchema.parse(id), limit === undefined ? 100 : z.number().int().min(1).max(100).parse(limit)); });
   handle('operations.notify', async (event, title: unknown, body: unknown) => { assertTrustedRenderer(event); operations.notify(z.string().min(1).parse(title), z.string().max(2_000).parse(body)); });
   handle('operations.showWindow', async event => { assertTrustedRenderer(event); operations.showWindow(); });
   handle('operations.exportDiagnostics', async event => { assertTrustedRenderer(event); return operations.exportDiagnostics({ version: process.env['npm_package_version'] ?? '0.1.0', settings: await settings.get() }); });
@@ -286,4 +297,3 @@ const browserBoundsSchema = z.object({ x: z.number().finite().min(0).max(10_000)
 const paginationPageSchema = z.number().int().min(1);
 const paginationLimitSchema = z.number().int().min(1).max(100);
 const objectSchema = z.record(z.string(), z.unknown());
-function artifactKind(path: string): 'markdown' | 'text' | 'image' | 'audio' | 'video' | 'patch' | 'json' | 'binary' { const extension = path.split('.').pop()?.toLowerCase(); if (extension === 'md' || extension === 'markdown') return 'markdown'; if (extension === 'json') return 'json'; if (extension === 'patch' || extension === 'diff') return 'patch'; if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(extension ?? '')) return 'image'; if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'].includes(extension ?? '')) return 'audio'; if (['mp4', 'webm', 'mov', 'm4v', 'avi'].includes(extension ?? '')) return 'video'; if (['txt', 'log', 'csv', 'js', 'jsx', 'ts', 'tsx', 'css', 'scss', 'html', 'htm', 'xml', 'yaml', 'yml', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'hpp', 'cs', 'sql', 'sh', 'ps1', 'vue', 'mdx', 'jsonl'].includes(extension ?? '')) return 'text'; return 'binary'; }

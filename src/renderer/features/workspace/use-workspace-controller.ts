@@ -190,6 +190,7 @@ export function useWorkspaceController() {
         setThinkingStartedAt(current => current ?? Date.now());
       }
       if (terminal && currentTurn) {
+        setAgentStatus(undefined);
         setThinking(false); setThinkingStartedAt(undefined);
         const steeredId = steeringQueueIdRef.current;
         const shouldDrain = !suppressQueueRef.current && (envelope.event.event !== 'turn.cancelled' || steeredId !== undefined);

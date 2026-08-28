@@ -1,9 +1,10 @@
 import { CliAgentProcess, type CliAgentEventHandler } from './cli-agent-process.js';
 import { resolveCliExecutable } from './cli-resolver.js';
-import type { DesktopAgentResult, DesktopEvent, DesktopHostRequest, DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
+import type { DesktopAgentResult, DesktopEvent, DesktopExecutionPolicy, DesktopHostRequest, DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
 import { requireDirectory } from '../security/path-policy.js';
 import { CACHE_TTL_MS } from '../cache/cache-policy.js';
 import type { PersistentCache } from '../cache/persistent-cache.js';
+import { INTERACTIVE_DESKTOP_EXECUTION_POLICY } from './desktop-execution-policy.js';
 
 export interface AgentManagerHandler {
   onEvent(cwd: string, event: DesktopEvent): void;
@@ -35,14 +36,14 @@ export class AgentManager {
   async sessionCreate(cwd: string, input: { model?: string; name?: string }): Promise<unknown> { return this.request(cwd, 'session.create', input); }
   async sessionList(cwd: string): Promise<unknown> { return this.request(cwd, 'session.list', {}); }
   async sessionResume(cwd: string, sessionId: string): Promise<unknown> { return this.request(cwd, 'session.resume', { sessionId }); }
-  async turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; attachments?: CliAttachmentInput[] }): Promise<unknown> {
+  async turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; runId?: string; execution?: DesktopExecutionPolicy; attachments?: CliAttachmentInput[] }): Promise<unknown> {
     const process = this.getOrCreate(await requireDirectory(cwd));
     const attachmentIds: string[] = [];
     for (const attachment of input.attachments ?? []) {
       await process.uploadAttachment(attachment);
       attachmentIds.push(attachment.id);
     }
-    return process.request('turn.start', { sessionId: input.sessionId, prompt: input.prompt, ...(input.model === undefined ? {} : { model: input.model }), ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
+    return process.request('turn.start', { sessionId: input.sessionId, prompt: input.prompt, ...(input.model === undefined ? {} : { model: input.model }), ...(input.runId === undefined ? {} : { runId: input.runId }), execution: input.execution ?? INTERACTIVE_DESKTOP_EXECUTION_POLICY, ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
   }
   async turnCancel(cwd: string, turnId: string): Promise<unknown> { return this.request(cwd, 'turn.cancel', { turnId }); }
   async approvalRespond(cwd: string, input: { approvalId: string; approved: boolean }): Promise<unknown> { return this.request(cwd, 'approval.respond', input); }
