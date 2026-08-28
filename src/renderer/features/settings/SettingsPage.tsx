@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Blocks, Clock3, CreditCard, Keyboard, MonitorCog, Plug, Puzzle, ShieldCheck, UserRound, Workflow, Globe2 } from 'lucide-react';
 import type { UserProfile } from '../../../contracts/ipc/v1/auth.js';
 import type { Workspace } from '../../../contracts/ipc/v1/workspace.js';
@@ -26,6 +26,7 @@ const settingsGroups: Array<{ title: string; items: Array<{ value: SettingsSecti
 
 export function SettingsPage({ user, workspace, workspaces, onBack, keyboardShortcuts, onUpdateShortcut, initialSection = 'profile' }: { user: UserProfile; workspace?: Workspace; workspaces: Workspace[]; onBack: () => void; keyboardShortcuts: KeyboardShortcutBindings; onUpdateShortcut: (action: KeyboardShortcutAction, shortcut: string | null) => Promise<void>; initialSection?: SettingsSection }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
+  useEffect(() => setSection(initialSection), [initialSection]);
   const accountName = user.fullName ?? user.username ?? user.email;
   const organizationCode = useMemo(() => user.defaultOrganizationCode ?? user.organizations[0]?.organizationCode, [user]);
   const title = settingsGroups.flatMap(group => group.items).find(item => item.value === section)?.label ?? 'Settings';

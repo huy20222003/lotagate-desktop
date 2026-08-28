@@ -7,8 +7,11 @@
 .browser-panel-heading { display: grid; align-self: center; flex: 0 0 84px; gap: 2px; padding: 0 4px 0 2px; }
 .browser-panel-heading span { color: var(--color-text-tertiary); font-size: 9px; letter-spacing: .08em; }
 .browser-panel-heading strong { color: var(--color-text); font-size: 14px; font-weight: 600; }
-.browser-tabs { display: flex; min-width: 0; flex: 1; align-items: flex-end; overflow-x: auto; scrollbar-width: none; }
-.browser-tabs::-webkit-scrollbar { display: none; }
+.browser-tabs-scrollbar { min-width: 0; flex: 1; overflow: hidden; }
+.browser-tabs-scrollbar .scrollbar-viewport { width: 100%; height: auto; min-height: 38px; overflow-x: auto; overflow-y: hidden; }
+.browser-tabs-scrollbar .scrollbar-track-horizontal { opacity: .8; }
+.browser-tabs { display: flex; width: max-content; min-width: 100%; align-items: flex-end; }
+.browser-tab-shell { display: inline-flex; min-width: 0; align-items: flex-end; }
 .browser-tab { display: inline-flex; min-width: 0; max-width: 190px; height: 38px; align-items: center; gap: 7px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; padding: 0 9px; background: transparent; color: var(--color-text-tertiary); font: inherit; font-size: 11px; }
 .browser-tab > span:nth-of-type(1) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .browser-tab:hover, .browser-tab.is-active { border-color: var(--color-border); background: var(--color-surface); color: var(--color-text); }

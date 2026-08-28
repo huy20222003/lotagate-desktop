@@ -30,4 +30,16 @@ describe('mergeChatActivities', () => {
       expect.objectContaining({ kind: 'assistant', text: 'The check passed.' }),
     ]);
   });
+
+  it('filters legacy ASCII command status text loaded from older activity logs', () => {
+    const result = mergeChatActivities([
+      activity('user', 'Generate an image'),
+      activity('assistant', 'Running command...'),
+      activity('assistant', 'Generated image saved.'),
+    ]);
+    expect(result).toEqual([
+      expect.objectContaining({ kind: 'user', text: 'Generate an image' }),
+      expect.objectContaining({ kind: 'assistant', text: 'Generated image saved.' }),
+    ]);
+  });
 });

@@ -4,7 +4,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import type { TerminalSession } from '../../../contracts/ipc/v1/workspace.js';
-import { Tabs, Tooltip } from '../../components/ui.js';
+import { IconButton, Tabs } from '../../components/ui.js';
 import { createComposerApprovalInput } from './approval-request.js';
 
 interface TerminalTab extends TerminalSession { label: string; }
@@ -64,7 +64,7 @@ export function TerminalPanel({ cwd, onClose }: { cwd: string; onClose: () => vo
     });
   }, [activeId]);
 
-  return <section className="terminal-panel" aria-label="Terminal"><header className="terminal-panel-header"><div className="terminal-tab-strip">{tabs.length > 0 ? <Tabs value={activeId} items={tabs.map(tab => ({ value: tab.id, label: tab.label }))} onChange={setActiveId} onClose={closeTab} ariaLabel="Terminal tabs" /> : null}</div><div className="terminal-panel-actions"><Tooltip label="New terminal"><button type="button" className="icon-button ui-icon-button" aria-label="New terminal" onClick={requestOpenTab}><Plus size={15} /></button></Tooltip><Tooltip label="Close terminal"><button type="button" className="icon-button ui-icon-button" aria-label="Close terminal" onClick={onClose}><X size={15} /></button></Tooltip></div></header>{error ? <p className="terminal-error">{error}</p> : null}<div className="terminal-output">{tabs.map(tab => <TerminalSessionView key={tab.id} sessionId={tab.id} active={tab.id === activeId} onReady={registerTerminal} onDispose={unregisterTerminal} onError={handleError} />)}</div></section>;
+  return <section className="terminal-panel" aria-label="Terminal"><header className="terminal-panel-header"><div className="terminal-tab-strip">{tabs.length > 0 ? <Tabs value={activeId} items={tabs.map(tab => ({ value: tab.id, label: tab.label }))} onChange={setActiveId} onClose={closeTab} ariaLabel="Terminal tabs" /> : null}</div><div className="terminal-panel-actions"><IconButton icon={Plus} iconSize={15} label="New terminal" onClick={requestOpenTab} /><IconButton icon={X} iconSize={15} label="Close terminal" onClick={onClose} /></div></header>{error ? <p className="terminal-error">{error}</p> : null}<div className="terminal-output">{tabs.map(tab => <TerminalSessionView key={tab.id} sessionId={tab.id} active={tab.id === activeId} onReady={registerTerminal} onDispose={unregisterTerminal} onError={handleError} />)}</div></section>;
 }
 
 function TerminalSessionView({ sessionId, active, onReady, onDispose, onError }: { sessionId: string; active: boolean; onReady: (sessionId: string, terminal: XTerm) => void; onDispose: (sessionId: string) => void; onError: (message: string) => void }) {

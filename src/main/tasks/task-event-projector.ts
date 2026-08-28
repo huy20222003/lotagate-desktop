@@ -57,7 +57,11 @@ function eventText(event: string, data: Record<string, unknown>): string | undef
   // of an otherwise completed assistant response.
   if (event === 'tool.started' || event === 'tool.completed') return undefined;
   if (event === 'file.changed') return 'Workspace files changed.';
-  if (event === 'command.output') return typeof data['content'] === 'string' ? data['content'] : 'Command output received.';
+  // Command output is a transport detail. The command runner creates the
+  // final assistant activity after completion; persisting each output event
+  // here leaves stale command text in the activity log and can replay it on
+  // the next application start.
+  if (event.startsWith('command.')) return undefined;
   if (event === 'context.compacted') return 'Agent context was compacted.';
   if (event === 'usage.updated') return 'Usage updated.';
   if (event === 'turn.failed') return failedTurnText(data);

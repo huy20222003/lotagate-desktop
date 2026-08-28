@@ -7,8 +7,9 @@ fork and does not modify `server/`, `sdk/`, `agent-sdk/`, or `cli/`.
 
 - Node.js 22+
 - npm
-- The `@lotagate/cli` package installed through `npm install`; desktop resolves
-  its packaged executable and does not depend on a system `PATH` entry.
+- The `@lotagate/cli` package installed through `npm install`; Desktop resolves
+  its packaged executable and does not depend on a system `PATH` entry. During
+  CLI development, use the local link workflow below.
 - The checked-in `.env` runtime configuration for the LotaGate production API.
   It contains public endpoints only; never place passwords, tokens, or private
   keys in this file.
@@ -27,6 +28,34 @@ npm run dev
 
 After login, add a local workspace, select or create a task, and submit a
 prompt. The composer owns approval decisions; CLI trust remains the authority.
+
+### Local CLI development
+
+The Desktop package remains pinned to the registry version in
+`package.json`. To develop against the sibling `cli/` workspace without
+publishing every change, run:
+
+```powershell
+npm run cli:link
+npm run dev
+```
+
+`cli:link` builds the local CLI JavaScript and links `../cli` into Desktop.
+While the link is active, Desktop starts the local Node launcher so native
+package artifacts are not required. This affects only the local Desktop
+workspace; standalone CLI installations continue to use their normal npm
+package and native executable flow.
+
+When the local work is complete, restore the registry dependency with:
+
+```powershell
+npm run cli:unlink
+```
+
+The unlink script reads the exact CLI version declared by Desktop and runs a
+normal npm install so the native executable is restored as well. Publish a new
+CLI version only when the release is ready, then update Desktop's declared
+version deliberately.
 
 ## Execution boundaries
 
@@ -83,8 +112,10 @@ current electron-vite integration; the renderer remains Vite-managed.
   preload IPC; the renderer never receives cookies, tokens, or crypto keys.
 - Only the allowlisted user routes are available. `/admin/**` is rejected
   before a network request.
-- CLI JSONL is consumed as a versioned protocol; human-readable CLI output is
-  never parsed.
+- CLI control traffic is consumed as a versioned JSONL protocol. Extension list
+  commands return a redacted structured payload for Desktop together with a
+  human-readable fallback, while standalone CLI commands retain their text
+  output.
 - Local task/workspace/settings data is stored in the Electron user-data
   directory, not inside a repository.
 - Runtime logs are written as redacted JSONL files under

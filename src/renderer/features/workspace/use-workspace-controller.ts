@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Activity, Artifact, FileChangeSummary, PlanSnapshot, SubagentSnapshot, Task, TrustRequest, Workspace } from '../../../contracts/ipc/v1/workspace.js';
+import { DESKTOP_COMMAND_TIMING_METADATA_KEY, type Activity, type Artifact, type FileChangeSummary, type PlanSnapshot, type SubagentSnapshot, type Task, type TrustRequest, type Workspace } from '../../../contracts/ipc/v1/workspace.js';
 import type { DesktopApprovalRequest } from '../../../contracts/ipc/v1/approval.js';
 import { sessionSlugFromPrompt } from './task-title.js';
 import { shouldAutoApproveDesktop, type ApprovalMode } from './approval-policy.js';
@@ -9,12 +9,16 @@ import { readSelectedModel, writeSelectedModel } from './model-preference.js';
 import { MessageQueueService, useMessageQueue, type QueuedMessage } from './message-queue-service.js';
 import type { PromptSendOptions } from './prompt-options.js';
 import type { AttachmentPreview } from './attachment-types.js';
-import { executeDesktopCommand, type DesktopCommandInvocation } from '../../services/desktop-command-client.js';
+import { executeDesktopCommandResult, type DesktopCommandInvocation } from '../../services/desktop-command-client.js';
 import { extractWorkspaceModels, type WorkspaceModelOption } from './model-catalog.js';
 import { toUserErrorMessage as toMessage } from '../../utils/errors.js';
-import { agentStatusForEvent } from './agent-status.js';
+import { agentStatusForEvent, commandStatusForAction } from './agent-status.js';
 import { turnTimingsFromActivities } from './turn-timings.js';
 import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, reconcilePendingAssistantStreams, type PendingAssistantStream } from './streaming-activity.js';
+import { discardQueuedAttachments, extractSessionId, extractTurnId, loadActivityArtifactPreviews, loadActivityAttachmentPreviews, loadAttachmentPreviews, mergeActivities } from './workspace-controller-helpers.js';
+import { allowsUnscopedTaskFallback } from './agent-event-routing.js';
+import { persistDesktopCommandResult } from './desktop-command-result-persistence.js';
+import { cancelWorkspaceTask } from './cancel-workspace-task.js';
 
 type ContextCompactionPhase = 'compacting' | 'compacted' | 'failed';
 
@@ -28,6 +32,7 @@ export function useWorkspaceController() {
   const [hasOlderActivities, setHasOlderActivities] = useState(false);
   const [loadingOlderActivities, setLoadingOlderActivities] = useState(false);
   const [activityAttachments, setActivityAttachments] = useState<Record<string, AttachmentPreview[]>>({});
+  const [activityArtifacts, setActivityArtifacts] = useState<Record<string, Artifact[]>>({});
   const [fileChanges, setFileChanges] = useState<FileChangeSummary>(EMPTY_FILE_CHANGE_SUMMARY);
   const [fileChangesByTurn, setFileChangesByTurn] = useState(EMPTY_FILE_CHANGE_SUMMARIES);
   const [plan, setPlan] = useState<PlanSnapshot | undefined>();
@@ -154,6 +159,7 @@ export function useWorkspaceController() {
     pendingAssistantStreamsRef.current = pending;
     const next = reconcilePendingAssistantStreams(persisted, [...pending.values()].filter(stream => stream.taskId === taskId));
     const nextActivityAttachments = await loadActivityAttachmentPreviews(taskId, next);
+    const nextActivityArtifacts = await loadActivityArtifactPreviews(taskId, next);
     if (requestId === activityRequestRef.current) {
       const summaries = fileChangeSummariesFromActivities(next);
       activitiesRef.current = next;
@@ -164,6 +170,7 @@ export function useWorkspaceController() {
       }
       setTurnTimings(turnTimingsFromActivities(next));
       setActivityAttachments(nextActivityAttachments);
+      setActivityArtifacts(nextActivityArtifacts);
       setFileChangesByTurn(current => mergeFileChangeSummaries(current, summaries));
       const liveTurnId = activeTurnRef.current?.turnId;
       if (liveTurnId === undefined) setFileChanges(EMPTY_FILE_CHANGE_SUMMARY);
@@ -193,12 +200,14 @@ export function useWorkspaceController() {
       const pending = [...pendingAssistantStreamsRef.current.values()].filter(stream => stream.taskId === taskId);
       const next = reconcilePendingAssistantStreams(persisted, pending);
       const nextActivityAttachments = await loadActivityAttachmentPreviews(taskId, next);
+      const nextActivityArtifacts = await loadActivityArtifactPreviews(taskId, next);
       if (requestId !== activityRequestRef.current || draftTaskRef.current?.id !== taskId) return false;
       const summaries = fileChangeSummariesFromActivities(next);
       activitiesRef.current = next;
       setActivities(next);
       setTurnTimings(turnTimingsFromActivities(next));
       setActivityAttachments(nextActivityAttachments);
+      setActivityArtifacts(nextActivityArtifacts);
       setFileChangesByTurn(current => mergeFileChangeSummaries(current, summaries));
       activityPageCursorRef.current = page.nextCursor;
       setHasOlderActivities(page.hasMore);
@@ -212,7 +221,7 @@ export function useWorkspaceController() {
   useEffect(() => {
     let mounted = true;
     activityRequestRef.current += 1;
-    if (!task) { activitiesRef.current = []; activityPageCursorRef.current = null; pendingAssistantStreamsRef.current.clear(); setActivities([]); setHasOlderActivities(false); setLoadingOlderActivities(false); setTurnTimings({}); setActivityAttachments({}); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); return; }
+    if (!task) { activitiesRef.current = []; activityPageCursorRef.current = null; pendingAssistantStreamsRef.current.clear(); setActivities([]); setHasOlderActivities(false); setLoadingOlderActivities(false); setTurnTimings({}); setActivityAttachments({}); setActivityArtifacts({}); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); return; }
     activityPageCursorRef.current = null;
     setHasOlderActivities(false);
     setActivitiesLoading(true);
@@ -235,7 +244,8 @@ export function useWorkspaceController() {
     const eventSessionId = typeof data['sessionId'] === 'string' ? data['sessionId'] : undefined;
     const turnId = typeof data['turnId'] === 'string' ? data['turnId'] : undefined;
     const currentTaskId = task?.id ?? draftTaskRef.current?.id;
-    const eventTask = tasks.find(item => eventSessionId !== undefined && item.sessionId === eventSessionId) ?? (task?.sessionId === eventSessionId ? task : undefined) ?? (draftTaskRef.current?.sessionId === eventSessionId ? draftTaskRef.current : undefined) ?? (eventSessionId === undefined && turnId === undefined ? task : undefined) ?? (tasks.length === 1 ? tasks[0] : undefined);
+    const allowUnscopedFallback = allowsUnscopedTaskFallback(envelope.event.event, eventSessionId, turnId);
+    const eventTask = tasks.find(item => eventSessionId !== undefined && item.sessionId === eventSessionId) ?? (task?.sessionId === eventSessionId ? task : undefined) ?? (draftTaskRef.current?.sessionId === eventSessionId ? draftTaskRef.current : undefined) ?? (allowUnscopedFallback ? task : undefined) ?? (allowUnscopedFallback && tasks.length === 1 ? tasks[0] : undefined);
     if (eventTask !== undefined && eventTask.id === currentTaskId) {
       if (turnId && envelope.event.event === 'turn.started') setTurnTimings(current => ({ ...current, [turnId]: { startedAt: Date.now() } }));
       if (turnId && terminal) setTurnTimings(current => ({ ...current, [turnId]: { startedAt: current[turnId]?.startedAt ?? Date.now(), endedAt: Date.now() } }));
@@ -432,7 +442,9 @@ export function useWorkspaceController() {
       setError('Wait for the active response to finish before running a slash command.');
       return false;
     }
-    setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setPlan(undefined); setSubagents([]);
+    setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setPlan(undefined); setSubagents([]); setAgentStatus(commandStatusForAction(invocation.actionId) ?? 'Running command…');
+    const commandStartedAt = Date.now();
+    setThinking(true); setThinkingStartedAt(commandStartedAt);
     try {
       const isNewTask = task === undefined;
       let activeTask = task ?? await createTask(preview);
@@ -441,20 +453,27 @@ export function useWorkspaceController() {
       activeTask = await window.lotagate.tasks.update(activeTask.id, { draft: '', draftAttachmentIds: [], ...(activeTask.title === 'New chat' ? { title: sessionSlugFromPrompt(preview) } : {}) });
       draftTaskRef.current = activeTask;
       setTask(activeTask); setAttachments([]);
+      await loadActivities(activeTask.id, isNewTask);
       await window.lotagate.tasks.setStatus(activeTask.id, 'active');
       await window.lotagate.agent.initialize(activeTask.cwd);
-      const output = await executeDesktopCommand(activeTask.cwd, invocation);
-      if (output.trim()) await window.lotagate.tasks.addActivity(activeTask.id, 'assistant', output.trim(), { command: invocation.actionId });
+      const result = await executeDesktopCommandResult(activeTask.cwd, invocation);
+      const commandEndedAt = Date.now();
+      const mediaImportFailures = await persistDesktopCommandResult(activeTask.id, invocation.actionId, result, commandStartedAt, commandEndedAt);
+      if (mediaImportFailures > 0) setError(`Command completed, but ${mediaImportFailures} media file${mediaImportFailures === 1 ? '' : 's'} could not be imported.`);
       await window.lotagate.tasks.setStatus(activeTask.id, 'completed');
       await reloadTasks(workspace.id);
       await loadActivities(activeTask.id, isNewTask);
       return true;
     } catch (reason) {
       const failedTask = draftTaskRef.current ?? task;
-      if (failedTask) await window.lotagate.tasks.setStatus(failedTask.id, 'failed').catch(() => undefined);
+      if (failedTask) {
+        const commandEndedAt = Date.now();
+        await window.lotagate.tasks.addActivity(failedTask.id, 'error', toMessage(reason), { command: invocation.actionId, [DESKTOP_COMMAND_TIMING_METADATA_KEY]: { startedAt: commandStartedAt, endedAt: commandEndedAt } }).catch(() => undefined);
+        await window.lotagate.tasks.setStatus(failedTask.id, 'failed').catch(() => undefined);
+      }
       setError(toMessage(reason));
       return false;
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setThinking(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); }
   }, [createTask, loadActivities, reloadTasks, task, workspace]);
   const dispatchQueuedPrompt = useCallback(async (message: QueuedMessage) => {
     const started = await startPrompt(message.prompt, message.attachments.map(attachment => attachment.id), message.options);
@@ -545,34 +564,8 @@ export function useWorkspaceController() {
   const cancelTask = useCallback(async () => {
     if (!task || !workspace) return;
     const activeTurn = activeTurnRef.current?.taskId === task.id && activeTurnRef.current.cwd === workspace.rootPath ? activeTurnRef.current : undefined;
-    const turnId = activeTurn?.turnId ?? task.turnId;
     setError(undefined); suppressQueueRef.current = true; steeringQueueIdRef.current = undefined;
-    try {
-      if (turnId !== undefined) await window.lotagate.agent.turnCancel(workspace.rootPath, turnId);
-      const cancelled = await window.lotagate.tasks.cancel(task.id);
-      activeTurnRef.current = undefined;
-      setTask(cancelled);
-      setTasks(current => current.map(item => item.id === cancelled.id ? cancelled : item));
-      setThinking(false);
-      setThinkingStartedAt(undefined);
-      setAgentStatus(undefined);
-      await reloadTasks(workspace.id);
-    } catch (reason) {
-      const refreshed = await window.lotagate.tasks.list(workspace.id).catch(() => [] as Task[]);
-      const refreshedTask = refreshed.find(item => item.id === task.id);
-      if (refreshedTask?.turnId === undefined && refreshedTask?.status !== 'active') {
-        activeTurnRef.current = undefined;
-        setThinking(false);
-        setThinkingStartedAt(undefined);
-        setAgentStatus(undefined);
-        if (refreshedTask !== undefined) {
-          setTasks(items => items.map(item => item.id === refreshedTask.id ? refreshedTask : item));
-          setTask(refreshedTask);
-        }
-        return;
-      }
-      setError(toMessage(reason));
-    }
+    await cancelWorkspaceTask({ task, workspace, activeTurn, clearActiveTurn: () => { activeTurnRef.current = undefined; }, resetLiveState: () => { setThinking(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); }, setTask, updateTasks: update => setTasks(update), reloadTasks, setError });
   }, [reloadTasks, task, workspace]);
   const retryTask = useCallback(async () => { if (!task) return; const history = await window.lotagate.tasks.activities(task.id); const prompt = [...history].reverse().find(item => item.kind === 'user')?.text; if (prompt) await window.lotagate.tasks.retry(task.id); if (prompt) await sendPrompt(prompt); }, [sendPrompt, task]);
   const archiveTask = useCallback(async (taskId: string, archived: boolean) => { if (!workspace) return; await window.lotagate.tasks.archive(taskId, archived); await reloadTasks(workspace.id); }, [reloadTasks, workspace]);
@@ -582,44 +575,5 @@ export function useWorkspaceController() {
     setTasks(current => current.map(item => item.id === updated.id ? updated : item));
     setTask(current => current?.id === updated.id ? updated : current);
   }, []);
-
-  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode: updateApprovalMode, trust, models, selectedModel, setSelectedModel: selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, removeQueuedMessage, editQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, trust, models, selectedModel, selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById, updateApprovalMode]);
-}
-
-async function loadAttachmentPreviews(taskId: string, attachmentIds: readonly string[] = [], availableArtifacts?: Artifact[]): Promise<AttachmentPreview[]> {
-  const artifacts = (availableArtifacts ?? await window.lotagate.tasks.artifacts(taskId)).filter(artifact => attachmentIds.includes(artifact.id));
-  return Promise.all(artifacts.map(async artifact => {
-    const preview = await window.lotagate.tasks.previewArtifact(taskId, artifact.id).catch(() => undefined);
-    const dataUrl = preview?.dataUrl;
-    return { id: artifact.id, name: artifact.name, kind: artifact.kind, size: artifact.size, ...(dataUrl ? { dataUrl } : {}) };
-  }));
-}
-
-async function loadActivityAttachmentPreviews(taskId: string, activities: readonly Activity[]): Promise<Record<string, AttachmentPreview[]>> {
-  const userActivities = activities.filter(activity => activity.kind === 'user').map(activity => ({ activity, attachmentIds: readAttachmentIds(activity.metadata['attachmentIds']) })).filter(item => item.attachmentIds.length > 0);
-  if (userActivities.length === 0) return {};
-  const artifacts = await window.lotagate.tasks.artifacts(taskId).catch(() => []);
-  const entries = await Promise.all(userActivities.map(async ({ activity, attachmentIds }) => {
-    return [activity.id, await loadAttachmentPreviews(taskId, attachmentIds, artifacts)] as const;
-  }));
-  return Object.fromEntries(entries);
-}
-
-function extractSessionId(value: unknown): string | undefined { if (typeof value !== 'object' || value === null) return undefined; const session = (value as Record<string, unknown>)['session']; if (typeof session !== 'object' || session === null) return undefined; const id = (session as Record<string, unknown>)['id']; return typeof id === 'string' ? id : undefined; }
-function extractTurnId(value: unknown): string | undefined { if (typeof value !== 'object' || value === null) return undefined; const id = (value as Record<string, unknown>)['turnId']; return typeof id === 'string' ? id : undefined; }
-function readAttachmentIds(value: unknown): string[] { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : []; }
-function mergeActivities(current: readonly Activity[], incoming: readonly Activity[]): Activity[] {
-  const byId = new Map(current.map(activity => [activity.id, activity]));
-  for (const activity of incoming) byId.set(activity.id, activity);
-  return [...byId.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
-}
-async function discardQueuedAttachments(taskId: string | undefined, messages: readonly QueuedMessage[], activities: readonly Activity[], protectedAttachmentIds: readonly string[]): Promise<void> {
-  if (taskId === undefined) return;
-  const referencedByActivities = activities.flatMap(activity => readAttachmentIds(activity.metadata['attachmentIds']));
-  const protectedIds = new Set([...protectedAttachmentIds, ...referencedByActivities]);
-  const attachmentIds = [...new Set(messages.flatMap(message => message.attachments.map(attachment => attachment.id)))];
-  for (const attachmentId of attachmentIds) {
-    if (protectedIds.has(attachmentId)) continue;
-    await window.lotagate.tasks.deleteArtifact(taskId, attachmentId, true).catch(() => undefined);
-  }
+  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode: updateApprovalMode, trust, models, selectedModel, setSelectedModel: selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, removeQueuedMessage, editQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, trust, models, selectedModel, selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById, updateApprovalMode]);
 }

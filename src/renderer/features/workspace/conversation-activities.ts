@@ -27,7 +27,12 @@ export function mergeChatActivities(activities: Activity[]): Activity[] {
 }
 
 function isTransientSystemActivity(activity: Activity): boolean {
-  return (activity.kind === 'assistant' || activity.kind === 'error') && TRANSIENT_SYSTEM_STATUS.has(activity.text.trim());
+  if (activity.kind !== 'assistant' && activity.kind !== 'error') return false;
+  return TRANSIENT_SYSTEM_STATUS.has(normalizeTransientStatus(activity.text));
+}
+
+function normalizeTransientStatus(text: string): string {
+  return text.trim().replace(/\.{3}$/u, '…');
 }
 
 function readTurnId(activity: Activity): string | undefined {

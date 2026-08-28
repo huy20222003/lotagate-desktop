@@ -2,7 +2,7 @@ import { useEffect, useRef, type KeyboardEventHandler, type PointerEventHandler 
 import { Blocks, ChevronDown, CirclePlus, Clock3, Folder, PanelLeftClose, PanelLeftOpen, Pencil, Settings, ShieldCheck, X } from 'lucide-react';
 import type { Task, Workspace } from '../../../contracts/ipc/v1/workspace.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
-import { Avatar, Button, Icon, Skeleton } from '../../components/ui.js';
+import { Avatar, Button, Icon, IconButton, Skeleton } from '../../components/ui.js';
 import { BrandLogo } from '../../components/BrandLogo.js';
 import { SidebarLoadingSkeleton } from './SidebarLoadingSkeleton.js';
 import { WorkspaceGroup } from './WorkspaceGroup.js';
@@ -29,12 +29,12 @@ export function WorkspaceSidebar({ accountName, avatarProps, workspaces, activeW
   const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
   return <aside className={`sidebar${sidebarResizing ? ' is-resizing' : ''}`}>
     <div className="sidebar-resize-handle" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" tabIndex={0} onPointerDown={onStartResize} onKeyDown={onResizeKeyDown} />
-    <header className="sidebar-header"><div className="brand-mark"><BrandLogo /><span>LotaGate</span></div><button type="button" className="icon-button ui-icon-button sidebar-toggle" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!collapsed} onClick={onToggleCollapsed}><Icon icon={ToggleIcon} size={17} /></button></header>
+    <header className="sidebar-header"><div className="brand-mark"><BrandLogo /><span>LotaGate</span></div><IconButton icon={ToggleIcon} iconSize={17} className="sidebar-toggle" label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!collapsed} onClick={onToggleCollapsed} /></header>
     <Button variant="ghost" className="new-task sidebar-action" onClick={() => onNewChat(activeWorkspace)} disabled={activeWorkspace === undefined}><Icon icon={Pencil} size={16} /> New chat</Button>
     <Button variant="ghost" className="sidebar-plugin sidebar-action" onClick={onPlugins}><Icon icon={Blocks} size={16} /> Plugins</Button>
     <Button variant="ghost" className="sidebar-automation sidebar-action" onClick={onAutomations}><Icon icon={Clock3} size={16} /> Automations</Button>
     <Scrollbar className="workspace-scrollbar sidebar-section">
-      <div className="section-heading"><span>Workspaces</span><button className="icon-button ui-icon-button" aria-label="Add workspace" onClick={onAddWorkspace}><Icon icon={CirclePlus} size={14} /></button></div>
+      <div className="section-heading"><span>Workspaces</span><IconButton icon={CirclePlus} iconSize={14} label="Add workspace" onClick={onAddWorkspace} /></div>
       {loading ? <SidebarLoadingSkeleton /> : workspaces.length === 0 ? <button className="workspace-row" onClick={onAddWorkspace}><Icon icon={Folder} size={15} /><span>Add a workspace</span></button> : workspaces.map(workspace => <WorkspaceGroup key={workspace.id} workspace={workspace} tasks={tasks.filter(task => task.workspaceId === workspace.id && !task.archived)} activeTask={activeTask} onWorkspace={onWorkspace} onTask={onTask} onNewChat={onNewChat} onRename={onRenameWorkspace} onRemove={onRemoveWorkspace} onArchive={onArchiveTask} onPin={onPinTask} onRenameTask={onRenameTask} />)}
     </Scrollbar>
     <div ref={accountRef} className="account-area">

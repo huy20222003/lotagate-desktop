@@ -3,15 +3,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export type KeyboardShortcutAction = 'newSession' | 'openWorkspace' | 'openSettings' | 'focusPrompt' | 'archiveSession' | 'cancelResponse' | 'toggleChangedFiles';
 export interface KeyboardShortcutDefinition { action: KeyboardShortcutAction; label: string; description: string; defaultShortcut: string | null; }
 export type KeyboardShortcutBindings = Partial<Record<KeyboardShortcutAction, string | null>>;
+const primaryModifier = isMacPlatform() ? 'Meta' : 'Ctrl';
 
 export const KEYBOARD_SHORTCUT_DEFINITIONS: readonly KeyboardShortcutDefinition[] = [
-  { action: 'newSession', label: 'New chat', description: 'Start a new chat in the current workspace.', defaultShortcut: 'Ctrl+N' },
-  { action: 'openWorkspace', label: 'Open workspace', description: 'Choose a workspace from the local machine.', defaultShortcut: 'Ctrl+O' },
-  { action: 'openSettings', label: 'Open settings', description: 'Open the desktop settings.', defaultShortcut: 'Ctrl+,' },
-  { action: 'focusPrompt', label: 'Focus prompt', description: 'Move focus to the chat prompt.', defaultShortcut: 'Ctrl+L' },
-  { action: 'archiveSession', label: 'Archive session', description: 'Archive the currently selected session.', defaultShortcut: 'Ctrl+Shift+A' },
-  { action: 'cancelResponse', label: 'Cancel response', description: 'Stop the active agent response.', defaultShortcut: 'Ctrl+Escape' },
-  { action: 'toggleChangedFiles', label: 'Toggle changed files', description: 'Open the changed files drawer for the current response.', defaultShortcut: 'Ctrl+Shift+D' },
+  { action: 'newSession', label: 'New chat', description: 'Start a new chat in the current workspace.', defaultShortcut: `${primaryModifier}+N` },
+  { action: 'openWorkspace', label: 'Open workspace', description: 'Choose a workspace from the local machine.', defaultShortcut: `${primaryModifier}+O` },
+  { action: 'openSettings', label: 'Open settings', description: 'Open the desktop settings.', defaultShortcut: `${primaryModifier}+,` },
+  { action: 'focusPrompt', label: 'Focus prompt', description: 'Move focus to the chat prompt.', defaultShortcut: `${primaryModifier}+L` },
+  { action: 'archiveSession', label: 'Archive session', description: 'Archive the currently selected session.', defaultShortcut: `${primaryModifier}+Shift+A` },
+  { action: 'cancelResponse', label: 'Cancel response', description: 'Stop the active agent response.', defaultShortcut: `${primaryModifier}+Escape` },
+  { action: 'toggleChangedFiles', label: 'Toggle changed files', description: 'Open the changed files drawer for the current response.', defaultShortcut: `${primaryModifier}+Shift+D` },
 ];
 
 export function useKeyboardShortcuts(actions: Partial<Record<KeyboardShortcutAction, () => void>>): { bindings: KeyboardShortcutBindings; updateShortcut: (action: KeyboardShortcutAction, shortcut: string | null) => Promise<void> } {
@@ -66,3 +67,4 @@ export function formatShortcutEvent(event: KeyboardEvent): string | null {
 function normalizeKey(value: string): string { return value.toLocaleLowerCase() === ' ' ? 'space' : value.toLocaleLowerCase(); }
 function displayKey(value: string): string { return value.length === 1 ? value.toLocaleUpperCase() : value === ' ' ? 'Space' : value; }
 function isEditableTarget(target: EventTarget | null): boolean { const element = target instanceof HTMLElement ? target : null; return element?.matches('input, textarea, select, [contenteditable="true"]') ?? false; }
+function isMacPlatform(): boolean { return typeof navigator !== 'undefined' && (/mac|iphone|ipad|ipod/iu.test(navigator.platform) || /macintosh|iphone|ipad|ipod/iu.test(navigator.userAgent)); }

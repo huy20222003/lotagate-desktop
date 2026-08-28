@@ -2,7 +2,7 @@ import WaveSurfer from 'wavesurfer.js';
 import { Download, Pause, Play, Volume2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Artifact } from '../../../contracts/ipc/v1/workspace.js';
-import { Tooltip } from '../../components/ui.js';
+import { IconButton } from '../../components/ui.js';
 import { artifactMediaBlob, formatArtifactSize } from './source-view.js';
 
 export function SourceAudioList({ taskId, artifacts, onPreview, onDownload }: { taskId: string; artifacts: readonly Artifact[]; onPreview: (artifact: Artifact) => void; onDownload: (artifact: Artifact) => void }) {
@@ -46,7 +46,7 @@ export function AudioWaveform({ taskId, artifact, sourceUrl, compact = false, on
   }, [compact, url]);
 
   if (error) return <p className="source-audio-error">{error}</p>;
-  return <div className={`source-audio-waveform${compact ? ' compact' : ''}`}><button type="button" className="source-audio-play" aria-label={playing ? `Pause ${artifact.name}` : `Play ${artifact.name}`} disabled={!url} onClick={() => void waveRef.current?.playPause()}>{playing ? <Pause size={compact ? 14 : 17} /> : <Play size={compact ? 14 : 17} />}</button><div className="source-audio-wave" ref={containerRef} /><div className="source-audio-time">{formatTime(currentTime)} / {formatTime(duration)}</div>{onDownload ? <Tooltip label={`Download ${artifact.name}`}><button type="button" className="source-audio-download" aria-label={`Download ${artifact.name}`} onClick={() => onDownload(artifact)}><Download size={14} /></button></Tooltip> : null}</div>;
+  return <div className={`source-audio-waveform${compact ? ' compact' : ''}`}><IconButton icon={playing ? Pause : Play} iconSize={compact ? 14 : 17} className="source-audio-play" label={playing ? `Pause ${artifact.name}` : `Play ${artifact.name}`} disabled={!url} onClick={() => void waveRef.current?.playPause()} /><div className="source-audio-wave" ref={containerRef} /><div className="source-audio-time">{formatTime(currentTime)} / {formatTime(duration)}</div>{onDownload ? <IconButton icon={Download} iconSize={14} className="source-audio-download" label={`Download ${artifact.name}`} onClick={() => onDownload(artifact)} /> : null}</div>;
 }
 
 function AudioArtifactRow({ taskId, artifact, onPreview, onDownload }: { taskId: string; artifact: Artifact; onPreview: (artifact: Artifact) => void; onDownload: (artifact: Artifact) => void }) {

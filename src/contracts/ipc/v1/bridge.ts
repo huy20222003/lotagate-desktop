@@ -53,6 +53,7 @@ export interface DesktopBridge {
   operations: {
     notify(title: string, body: string): Promise<void>;
     showWindow(): Promise<void>;
+    revealPath(path: string): Promise<void>;
     exportDiagnostics(): Promise<string>;
     checkForUpdates(): Promise<Record<string, string> | null>;
     onDeepLink(listener: (url: string) => void): () => void;

@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
 import { automationApprovalSchema, automationCreateInputSchema, automationRunSchema, automationSchema, automationUpdateInputSchema, type Automation, type AutomationApproval, type AutomationCreateInput, type AutomationRun, type AutomationStateEvent, type AutomationUpdateInput } from '../../contracts/ipc/v1/automation.js';
 import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
@@ -7,8 +6,6 @@ import { nextRunAt, validateSchedule } from './schedule.js';
 
 export type { Automation } from '../../contracts/ipc/v1/automation.js';
 
-const oldAutomationSchema = z.object({ id: z.string(), name: z.string(), workspaceId: z.string(), prompt: z.string(), schedule: z.string(), executionPolicy: z.enum(['ask', 'allowlist', 'review', 'autonomous']), enabled: z.boolean(), nextRunAt: z.string().datetime().nullable(), lastRunAt: z.string().datetime().nullable(), lastError: z.string().nullable() }).passthrough();
-const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 const MAX_CONCURRENT_RUNS = 2;
 
 export type AutomationExecutionResult = { taskId?: string; sessionId?: string; summary?: string; changedFiles?: string[]; artifactIds?: string[]; executionCwd?: string; branch?: string; worktreePath?: string; reviewRequired?: boolean };
@@ -242,14 +239,7 @@ export class AutomationService {
 }
 
 function parseAutomationList(value: unknown): Automation[] {
-  if (!Array.isArray(value)) throw new Error('Automation data is invalid.');
-  return value.map(item => {
-    const parsed = automationSchema.safeParse(item);
-    if (parsed.success) return parsed.data;
-    const legacy = oldAutomationSchema.parse(item);
-    const schedule = legacy.schedule && !Number.isNaN(Date.parse(legacy.schedule)) ? { kind: 'once' as const, at: new Date(legacy.schedule).toISOString(), timezone: DEFAULT_TIMEZONE } : { kind: 'manual' as const };
-    return automationSchema.parse({ id: legacy.id, name: legacy.name, description: '', prompt: legacy.prompt, workspaceId: legacy.workspaceId, worktree: false, skills: [], tools: [], permissionPolicy: legacy.executionPolicy, browserAccess: 'disabled', schedule, retryPolicy: { maxAttempts: 0, backoffMs: 1_000 }, timeoutMs: 60 * 60 * 1_000, notifications: true, keepSession: true, enabled: legacy.enabled, nextRunAt: legacy.nextRunAt, lastRunAt: legacy.lastRunAt, lastError: legacy.lastError, createdAt: legacy.lastRunAt ?? new Date().toISOString(), updatedAt: legacy.lastRunAt ?? new Date().toISOString() });
-  });
+  return automationSchema.array().parse(value);
 }
 
 async function runWithTimeout<T>(operation: () => Promise<T>, timeoutMs: number, controller: AbortController): Promise<T> {

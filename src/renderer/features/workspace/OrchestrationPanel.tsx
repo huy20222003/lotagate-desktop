@@ -4,6 +4,7 @@ import type { PlanSnapshot, SubagentSnapshot } from '../../../contracts/ipc/v1/w
 import { OrchestrationDrawer } from './OrchestrationDrawer.js';
 import { PlanDetails } from './PlanDetails.js';
 import { SubagentDetails } from './SubagentDetails.js';
+import { Tooltip } from '../../components/ui.js';
 
 export function OrchestrationPanel({ plan, subagents }: { plan?: PlanSnapshot | undefined; subagents: SubagentSnapshot[] }) {
   const visiblePlan = plan !== undefined && plan.status !== 'completed' ? plan : undefined;
@@ -18,7 +19,7 @@ export function OrchestrationPanel({ plan, subagents }: { plan?: PlanSnapshot | 
       {queued.length > 0 ? <div className="orchestration-activity" aria-live="polite"><LoaderCircle size={14} className="spin" /><span>Create agent</span></div> : activeSubagents.length > 0 ? <div className="orchestration-activity" aria-live="polite"><Bot size={14} /><span>Created agent {createdLabel}</span></div> : null}
       <div className="orchestration-toolbar">
         {visiblePlan ? <button type="button" className={`orchestration-chip ${drawer === 'plan' ? 'selected' : ''}`} onClick={() => setDrawer(current => current === 'plan' ? undefined : 'plan')}><span className="orchestration-chip-icon"><ListChecks size={14} /></span><strong>Step {planStepNumber(visiblePlan)} / {visiblePlan.totalSteps}</strong><span>{visiblePlan.goal}</span><ChevronRight size={14} /></button> : null}
-        {activeSubagents.map(subagent => <button type="button" key={subagent.id} className={`subagent-chip ${drawer === subagent.id ? 'selected' : ''}`} aria-label={`Open ${subagent.displayName}`} title={subagent.displayName} onClick={() => setDrawer(current => current === subagent.id ? undefined : subagent.id)}><Bot size={15} /><span className={`subagent-chip-status subagent-chip-status-${subagent.status}`} /></button>)}
+        {activeSubagents.map(subagent => <Tooltip key={subagent.id} label={subagent.displayName}><button type="button" className={`subagent-chip ${drawer === subagent.id ? 'selected' : ''}`} aria-label={`Open ${subagent.displayName}`} onClick={() => setDrawer(current => current === subagent.id ? undefined : subagent.id)}><Bot size={15} /><span className={`subagent-chip-status subagent-chip-status-${subagent.status}`} /></button></Tooltip>)}
       </div>
     </section>
     {drawer === 'plan' && visiblePlan ? <OrchestrationDrawer title={`Plan · Step ${planStepNumber(visiblePlan)} / ${visiblePlan.totalSteps}`} onClose={() => setDrawer(undefined)}><PlanDetails plan={visiblePlan} /></OrchestrationDrawer> : null}

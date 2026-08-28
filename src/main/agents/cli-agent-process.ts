@@ -13,6 +13,7 @@ const REQUIRED_DESKTOP_CAPABILITIES = ['execution-context', 'tool-allowlist', 'a
 export interface CliAgentProcessOptions {
   cwd: string;
   executable: string;
+  executableArgs?: readonly string[];
   environment?: NodeJS.ProcessEnv;
 }
 
@@ -116,7 +117,7 @@ export class CliAgentProcess {
   private ensureStarted(): void {
     if (this.child !== undefined) return;
     this.stopping = false;
-    const child = spawn(this.options.executable, ['agent', 'desktop'], {
+    const child = spawn(this.options.executable, [...(this.options.executableArgs ?? []), 'agent', 'desktop'], {
       cwd: this.options.cwd,
       env: { ...process.env, ...this.options.environment },
       shell: false,

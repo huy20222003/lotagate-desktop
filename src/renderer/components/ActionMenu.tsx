@@ -3,6 +3,7 @@ import { MoreHorizontal } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../utils/cn.js';
+import { IconButton } from './ui.js';
 
 export interface ActionMenuItem {
   label: string;
@@ -15,7 +16,7 @@ export interface ActionMenuItem {
 export function ActionMenu({ items, ariaLabel = 'More actions', className = '', header }: { items: readonly ActionMenuItem[]; ariaLabel?: string; className?: string; header?: ReactNode }) {
   return <DropdownMenuPrimitive.Root>
     <DropdownMenuPrimitive.Trigger asChild>
-      <button type="button" className={cn('action-menu-trigger', className)} aria-label={ariaLabel}><MoreHorizontal size={15} /></button>
+      <IconButton icon={MoreHorizontal} iconSize={15} className={cn('action-menu-trigger', className)} label={ariaLabel} tooltip={false} />
     </DropdownMenuPrimitive.Trigger>
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content className="action-menu-content" align="end" sideOffset={6} collisionPadding={8}>

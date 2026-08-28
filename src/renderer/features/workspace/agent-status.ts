@@ -19,11 +19,22 @@ export function agentStatusForEvent(event: string, data: Record<string, unknown>
     const displayName = formatToolDisplayName(data['toolName'], data['displayName']);
     return `${displayName} · ${data['isError'] === true ? 'failed' : 'completed'}`;
   }
-  if (event === 'command.started') return 'Running command…';
+  if (event === 'command.started') return commandStatusForAction(readString(data['actionId'])) ?? 'Running command…';
   // Command lifecycle completion is transient. The command output or error
   // is rendered by the command runner; keeping this status after completion
   // makes it look like a persisted assistant message.
-  if (event === 'command.completed' || event === 'command.failed' || event === 'command.cancelled' || event === 'command.activity.completed') return undefined;
+  if (event === 'command.completed' || event === 'command.failed' || event === 'command.cancelled') return undefined;
+  if (event === 'command.activity.completed') return commandStatusForAction(readString(data['actionId']));
   if (event !== 'command.activity.started') return undefined;
-  return readString(data['label']) ?? readString(data['message']) ?? readString(data['status']) ?? 'I’m working through the next step.';
+  return commandStatusForAction(readString(data['actionId'])) ?? readString(data['label']) ?? readString(data['message']) ?? readString(data['status']) ?? 'I’m working through the next step.';
+}
+
+export function commandStatusForAction(actionId: string | undefined): string | undefined {
+  if (actionId === 'image.generate') return 'Creating Image';
+  if (actionId === 'image.edit') return 'Editing Image';
+  if (actionId === 'video.generate') return 'Creating Video';
+  if (actionId === 'audio.speech') return 'Creating Audio';
+  if (actionId === 'audio.transcribe') return 'Transcribing Audio';
+  if (actionId === 'audio.translate') return 'Translating Audio';
+  return undefined;
 }

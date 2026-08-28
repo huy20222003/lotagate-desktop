@@ -1,4 +1,5 @@
-export { Button, type ButtonVariant } from './ui/Button.js';
+export { Button, type ButtonProps, type ButtonVariant } from './ui/Button.js';
+export { IconButton, type IconButtonProps } from './ui/IconButton.js';
 export { Icon } from './ui/Icon.js';
 export { Label, type FormControlLabelProps } from './ui/Label.js';
 export { TextInput, type TextInputProps } from './ui/TextInput.js';
@@ -16,6 +17,7 @@ export { Dropdown, type DropdownOption } from './ui/Dropdown.js';
 export { Tabs, type TabItem } from './ui/Tabs.js';
 export { Table, type TableColumn } from './ui/Table.js';
 export { Modal } from './ui/Modal.js';
+export { OverlayDialog } from './ui/OverlayDialog.js';
 export { Spinner } from './ui/Spinner.js';
 export { Avatar } from './ui/Avatar.js';
 export { Field } from './ui/Field.js';

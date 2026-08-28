@@ -18,4 +18,11 @@ describe('agent markdown renderer', () => {
 
     expect(screen.getByText('First item').closest('.agent-markdown')).toBeInTheDocument();
   });
+
+  it('renders known media paths as clickable file links', () => {
+    const path = 'D:\\workspace\\images\\generated.png';
+    render(<AgentMarkdown content={`Generated image saved:\n  ${path}`} filePaths={[path]} />);
+
+    expect(screen.getByRole('link', { name: path })).toHaveClass('agent-file-path');
+  });
 });

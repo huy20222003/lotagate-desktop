@@ -17,6 +17,8 @@ export const workspaceSchema = z.object({
 
 export const taskStatusSchema = z.enum(['queued', 'active', 'completed', 'failed', 'cancelled', 'paused', 'interrupted']);
 export const DESKTOP_TURN_TIMING_METADATA_KEY = 'desktopTurnTiming' as const;
+export const DESKTOP_COMMAND_TIMING_METADATA_KEY = 'desktopCommandTiming' as const;
+export interface DesktopCommandTiming { startedAt: number; endedAt: number }
 export type DesktopTurnTimingPhase = 'started' | 'completed' | 'failed' | 'cancelled';
 export interface DesktopTurnTimingMarker { phase: DesktopTurnTimingPhase; timestampMs: number }
 export const taskSchema = z.object({
@@ -130,6 +132,7 @@ export interface DesktopTaskApi {
   activitiesPage(taskId: string, options?: { limit?: number; before?: string }): Promise<ActivityPage>;
   artifacts(taskId: string): Promise<Artifact[]>;
   pickArtifact(taskId: string): Promise<Artifact | null>;
+  importArtifact(taskId: string, sourcePath: string): Promise<Artifact>;
   createTextArtifact(taskId: string, name: string, content: string, kind?: 'text' | 'markdown' | 'patch' | 'json'): Promise<Artifact>;
   createImageArtifact(taskId: string, name: string, bytes: Uint8Array): Promise<Artifact>;
   deleteArtifact(taskId: string, artifactId: string, confirmed: boolean): Promise<void>;

@@ -229,6 +229,18 @@
   opacity: .5;
 }
 
+.ui-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  margin: -1px;
+  border: 0;
+  padding: 0;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .ui-select-trigger {
   display: inline-flex;
   min-height: 38px;

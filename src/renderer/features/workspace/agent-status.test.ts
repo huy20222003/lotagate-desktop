@@ -20,4 +20,11 @@ describe('agentStatusForEvent', () => {
     expect(agentStatusForEvent('command.failed', {})).toBeUndefined();
     expect(agentStatusForEvent('command.cancelled', {})).toBeUndefined();
   });
+
+  it('shows operation-specific status for media commands throughout their lifecycle', () => {
+    expect(agentStatusForEvent('command.started', { actionId: 'image.generate' })).toBe('Creating Image');
+    expect(agentStatusForEvent('command.started', { actionId: 'image.edit' })).toBe('Editing Image');
+    expect(agentStatusForEvent('command.activity.started', { actionId: 'video.generate', label: 'video generation' })).toBe('Creating Video');
+    expect(agentStatusForEvent('command.activity.completed', { actionId: 'audio.speech', isError: false })).toBe('Creating Audio');
+  });
 });

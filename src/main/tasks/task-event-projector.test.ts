@@ -53,11 +53,11 @@ describe('TaskEventProjector turn lifecycle', () => {
     expect(tasks.appendEvent).not.toHaveBeenCalled();
   });
 
-  it('routes command output without a session id to the task that owns the active turn', async () => {
+  it('does not persist command output in the conversation transcript', async () => {
     const { projector, tasks } = createProjector(createTask());
     await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'turn.started', data: { sessionId: 'session-1', turnId: 'turn-1' } });
     await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'command.output', data: { content: 'command output' } });
-    expect(tasks.appendEvent).toHaveBeenLastCalledWith('task-1', 'command', 'command output', expect.any(Object));
+    expect(tasks.appendEvent).not.toHaveBeenCalledWith('task-1', 'command', 'command output', expect.any(Object));
   });
 
   it('does not fall back to the latest cwd task for an event from an unknown session', async () => {

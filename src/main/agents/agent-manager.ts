@@ -1,5 +1,5 @@
 import { CliAgentProcess, type CliAgentEventHandler } from './cli-agent-process.js';
-import { resolveCliExecutable } from './cli-resolver.js';
+import { resolveCliInvocation } from './cli-resolver.js';
 import type { DesktopAgentResult, DesktopEvent, DesktopExecutionPolicy, DesktopHostRequest, DesktopHostResponse, DesktopSkillSelection } from '../../contracts/agent-protocol/v1/desktop.js';
 import { requireDirectory } from '../security/path-policy.js';
 import { CACHE_TTL_MS } from '../cache/cache-policy.js';
@@ -93,7 +93,7 @@ export class AgentManager {
       onDiagnostic: diagnostic => this.handler.onDiagnostic?.(cwd, diagnostic),
       onExit: error => { this.handler.onExit?.(cwd, error); this.scheduleRecovery(cwd, agentProcess); },
     };
-    const agentProcess = new CliAgentProcess({ cwd, executable: resolveCliExecutable() }, eventHandler);
+    const agentProcess = new CliAgentProcess({ cwd, ...resolveCliInvocation() }, eventHandler);
     this.processes.set(cwd, agentProcess);
     return agentProcess;
   }

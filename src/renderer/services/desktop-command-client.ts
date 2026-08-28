@@ -14,6 +14,11 @@ export interface DesktopCommandDescriptor {
   options?: Array<{ name: string; valueName?: string; description: string; required?: boolean; allowedValues?: string[] }>;
 }
 
+export interface DesktopCommandResult {
+  content: string;
+  structured?: Record<string, unknown>;
+}
+
 const COMMAND_LIST_TIMEOUT_MS = 15_000;
 
 export async function listDesktopCommands(cwd: string): Promise<DesktopCommandDescriptor[]> {
@@ -36,10 +41,17 @@ export function findDesktopCommand(commands: readonly DesktopCommandDescriptor[]
 }
 
 export function executeDesktopCommand(cwd: string, invocation: DesktopCommandInvocation): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
+  return executeDesktopCommandResult(cwd, invocation).then(result => result.content);
+}
+
+export function executeDesktopCommandResult(cwd: string, invocation: DesktopCommandInvocation): Promise<DesktopCommandResult> {
+  return new Promise<DesktopCommandResult>((resolve, reject) => {
     let commandId: string | undefined;
     let output = '';
+    let structured: Record<string, unknown> | undefined;
     let settled = false;
+    let cancellationRequested = false;
+    let timedOut = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const buffered = new Map<string, AgentEventEnvelope[]>();
     const dispose = window.lotagate.agent.onEvent(envelope => {
@@ -57,7 +69,12 @@ export function executeDesktopCommand(cwd: string, invocation: DesktopCommandInv
       dispose();
       if (timer !== undefined) clearTimeout(timer);
       if (error) reject(error);
-      else resolve(output);
+      else resolve({ content: output, ...(structured === undefined ? {} : { structured }) });
+    };
+    const requestCancellation = () => {
+      if (cancellationRequested || commandId === undefined) return;
+      cancellationRequested = true;
+      void window.lotagate.agent.commandCancel(cwd, commandId).catch(() => undefined);
     };
     const drain = () => {
       if (commandId === undefined) return;
@@ -66,7 +83,11 @@ export function executeDesktopCommand(cwd: string, invocation: DesktopCommandInv
       for (const envelope of events) {
         const event = envelope.event.event;
         const data = envelope.event.data;
-        if (event === 'command.output') output += readString(data['content']) ?? '';
+        if (event === 'command.output') {
+          output += readString(data['content']) ?? '';
+          const nextStructured = readRecord(data['structured']);
+          if (nextStructured !== undefined) structured = nextStructured;
+        }
         if (event === 'command.completed') {
           const exitCode = data['exitCode'];
           if (typeof exitCode === 'number' && exitCode !== 0) finish(new Error(output.trim() || `Command exited with code ${exitCode}.`));
@@ -79,9 +100,14 @@ export function executeDesktopCommand(cwd: string, invocation: DesktopCommandInv
     void window.lotagate.agent.commandExecute(cwd, invocation as unknown as Record<string, unknown>).then(value => {
       commandId = readAcceptedCommandId(value);
       if (commandId === undefined) { finish(new Error('The CLI did not return a command id.')); return; }
+      if (timedOut) requestCancellation();
       drain();
     }).catch(reason => finish(toError(reason)));
-    timer = setTimeout(() => finish(new Error('The command timed out.')), 120_000);
+    timer = setTimeout(() => {
+      timedOut = true;
+      requestCancellation();
+      finish(new Error('The command timed out.'));
+    }, 120_000);
   });
 }
 
@@ -117,5 +143,6 @@ function parseOptions(value: unknown): { options?: DesktopCommandDescriptor['opt
 
 function readAcceptedCommandId(value: unknown): string | undefined { return typeof value === 'object' && value !== null ? readString((value as Record<string, unknown>)['commandId']) : undefined; }
 function readString(value: unknown): string | undefined { return typeof value === 'string' && value.length > 0 ? value : undefined; }
+function readRecord(value: unknown): Record<string, unknown> | undefined { return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }
 function readErrorMessage(value: unknown): string | undefined { return typeof value === 'object' && value !== null ? readString((value as Record<string, unknown>)['message']) : readString(value); }
 function toError(reason: unknown): Error { return reason instanceof Error ? reason : new Error('The command failed.'); }

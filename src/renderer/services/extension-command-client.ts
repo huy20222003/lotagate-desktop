@@ -1,4 +1,4 @@
-import { executeDesktopCommand, listDesktopCommands, type DesktopCommandInvocation } from './desktop-command-client.js';
+import { executeDesktopCommand, executeDesktopCommandResult, listDesktopCommands, type DesktopCommandInvocation } from './desktop-command-client.js';
 
 export type ExtensionKind = 'hook' | 'skill' | 'plugin' | 'mcp';
 export type ExtensionScope = 'user' | 'project' | 'builtin';
@@ -21,8 +21,8 @@ export class ExtensionCommandClient {
   }
 
   async list(cwd: string, kind: ExtensionKind): Promise<ExtensionRow[]> {
-    const output = await this.execute(cwd, { actionId: LIST_ACTIONS[kind], positionals: [], options: {} });
-    const rows = parseExtensionRows(output, kind);
+    const result = await executeDesktopCommandResult(cwd, { actionId: LIST_ACTIONS[kind], positionals: [], options: {} });
+    const rows = parseExtensionRows(result.structured, kind);
     if (kind !== 'hook') return rows;
     const projectHooks = new Set(await window.lotagate.extensions.listProjectHooks(cwd));
     return rows.map(row => ({ ...row, editable: projectHooks.has(row.name) }));
@@ -33,18 +33,21 @@ export class ExtensionCommandClient {
   }
 }
 
-export function parseExtensionRows(output: string, kind: ExtensionKind): ExtensionRow[] {
-  return output.split(/\r?\n/u).flatMap(line => {
-    if (!line.trim() || /^Name\s{2,}Status\s{2,}Detail$/u.test(line.trim()) || /^No /u.test(line.trim())) return [];
-    const match = /^(.*?)\s{2,}(\S+)\s{2,}(.*)$/u.exec(line.trimEnd());
-    if (!match) return [];
-    const name = match[1]?.trim();
-    const status = match[2]?.trim();
-    const detail = match[3]?.trim();
-    if (!name || !status || detail === undefined) return [];
-    const scope = kind === 'hook' ? undefined : readScope(detail);
-    return [{ name, status, detail, ...(scope === undefined ? {} : { scope }) }];
+export function parseExtensionRows(value: unknown, kind: ExtensionKind): ExtensionRow[] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return [];
+  const payload = value as Record<string, unknown>;
+  if (payload['kind'] !== kind || !Array.isArray(payload['items'])) return [];
+  return payload['items'].flatMap(item => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return [];
+    const row = item as Record<string, unknown>;
+    const name = row['name'];
+    const status = row['status'];
+    const detail = row['detail'];
+    if (typeof name !== 'string' || name.length === 0 || typeof status !== 'string' || status.length === 0 || typeof detail !== 'string') return [];
+    if (kind === 'hook') return [{ name, status, detail }];
+    const scope = readScope(row['scope']);
+    return scope === undefined ? [] : [{ name, status, detail, scope }];
   });
 }
 
-function readScope(detail: string): ExtensionScope | undefined { const scope = detail.split(' · ', 1)[0]; return scope === 'user' || scope === 'project' || scope === 'builtin' ? scope : undefined; }
+function readScope(value: unknown): ExtensionScope | undefined { return value === 'user' || value === 'project' || value === 'builtin' ? value : undefined; }

@@ -85,6 +85,7 @@ const bridge: DesktopBridge = {
     activitiesPage: (taskId, options) => ipcRenderer.invoke('task.activitiesPage', taskId, options),
     artifacts: taskId => ipcRenderer.invoke('task.artifacts', taskId),
     pickArtifact: taskId => ipcRenderer.invoke('task.pickArtifact', taskId),
+    importArtifact: (taskId, sourcePath) => ipcRenderer.invoke('task.importArtifact', taskId, sourcePath),
     createTextArtifact: (taskId, name, content, kind) => ipcRenderer.invoke('task.createTextArtifact', taskId, name, content, kind),
     createImageArtifact: (taskId, name, bytes) => ipcRenderer.invoke('task.createImageArtifact', taskId, name, bytes),
     deleteArtifact: (taskId, artifactId, confirmed) => ipcRenderer.invoke('task.deleteArtifact', taskId, artifactId, confirmed),
@@ -178,7 +179,7 @@ const bridge: DesktopBridge = {
     onRequest: listener => { const handler = (_event: Electron.IpcRendererEvent, request: DesktopApprovalRequest) => listener(request); ipcRenderer.on('approval.requested', handler); return () => ipcRenderer.removeListener('approval.requested', handler); },
     onResolved: listener => { const handler = (_event: Electron.IpcRendererEvent, resolution: DesktopApprovalResolution) => listener(resolution); ipcRenderer.on('approval.resolved', handler); return () => ipcRenderer.removeListener('approval.resolved', handler); },
   },
-  operations: { notify: (title, body) => ipcRenderer.invoke('operations.notify', title, body), showWindow: () => ipcRenderer.invoke('operations.showWindow'), exportDiagnostics: () => ipcRenderer.invoke('operations.exportDiagnostics'), checkForUpdates: () => ipcRenderer.invoke('operations.checkForUpdates'), onDeepLink: listener => { const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url); ipcRenderer.on('operations.deepLink', handler); return () => ipcRenderer.removeListener('operations.deepLink', handler); } },
+  operations: { notify: (title, body) => ipcRenderer.invoke('operations.notify', title, body), showWindow: () => ipcRenderer.invoke('operations.showWindow'), revealPath: path => ipcRenderer.invoke('operations.revealPath', path), exportDiagnostics: () => ipcRenderer.invoke('operations.exportDiagnostics'), checkForUpdates: () => ipcRenderer.invoke('operations.checkForUpdates'), onDeepLink: listener => { const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url); ipcRenderer.on('operations.deepLink', handler); return () => ipcRenderer.removeListener('operations.deepLink', handler); } },
 };
 
 contextBridge.exposeInMainWorld('lotagate', bridge);

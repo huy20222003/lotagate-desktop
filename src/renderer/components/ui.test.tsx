@@ -2,7 +2,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { describe, expect, it, vi } from 'vitest';
-import { Avatar, Button, Checkbox, CopyTextButton, Dropdown, Label, Modal, Skeleton, Tabs, TextArea, TextInput, Tooltip } from './ui.js';
+import { Avatar, Button, Checkbox, CopyTextButton, Dropdown, IconButton, Label, Modal, Skeleton, Tabs, TextArea, TextInput, Tooltip } from './ui.js';
+import { Check } from 'lucide-react';
 
 describe('desktop UI primitives', () => {
   it('renders a semantic button variant and interaction', () => {
@@ -37,6 +38,14 @@ describe('desktop UI primitives', () => {
     expect(onDropdownChange).toHaveBeenCalledWith('two');
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Second' }));
     expect(onTabChange).toHaveBeenCalledWith('second');
+  });
+
+  it('composes icon buttons with an accessible label and reusable tooltip', async () => {
+    render(<IconButton icon={Check} label="Confirm" />);
+    const button = screen.getByRole('button', { name: 'Confirm' });
+    expect(button).toHaveClass('icon-button', 'ui-icon-button');
+    fireEvent.pointerMove(button, { pointerType: 'mouse' });
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('Confirm'));
   });
 
   it('supports an optional controlled multi-select dropdown', async () => {

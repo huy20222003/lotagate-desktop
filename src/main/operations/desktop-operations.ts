@@ -1,6 +1,6 @@
-import { app, Menu, nativeImage, Notification, Tray, BrowserWindow, net } from 'electron';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { app, Menu, nativeImage, Notification, Tray, BrowserWindow, net, shell } from 'electron';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { isAbsolute, join, resolve } from 'node:path';
 
 export class DesktopOperations {
   private tray: Tray | undefined;
@@ -22,6 +22,13 @@ export class DesktopOperations {
 
   notify(title: string, body: string): void { if (Notification.isSupported()) new Notification({ title, body }).show(); }
   showWindow(): void { const window = BrowserWindow.getAllWindows()[0]; if (window === undefined) return; if (window.isMinimized()) window.restore(); window.show(); window.focus(); }
+  async revealPath(input: string): Promise<void> {
+    if (!isAbsolute(input)) throw new Error('The file path must be absolute.');
+    const path = resolve(input);
+    const details = await stat(path);
+    if (!details.isFile()) throw new Error('The selected path is not a file.');
+    shell.showItemInFolder(path);
+  }
   async checkForUpdates(manifestUrl: string): Promise<Record<string, string> | null> {
     if (!manifestUrl) return null;
     const parsed = new URL(manifestUrl);
