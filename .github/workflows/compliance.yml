@@ -1,0 +1,38 @@
+name: Desktop Compliance
+
+on:
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "README.md"
+      - "src/**"
+      - "scripts/**"
+      - "resources/**"
+      - ".github/workflows/compliance.yml"
+  push:
+    branches: [main]
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "README.md"
+      - "src/**"
+      - "scripts/**"
+      - "resources/**"
+      - ".github/workflows/compliance.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  compliance:
+    uses: huy20222003/lotagate-compliance/.github/workflows/reusable-compliance.yml@d49efe7632b52f4b3f5c0d3939aa348159338fe1 # compliance workflow
+    with:
+      project-name: desktop
+      project-root: .
+      install-command: npm ci --omit=dev
+    secrets:
+      compliance-token: ${{ secrets.COMPLIANCE_REPO_TOKEN }}
