@@ -88,6 +88,7 @@ export type Workspace = z.infer<typeof workspaceSchema>;
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
 export type Task = z.infer<typeof taskSchema>;
 export type Activity = z.infer<typeof activitySchema>;
+export interface ActivityPage { activities: Activity[]; nextCursor: string | null; hasMore: boolean; }
 export type Artifact = z.infer<typeof artifactSchema>;
 export interface ArtifactPreview { artifact: Artifact; content?: string; dataUrl?: string; }
 export interface ArtifactMedia { artifact: Artifact; mimeType: string; bytes: Uint8Array; }
@@ -136,6 +137,7 @@ export interface DesktopTaskApi {
   pin(taskId: string, pinned: boolean): Promise<Task>;
   addActivity(taskId: string, kind: Activity['kind'], text: string, metadata?: Record<string, unknown>): Promise<Activity>;
   activities(taskId: string): Promise<Activity[]>;
+  activitiesPage(taskId: string, options?: { limit?: number; before?: string }): Promise<ActivityPage>;
   artifacts(taskId: string): Promise<Artifact[]>;
   pickArtifact(taskId: string): Promise<Artifact | null>;
   createTextArtifact(taskId: string, name: string, content: string, kind?: 'text' | 'markdown' | 'patch' | 'json'): Promise<Artifact>;

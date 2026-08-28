@@ -82,6 +82,7 @@ const bridge: DesktopBridge = {
     pin: (taskId, pinned) => ipcRenderer.invoke('task.pin', taskId, pinned),
     addActivity: (taskId, kind, text, metadata) => ipcRenderer.invoke('task.activity', taskId, kind, text, metadata),
     activities: taskId => ipcRenderer.invoke('task.activities', taskId),
+    activitiesPage: (taskId, options) => ipcRenderer.invoke('task.activitiesPage', taskId, options),
     artifacts: taskId => ipcRenderer.invoke('task.artifacts', taskId),
     pickArtifact: taskId => ipcRenderer.invoke('task.pickArtifact', taskId),
     createTextArtifact: (taskId, name, content, kind) => ipcRenderer.invoke('task.createTextArtifact', taskId, name, content, kind),

@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from 'react';
 import type { AttachmentPreview } from './attachment-types.js';
+import type { PromptSendOptions } from './prompt-options.js';
 
 export interface QueuedMessage {
   id: string;
   prompt: string;
+  options?: PromptSendOptions;
   attachments: readonly AttachmentPreview[];
   createdAt: number;
 }
@@ -15,8 +17,8 @@ export class MessageQueueService {
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
   snapshot = (): readonly QueuedMessage[] => this.messages;
 
-  enqueue(prompt: string, attachments: readonly AttachmentPreview[] = []): QueuedMessage {
-    const message = { id: crypto.randomUUID(), prompt, attachments: [...attachments], createdAt: Date.now() };
+  enqueue(prompt: string, attachments: readonly AttachmentPreview[] = [], options?: PromptSendOptions): QueuedMessage {
+    const message = { id: crypto.randomUUID(), prompt, ...(options === undefined ? {} : { options }), attachments: [...attachments], createdAt: Date.now() };
     this.messages = [...this.messages, message];
     this.notify();
     return message;

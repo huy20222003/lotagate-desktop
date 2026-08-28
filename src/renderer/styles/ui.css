@@ -129,6 +129,9 @@
   background: var(--color-input-surface);
   color: var(--color-on-accent);
   outline: none;
+  padding: 0;
+  line-height: 0;
+  vertical-align: middle;
   transition: color .15s ease, background-color .15s ease, border-color .15s ease;
 }
 
@@ -139,7 +142,7 @@
 
 .ui-checkbox-root:focus-visible { box-shadow: 0 0 0 2px var(--color-focus-ring); }
 
-.ui-checkbox-root > span { display: grid; width: 100%; height: 100%; place-items: center; }
+.ui-checkbox-root > span { display: grid; width: 100%; height: 100%; place-items: center; line-height: 0; }
 .ui-checkbox-root svg { display: block; }
 
 .ui-check-control {
@@ -148,6 +151,10 @@
   gap: 8px;
   color: var(--color-text-secondary);
   font-size: 12px;
+}
+
+.ui-check-control > span {
+  line-height: 16px;
 }
 
 .ui-label,
@@ -270,6 +277,13 @@
 }
 
 .ui-menu-item { color: var(--color-text-secondary); }
+
+.ui-menu-item.dropdown-empty {
+  cursor: default;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  pointer-events: none;
+}
 
 .ui-menu-item[data-highlighted],
 .ui-menu-item[data-state='checked'] {

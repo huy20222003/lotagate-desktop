@@ -32,4 +32,11 @@ describe('MessageQueueService', () => {
 
     expect(service.snapshot().map(item => item.prompt)).toEqual(['first', 'second']);
   });
+
+  it('keeps skill invocation metadata when a prompt is queued', () => {
+    const service = new MessageQueueService();
+    const message = service.enqueue('/review Check the diff', [], { skills: ['review'], agentPrompt: 'Use the selected skill "review" for this request.' });
+
+    expect(message.options).toEqual({ skills: ['review'], agentPrompt: 'Use the selected skill "review" for this request.' });
+  });
 });

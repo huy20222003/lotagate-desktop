@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
-const PROMPT_TOKEN_PATTERN = /(@[^\s]+|https?:\/\/[^\s]+)/gu;
-const PROMPT_TOKEN_EXACT_PATTERN = /^(@[^\s]+|https?:\/\/[^\s]+)$/u;
+const PROMPT_TOKEN_PATTERN = /(@[^\s]+|https?:\/\/[^\s]+|\/[A-Za-z0-9][^\s]*)/gu;
+const PROMPT_TOKEN_EXACT_PATTERN = /^(@[^\s]+|https?:\/\/[^\s]+|\/[A-Za-z0-9][^\s]*)$/u;
 
 export function PromptMarkup({ content }: { content: string }): ReactNode {
   const parts = content.split(PROMPT_TOKEN_PATTERN);

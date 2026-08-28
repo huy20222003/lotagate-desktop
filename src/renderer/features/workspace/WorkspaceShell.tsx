@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { WorkspaceSidebar } from './WorkspaceSidebar.js';
 import { SettingsPage, type SettingsSection } from '../settings/SettingsPage.js';
 import type { FileChangeSummary, Task, Workspace } from '../../../contracts/ipc/v1/workspace.js';
@@ -53,6 +53,7 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   const [changesSummary, setChangesSummary] = useState<FileChangeSummary | undefined>();
   const [lightboxImage, setLightboxImage] = useState<AttachmentPreview | undefined>();
   const threadViewportRef = useRef<HTMLDivElement>(null);
+  const prependScrollRef = useRef<{ top: number; height: number }>();
   const hasRenderedActivities = useRef(false);
   const followLatestRef = useRef(true);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
@@ -142,15 +143,27 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
       const atBottom = isViewportAtBottom(viewport);
       followLatestRef.current = atBottom;
       setShowScrollBottom(!atBottom);
+      if (hasRenderedActivities.current && viewport.scrollTop <= 32 && controller.hasOlderActivities && !controller.loadingOlderActivities && prependScrollRef.current === undefined) {
+        prependScrollRef.current = { top: viewport.scrollTop, height: viewport.scrollHeight };
+        void controller.loadOlderActivities().then(loaded => { if (!loaded) prependScrollRef.current = undefined; }).catch(reason => { prependScrollRef.current = undefined; showError('Unable to load older messages', toMessage(reason)); });
+      }
     };
     updateScrollState();
     viewport.addEventListener('scroll', updateScrollState, { passive: true });
     return () => viewport.removeEventListener('scroll', updateScrollState);
-  }, [settingsOpen]);
+  }, [controller.hasOlderActivities, controller.loadOlderActivities, controller.loadingOlderActivities, settingsOpen, showError]);
+  useLayoutEffect(() => {
+    const pending = prependScrollRef.current;
+    const viewport = threadViewportRef.current;
+    if (!pending || !viewport) return;
+    viewport.scrollTop = pending.top + Math.max(0, viewport.scrollHeight - pending.height);
+    prependScrollRef.current = undefined;
+  }, [controller.activities]);
   useEffect(() => {
     if (settingsOpen) return;
     followLatestRef.current = true;
     hasRenderedActivities.current = false;
+    prependScrollRef.current = undefined;
     setShowScrollBottom(false);
     let secondFrame: number | undefined;
     const firstFrame = window.requestAnimationFrame(() => {
@@ -163,7 +176,7 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
       window.cancelAnimationFrame(firstFrame);
       if (secondFrame !== undefined) window.cancelAnimationFrame(secondFrame);
     };
-  }, [settingsOpen]);
+  }, [controller.task?.id, settingsOpen]);
   useEffect(() => {
     const viewport = threadViewportRef.current;
     const latest = controller.activities[controller.activities.length - 1];

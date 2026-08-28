@@ -122,7 +122,8 @@ export function registerIpc(services: DesktopIpcServices): void {
     const task = taskId === undefined ? undefined : await tasks.requireForCwd(taskId, canonicalCwd);
     if (task?.sessionId !== undefined && task.sessionId !== sessionId) throw new Error('The task session does not match the requested agent session.');
     const attachments = taskId === undefined ? [] : await artifacts.attachmentInputs(taskId, attachmentIds);
-    return agents.turnStart(canonicalCwd, { sessionId, prompt: z.string().min(1).max(512 * 1024).parse(value['prompt']), ...(value['model'] === undefined ? {} : { model: z.string().min(1).max(256).parse(value['model']) }), ...(attachments.length === 0 ? {} : { attachments }) });
+    const skills = value['skills'] === undefined ? undefined : z.array(z.string().min(1).max(256)).max(32).parse(value['skills']);
+    return agents.turnStart(canonicalCwd, { sessionId, prompt: z.string().min(1).max(512 * 1024).parse(value['prompt']), ...(value['model'] === undefined ? {} : { model: z.string().min(1).max(256).parse(value['model']) }), ...(skills === undefined ? {} : { skills }), ...(attachments.length === 0 ? {} : { attachments }) });
   });
   handle('agent.turnCancel', async (event, cwd: unknown, turnId: unknown) => { assertTrustedRenderer(event); return agents.turnCancel(await requireWorkspaceCwd(cwd), idSchema.parse(turnId)); });
   handle('agent.approvalRespond', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.approvalRespond(await requireWorkspaceCwd(cwd), objectSchema.parse(input) as { approvalId: string; approved: boolean }); });
@@ -195,6 +196,11 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('task.pin', async (event, taskId: unknown, pinned: unknown) => { assertTrustedRenderer(event); return tasks.pin(idSchema.parse(taskId), z.boolean().parse(pinned)); });
   handle('task.activity', async (event, taskId: unknown, kind: unknown, text: unknown, metadata?: unknown) => { assertTrustedRenderer(event); return tasks.appendActivity(idSchema.parse(taskId), z.enum(['user', 'assistant', 'tool', 'command', 'file', 'approval', 'trust', 'usage', 'context', 'error', 'verification']).parse(kind), z.string().parse(text), metadata === undefined ? {} : objectSchema.parse(metadata)); });
   handle('task.activities', async (event, taskId: unknown) => { assertTrustedRenderer(event); return tasks.activities(idSchema.parse(taskId)); });
+  handle('task.activitiesPage', async (event, taskId: unknown, options?: unknown) => {
+    assertTrustedRenderer(event);
+    const value = options === undefined ? {} : activityPageOptionsSchema.parse(options);
+    return tasks.activitiesPage(idSchema.parse(taskId), { ...(value.limit === undefined ? {} : { limit: value.limit }), ...(value.before === undefined ? {} : { before: value.before }) });
+  });
   handle('task.artifacts', async (event, taskId: unknown) => { assertTrustedRenderer(event); return artifacts.list(idSchema.parse(taskId)); });
   handle('task.pickArtifact', async (event, taskId: unknown) => { assertTrustedRenderer(event); const selected = await dialog.showOpenDialog({ properties: ['openFile'] }); if (selected.canceled || selected.filePaths[0] === undefined) return null; return artifacts.importFile(idSchema.parse(taskId), selected.filePaths[0], artifactKind(selected.filePaths[0])); });
   handle('task.createTextArtifact', async (event, taskId: unknown, name: unknown, content: unknown, kind?: unknown) => { assertTrustedRenderer(event); return artifacts.createText(idSchema.parse(taskId), z.string().min(1).max(200).parse(name), z.string().max(8 * 1024 * 1024).parse(content), kind === undefined ? 'text' : z.enum(['text', 'markdown', 'patch', 'json']).parse(kind)); });
@@ -296,4 +302,5 @@ const idSchema = z.string().min(1).max(256);
 const browserBoundsSchema = z.object({ x: z.number().finite().min(0).max(10_000), y: z.number().finite().min(0).max(10_000), width: z.number().finite().min(0).max(10_000), height: z.number().finite().min(0).max(10_000) }).strict();
 const paginationPageSchema = z.number().int().min(1);
 const paginationLimitSchema = z.number().int().min(1).max(100);
+const activityPageOptionsSchema = z.object({ limit: paginationLimitSchema.optional(), before: idSchema.optional() }).strict();
 const objectSchema = z.record(z.string(), z.unknown());

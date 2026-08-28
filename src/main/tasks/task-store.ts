@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { activitySchema, taskSchema, type Activity, type Task, type TaskStatus } from '../../contracts/ipc/v1/workspace.js';
+import { activitySchema, taskSchema, type Activity, type ActivityPage, type Task, type TaskStatus } from '../../contracts/ipc/v1/workspace.js';
 import { ActivityLogStore } from '../persistence/activity-log-store.js';
 import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
@@ -102,6 +102,8 @@ export class TaskStore {
 
   async activities(taskId: string): Promise<Activity[]> { return (await this.activityStore.read()).filter(activity => activity.taskId === taskId).map(item => activitySchema.parse(item)); }
 
+  async activitiesPage(taskId: string, options: { limit?: number; before?: string } = {}): Promise<ActivityPage> { return paginateActivities(await this.activities(taskId), options); }
+
   private async mutate(taskId: string, update: (task: Task) => Task): Promise<Task> {
     const current = await this.taskStore.read();
     const index = current.findIndex(task => task.id === taskId);
@@ -122,4 +124,13 @@ export class TaskStore {
   }
 
   private mutationChain: Promise<void> = Promise.resolve();
+}
+
+export function paginateActivities(all: readonly Activity[], options: { limit?: number; before?: string } = {}): ActivityPage {
+  const limit = Math.max(1, Math.min(options.limit ?? 40, 100));
+  const beforeIndex = options.before === undefined ? all.length : all.findIndex(activity => activity.id === options.before);
+  const end = beforeIndex < 0 ? all.length : beforeIndex;
+  const start = Math.max(0, end - limit);
+  const page = all.slice(start, end);
+  return { activities: page, nextCursor: start > 0 ? page[0]?.id ?? null : null, hasMore: start > 0 };
 }

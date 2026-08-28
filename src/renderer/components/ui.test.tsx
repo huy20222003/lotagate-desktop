@@ -51,13 +51,35 @@ describe('desktop UI primitives', () => {
     expect(onChange).toHaveBeenCalledWith(['one', 'two']);
   });
 
-  it('keeps modal close action explicit', () => {
+  it('shows an explicit empty state when a dropdown has no options', async () => {
+    render(<Dropdown value="" options={[]} onChange={() => undefined} placeholder="Select model" />);
+    const trigger = screen.getByRole('button', { name: 'Select option' });
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));
+    expect(screen.getByText('No item to select')).toBeVisible();
+  });
+
+  it('closes a modal when the user clicks outside it', () => {
     const onClose = vi.fn();
     render(<Modal title="Confirm" onClose={onClose}>Body</Modal>);
     expect(screen.getByRole('dialog', { name: 'Confirm' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled();
-    fireEvent.mouseDown(document.body);
+    const backdrop = document.querySelector('.modal-backdrop');
+    if (!backdrop) throw new Error('Modal backdrop was not rendered.');
+    fireEvent.pointerDown(backdrop);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps modal open while interacting with a portalled dropdown', () => {
+    const onClose = vi.fn();
+    render(<Modal title="Confirm" onClose={onClose}><div data-radix-menu-content><button type="button">Option</button></div></Modal>);
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Option' }));
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('closes a modal with Escape', () => {
+    const onClose = vi.fn();
+    render(<Modal title="Confirm" onClose={onClose}>Body</Modal>);
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });

@@ -286,9 +286,9 @@
 .slash-command-picker-empty { margin: 0 10px 8px; border: 1px solid var(--color-border); border-radius: 8px; padding: 10px; color: var(--color-text-tertiary); font-size: 12px; }
 .slash-command-option { display: flex; align-items: center; gap: 10px; border: 0; border-radius: 6px; padding: 9px 10px; background: transparent; color: var(--color-text-secondary); text-align: left; }
 .slash-command-option:hover, .slash-command-option.selected, .slash-command-option:focus-visible { outline: 0; background: var(--color-surface-hover); color: var(--color-on-accent); }
-.slash-command-option span { display: grid; min-width: 0; gap: 2px; }
+.slash-command-option span { display: grid; min-width: 0; flex: 1 1 auto; gap: 2px; }
 .slash-command-option strong { font-size: 12px; }
-.slash-command-option small { overflow: hidden; color: var(--color-text-tertiary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.slash-command-option small { display: block; max-width: 100%; overflow: hidden; color: var(--color-text-tertiary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .slash-command-panel { display: grid; gap: 12px; border-bottom: 1px solid var(--color-border); padding: 12px; background: var(--color-surface-panel); }
 .slash-command-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .slash-command-title { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--color-text); }
