@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import type { TerminalSession } from '../../../contracts/ipc/v1/workspace.js';
 import { Tabs, Tooltip } from '../../components/ui.js';
+import { createComposerApprovalInput } from './approval-request.js';
 
 interface TerminalTab extends TerminalSession { label: string; }
 
@@ -44,7 +45,7 @@ export function TerminalPanel({ cwd, onClose }: { cwd: string; onClose: () => vo
     }
   }, [cwd]);
   const requestOpenTab = useCallback(() => {
-    void window.lotagate.approvals.request({ source: 'terminal', surface: 'composer', toolName: 'terminal.open', displayName: 'Open terminal', kind: 'terminal', detail: { summary: `Open an interactive terminal in ${cwd}` }, workspaceCwd: cwd }).then(resolution => { if (resolution.approved) return openTab(); return undefined; }).catch(reason => setError(reason instanceof Error ? reason.message : 'Terminal approval failed.'));
+    void window.lotagate.approvals.request(createComposerApprovalInput({ source: 'terminal', toolName: 'terminal.open', displayName: 'Open terminal', kind: 'terminal', summary: `Open an interactive terminal in ${cwd}`, workspaceCwd: cwd })).then(resolution => { if (resolution.approved) return openTab(); return undefined; }).catch(reason => setError(reason instanceof Error ? reason.message : 'Terminal approval failed.'));
   }, [cwd, openTab]);
 
   useEffect(() => {

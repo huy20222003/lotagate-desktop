@@ -4,6 +4,7 @@ import type { GitBranch as GitBranchInfo, GitCommit, GitFileChange, GitRepositor
 import { Button, Dropdown, Modal, TextArea, TextInput, Tooltip } from '../../components/ui.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
 import { toUserErrorMessage as toMessage } from '../../utils/errors.js';
+import { createComposerApprovalInput } from './approval-request.js';
 import { useResizableSidePanel } from './use-resizable-panel.js';
 
 type GitPanelTab = 'changes' | 'history' | 'stashes';
@@ -66,7 +67,7 @@ export function GitPanel({ cwd, onClose }: { cwd: string; onClose: () => void })
     setBusy(name);
     setError(undefined);
     try {
-      const resolution = await window.lotagate.approvals.request({ source: 'git', surface: 'composer', toolName: `git.${name.split(':')[0]}`, displayName: options?.allowLabel ?? 'Git action', kind: 'git', detail: { summary: options?.summary ?? `Allow ${name.replace(/[:_-]/gu, ' ')} in this workspace.` }, risk: options?.risk ?? 'normal', workspaceCwd: cwd });
+      const resolution = await window.lotagate.approvals.request(createComposerApprovalInput({ source: 'git', toolName: `git.${name.split(':')[0]}`, displayName: options?.allowLabel ?? 'Git action', kind: 'git', summary: options?.summary ?? `Allow ${name.replace(/[:_-]/gu, ' ')} in this workspace.`, risk: options?.risk, workspaceCwd: cwd }));
       if (resolution.approved) { await action(); await reload(); }
     } catch (reason) { setError(toMessage(reason)); }
     finally { setBusy(undefined); }

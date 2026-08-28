@@ -78,6 +78,9 @@
 .settings-toggle span { display: grid; gap: 4px; }
 .settings-toggle strong { color: var(--color-text); font-size: 13px; font-weight: 500; }
 .settings-toggle small { color: var(--color-text-tertiary); font-size: 11px; }
+.settings-directory-control { display: flex; align-items: center; gap: 8px; }
+.settings-directory-control .text-input { min-width: 0; flex: 1; }
+.settings-directory-control .button { flex: 0 0 auto; min-height: 38px; }
 .settings-warning { border: 1px solid var(--color-border); border-radius: 7px; padding: 10px 12px; color: var(--color-text-tertiary); font-size: 11px; line-height: 1.5; }
 .settings-form-actions { display: flex; justify-content: flex-end; border-top: 1px solid var(--color-border-subtle); padding-top: 14px; }
 .settings-form-actions .button { min-width: 120px; }

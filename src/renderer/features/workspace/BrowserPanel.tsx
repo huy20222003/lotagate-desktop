@@ -2,6 +2,7 @@ import { ArrowLeft, ArrowRight, Camera, Globe2, Plus, RefreshCw, X } from 'lucid
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import type { BrowserSessionSnapshot, BrowserTabSnapshot } from '../../../contracts/ipc/v1/workspace.js';
 import { Tooltip } from '../../components/ui.js';
+import { createComposerApprovalInput } from './approval-request.js';
 import { useResizableSidePanel } from './use-resizable-panel.js';
 
 export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: string; sessionId?: string; cwd?: string; onClose: () => void }) {
@@ -74,7 +75,7 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
     void (async () => {
       const action = () => window.lotagate.browser.navigate(browserSession.id, activeTab.id, value, true);
       try {
-        const resolution = await window.lotagate.approvals.request({ source: 'browser', surface: 'composer', toolName: 'browser.navigate', displayName: 'Navigate browser', kind: 'browser', detail: { summary: `Navigate to ${value}` }, ...(cwd === undefined ? {} : { workspaceCwd: cwd }) });
+        const resolution = await window.lotagate.approvals.request(createComposerApprovalInput({ source: 'browser', toolName: 'browser.navigate', displayName: 'Navigate browser', kind: 'browser', summary: `Navigate to ${value}`, ...(cwd === undefined ? {} : { workspaceCwd: cwd }) }));
         if (resolution.approved) await runAction(action);
       } catch (reason) { setError(toBrowserError(reason, 'Browser approval failed.')); }
     })();
