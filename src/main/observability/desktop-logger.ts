@@ -17,6 +17,7 @@ export interface LogDetails {
 export class DesktopLogger {
   private writeChain: Promise<void> = Promise.resolve();
   private lastPrunedDate: string | undefined;
+  private retentionDays = LOG_RETENTION_DAYS;
 
   constructor(private readonly directory = desktopDataDirectory(DESKTOP_DATA_DIRECTORIES.logs)) {}
 
@@ -24,6 +25,7 @@ export class DesktopLogger {
   info(event: string, details?: LogDetails): void { this.enqueue('info', event, details); }
   warn(event: string, details?: LogDetails): void { this.enqueue('warn', event, details); }
   error(event: string, details?: LogDetails): void { this.enqueue('error', event, details); }
+  setRetentionDays(days: number): void { if (Number.isInteger(days) && days >= 1 && days <= 365) this.retentionDays = days; }
 
   async close(): Promise<void> {
     await this.writeChain;
@@ -54,7 +56,7 @@ export class DesktopLogger {
   }
 
   private async prune(directory: string, today: string): Promise<void> {
-    const cutoff = Date.parse(`${today}T00:00:00.000Z`) - LOG_RETENTION_DAYS * 24 * 60 * 60 * 1_000;
+    const cutoff = Date.parse(`${today}T00:00:00.000Z`) - this.retentionDays * 24 * 60 * 60 * 1_000;
     const files = await readdir(directory, { withFileTypes: true });
     await Promise.all(files.flatMap(file => {
       if (!file.isFile()) return [];

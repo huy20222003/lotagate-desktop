@@ -14,12 +14,21 @@ export interface DesktopCommandDescriptor {
   options?: Array<{ name: string; valueName?: string; description: string; required?: boolean; allowedValues?: string[] }>;
 }
 
+const COMMAND_LIST_TIMEOUT_MS = 15_000;
+
 export async function listDesktopCommands(cwd: string): Promise<DesktopCommandDescriptor[]> {
-  const result = await window.lotagate.agent.commandList(cwd);
+  const result = await withTimeout(window.lotagate.agent.commandList(cwd), COMMAND_LIST_TIMEOUT_MS, 'Loading Desktop commands timed out.');
   if (typeof result !== 'object' || result === null) return [];
   const commands = (result as Record<string, unknown>)['commands'];
   if (!Array.isArray(commands)) return [];
   return commands.flatMap(parseCommandDescriptor);
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(value => { clearTimeout(timer); resolve(value); }, reason => { clearTimeout(timer); reject(reason); });
+  });
 }
 
 export function findDesktopCommand(commands: readonly DesktopCommandDescriptor[], path: readonly string[]): DesktopCommandDescriptor | undefined {

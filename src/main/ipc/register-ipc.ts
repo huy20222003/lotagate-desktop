@@ -15,6 +15,7 @@ import type { SettingsService } from '../settings/settings-service.js';
 import type { ArtifactService } from '../artifacts/artifact-service.js';
 import type { BrowserService } from '../browser/browser-service.js';
 import type { AutomationService } from '../automation/automation-service.js';
+import type { ApprovalCoordinator } from '../approvals/approval-coordinator.js';
 import type { AutomationRun } from '../../contracts/ipc/v1/automation.js';
 import type { DesktopOperations } from '../operations/desktop-operations.js';
 import { assertTrustedRenderer } from './sender-policy.js';
@@ -28,6 +29,7 @@ import { extensionDetailInputSchema, extensionDetailWriteInputSchema, hookCreate
 import { automationCreateInputSchema, automationUpdateInputSchema } from '../../contracts/ipc/v1/automation.js';
 import { requireDirectory, requireExistingPath } from '../security/path-policy.js';
 import { artifactKind } from '../artifacts/artifact-kind.js';
+import { desktopApprovalInputSchema } from '../../contracts/ipc/v1/approval.js';
 
 const cwdSchema = z.string().min(1).max(4_096);
 
@@ -46,6 +48,7 @@ export interface DesktopIpcServices {
   artifacts: ArtifactService;
   browser: BrowserService;
   automations: AutomationService;
+  approvals: ApprovalCoordinator;
   operations: DesktopOperations;
   runAutomation(id: string): Promise<AutomationRun>;
   retryAutomation(runId: string): Promise<AutomationRun>;
@@ -54,7 +57,7 @@ export interface DesktopIpcServices {
 }
 
 export function registerIpc(services: DesktopIpcServices): void {
-  const { auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, extensionFiles, git, terminal, interactiveTerminal, settings, artifacts, browser, automations, operations, runAutomation, retryAutomation, setMenuContext, logger } = services;
+  const { auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, extensionFiles, git, terminal, interactiveTerminal, settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext, logger } = services;
   const handle = <TArgs extends unknown[], TResult>(channel: string, listener: (event: Electron.IpcMainInvokeEvent, ...args: TArgs) => TResult): void => registerLoggedIpcHandler(logger, channel, listener);
   const requireWorkspaceCwd = (input: unknown): Promise<string> => workspaces.requireRegisteredRoot(cwdSchema.parse(input));
   const taskUpdateSchema = z.object({
@@ -123,10 +126,9 @@ export function registerIpc(services: DesktopIpcServices): void {
     if (task?.sessionId !== undefined && task.sessionId !== sessionId) throw new Error('The task session does not match the requested agent session.');
     const attachments = taskId === undefined ? [] : await artifacts.attachmentInputs(taskId, attachmentIds);
     const skills = value['skills'] === undefined ? undefined : z.array(z.string().min(1).max(256)).max(32).parse(value['skills']);
-    return agents.turnStart(canonicalCwd, { sessionId, prompt: z.string().min(1).max(512 * 1024).parse(value['prompt']), ...(value['model'] === undefined ? {} : { model: z.string().min(1).max(256).parse(value['model']) }), ...(skills === undefined ? {} : { skills }), ...(attachments.length === 0 ? {} : { attachments }) });
+    return agents.turnStart(canonicalCwd, { sessionId, prompt: z.string().min(1).max(512 * 1024).parse(value['prompt']), ...(value['model'] === undefined ? {} : { model: z.string().min(1).max(256).parse(value['model']) }), ...(taskId === undefined ? {} : { taskId }), ...(skills === undefined ? {} : { skills }), ...(attachments.length === 0 ? {} : { attachments }) });
   });
   handle('agent.turnCancel', async (event, cwd: unknown, turnId: unknown) => { assertTrustedRenderer(event); return agents.turnCancel(await requireWorkspaceCwd(cwd), idSchema.parse(turnId)); });
-  handle('agent.approvalRespond', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.approvalRespond(await requireWorkspaceCwd(cwd), objectSchema.parse(input) as { approvalId: string; approved: boolean }); });
   handle('agent.trustRespond', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.trustRespond(await requireWorkspaceCwd(cwd), objectSchema.parse(input) as { trustRequestId: string; trusted: boolean }); });
   handle('agent.modelList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.modelList(await requireWorkspaceCwd(cwd)); });
   handle('agent.commandList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.commandList(await requireWorkspaceCwd(cwd)); });
@@ -262,7 +264,7 @@ export function registerIpc(services: DesktopIpcServices): void {
    handle('terminal.resize', async (event, input: unknown) => { assertTrustedRenderer(event); const value = terminalSessionResizeSchema.parse(input); interactiveTerminal.resize(value.sessionId, value.cols, value.rows, event.sender.id); });
    handle('terminal.close', async (event, sessionId: unknown) => { assertTrustedRenderer(event); interactiveTerminal.close(idSchema.parse(sessionId), event.sender.id); });
   handle('settings.get', async event => { assertTrustedRenderer(event); return settings.get(); });
-  handle('settings.update', async (event, patch: unknown) => { assertTrustedRenderer(event); return settings.update(objectSchema.parse(patch)); });
+  handle('settings.update', async (event, patch: unknown) => { assertTrustedRenderer(event); const updated = await settings.update(objectSchema.parse(patch)); logger.setRetentionDays(updated.sandbox.diagnosticsRetentionDays); return updated; });
   handle('browser.create', async event => { assertTrustedRenderer(event); return browser.create(); });
   handle('browser.open', async (event, url: unknown, approved: unknown) => { assertTrustedRenderer(event); return browser.open(z.string().url().parse(url), z.boolean().parse(approved)); });
   handle('browser.close', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.close(idSchema.parse(id)); });
@@ -279,6 +281,8 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('browser.stopRecording', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.stopRecording(idSchema.parse(id)); });
   handle('browser.list', async event => { assertTrustedRenderer(event); return browser.list(); });
   handle('browser.evidence', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.evidence(idSchema.parse(id)); });
+  handle('approval.request', async (event, input: unknown) => { assertTrustedRenderer(event); return approvals.request(desktopApprovalInputSchema.parse(input)); });
+  handle('approval.respond', async (event, approvalId: unknown, approved: unknown) => { assertTrustedRenderer(event); return approvals.respond(idSchema.parse(approvalId), z.boolean().parse(approved)); });
   handle('automation.list', async event => { assertTrustedRenderer(event); return automations.list(); });
   handle('automation.get', async (event, id: unknown) => { assertTrustedRenderer(event); return automations.get(idSchema.parse(id)); });
   handle('automation.create', async (event, input: unknown) => { assertTrustedRenderer(event); return automations.create(automationCreateInputSchema.parse(input)); });
@@ -290,7 +294,7 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('automation.cancel', async (event, runId: unknown) => { assertTrustedRenderer(event); return automations.cancel(idSchema.parse(runId)); });
   handle('automation.retry', async (event, runId: unknown) => { assertTrustedRenderer(event); return retryAutomation(idSchema.parse(runId)); });
   handle('automation.review', async (event, runId: unknown, approved: unknown) => { assertTrustedRenderer(event); return automations.review(idSchema.parse(runId), z.boolean().parse(approved)); });
-  handle('automation.approvalRespond', async (event, runId: unknown, approvalId: unknown, approved: unknown) => { assertTrustedRenderer(event); return automations.respondApproval(idSchema.parse(runId), idSchema.parse(approvalId), z.boolean().parse(approved)); });
+  handle('automation.approvalRespond', async (event, runId: unknown, approvalId: unknown, approved: unknown) => { assertTrustedRenderer(event); const resolution = await approvals.respond(idSchema.parse(approvalId), z.boolean().parse(approved)); if (resolution.result === undefined) throw new Error(`Approval ${idSchema.parse(approvalId)} is not owned by the automation coordinator.`); return resolution.result as AutomationRun; });
   handle('automation.runs', async (event, id: unknown, limit?: unknown) => { assertTrustedRenderer(event); return automations.runs(idSchema.parse(id), limit === undefined ? 100 : z.number().int().min(1).max(100).parse(limit)); });
   handle('operations.notify', async (event, title: unknown, body: unknown) => { assertTrustedRenderer(event); operations.notify(z.string().min(1).parse(title), z.string().max(2_000).parse(body)); });
   handle('operations.showWindow', async event => { assertTrustedRenderer(event); operations.showWindow(); });

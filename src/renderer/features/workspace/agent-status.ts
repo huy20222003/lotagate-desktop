@@ -20,10 +20,10 @@ export function agentStatusForEvent(event: string, data: Record<string, unknown>
     return `${displayName} · ${data['isError'] === true ? 'failed' : 'completed'}`;
   }
   if (event === 'command.started') return 'Running command…';
-  if (event === 'command.completed') return data['success'] === false ? 'Command failed.' : 'Command completed.';
-  if (event === 'command.failed') return 'Command failed.';
-  if (event === 'command.cancelled') return 'Command cancelled.';
-  if (event === 'command.activity.completed') return data['isError'] === true ? 'Command step failed.' : 'Command step completed.';
+  // Command lifecycle completion is transient. The command output or error
+  // is rendered by the command runner; keeping this status after completion
+  // makes it look like a persisted assistant message.
+  if (event === 'command.completed' || event === 'command.failed' || event === 'command.cancelled' || event === 'command.activity.completed') return undefined;
   if (event !== 'command.activity.started') return undefined;
   return readString(data['label']) ?? readString(data['message']) ?? readString(data['status']) ?? 'I’m working through the next step.';
 }

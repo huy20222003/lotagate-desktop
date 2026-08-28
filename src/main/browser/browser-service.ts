@@ -1,7 +1,8 @@
 import { BrowserWindow, session, WebContentsView, type Session, type WebContents } from 'electron';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
+import type { BrowserSettings } from '../../contracts/ipc/v1/settings.js';
 import type { BrowserEvidence, BrowserSessionSnapshot, BrowserTabSnapshot, BrowserViewBounds } from '../../contracts/ipc/v1/workspace.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 import { accessibilityTree, enableDialogEvents, handleDialog, resetViewport, setViewport, uploadFile, type BrowserAccessibilityNode, type BrowserDialog, type BrowserViewport } from './browser-devtools.js';
@@ -44,7 +45,7 @@ export interface BrowserAccessibilitySnapshot { tab: BrowserTabSnapshot; nodes: 
 export interface BrowserInteractionResult { found: boolean; description: string; tag?: string; name?: string; value?: string; checked?: boolean; }
 export type BrowserWaitCondition = { type: 'selector' | 'text' | 'url'; value: string };
 type BrowserTabEntry = { view: WebContentsView; snapshot: BrowserTabSnapshot; viewport: BrowserViewport | undefined };
-type BrowserSessionEntry = { id: string; browserSession: Session; tabs: Map<string, BrowserTabEntry>; activeTabId: string; evidence: BrowserEvidence; network: BrowserNetworkEntry[]; dialogs: Map<string, BrowserDialog>; downloadState: BrowserDownloadState; createdAt: string; recordingTimer: ReturnType<typeof setInterval> | undefined; recordingCaptureInFlight: boolean };
+type BrowserSessionEntry = { id: string; browserSession: Session; settings: BrowserSettings; tabs: Map<string, BrowserTabEntry>; activeTabId: string; evidence: BrowserEvidence; network: BrowserNetworkEntry[]; dialogs: Map<string, BrowserDialog>; downloadState: BrowserDownloadState; createdAt: string; recordingTimer: ReturnType<typeof setInterval> | undefined; retentionTimer: ReturnType<typeof setTimeout> | undefined; recordingCaptureInFlight: boolean };
 type BrowserStateListener = (snapshot: BrowserSessionSnapshot) => void;
 
 const MAX_CONSOLE_ENTRIES = 200;
@@ -59,7 +60,7 @@ export class BrowserService {
   private readonly listeners = new Set<BrowserStateListener>();
   private hostWindow: BrowserWindow | undefined;
 
-  constructor(private readonly onStateChange?: BrowserStateListener) {}
+  constructor(private readonly onStateChange?: BrowserStateListener, private readonly getSettings: () => Promise<BrowserSettings> = async () => defaultBrowserSettings()) {}
 
   attachWindow(window: BrowserWindow): void {
     if (this.hostWindow === window) return;
@@ -80,8 +81,12 @@ export class BrowserService {
   async create(): Promise<BrowserSessionSnapshot> {
     const id = randomUUID();
     const createdAt = new Date().toISOString();
-    const entry: BrowserSessionEntry = { id, browserSession: session.fromPartition(`persist:lotagate-browser-${id}`), tabs: new Map(), activeTabId: '', evidence: { id, url: '', title: '', console: [], errors: [], screenshots: [], recordings: [], createdAt }, network: [], dialogs: new Map(), downloadState: { pending: undefined }, createdAt, recordingTimer: undefined, recordingCaptureInFlight: false };
+    const settings = await this.getSettings();
+    await pruneEvidenceFiles(settings.evidenceRetentionDays);
+    const partition = settings.sessionRetention === 'session' ? `lotagate-browser-${id}` : `persist:lotagate-browser-${id}`;
+    const entry: BrowserSessionEntry = { id, browserSession: session.fromPartition(partition), settings, tabs: new Map(), activeTabId: '', evidence: { id, url: '', title: '', console: [], errors: [], screenshots: [], recordings: [], createdAt }, network: [], dialogs: new Map(), downloadState: { pending: undefined }, createdAt, recordingTimer: undefined, retentionTimer: undefined, recordingCaptureInFlight: false };
     this.sessions.set(id, entry);
+    if (settings.sessionRetention === 'ttl') entry.retentionTimer = setTimeout(() => { void this.close(id); }, settings.sessionRetentionMinutes * 60 * 1_000);
     try {
       const tab = await this.createTabEntry(entry);
       entry.activeTabId = tab.snapshot.id;
@@ -111,7 +116,12 @@ export class BrowserService {
     const entry = this.sessions.get(sessionId);
     if (entry === undefined) return;
     if (entry.recordingTimer) clearInterval(entry.recordingTimer);
+    if (entry.retentionTimer) clearTimeout(entry.retentionTimer);
     if (entry.downloadState.pending !== undefined) { clearTimeout(entry.downloadState.pending.timer); entry.downloadState.pending.reject(new Error('Browser session closed before the download completed.')); entry.downloadState.pending = undefined; }
+    if (entry.settings.clearDataOnClose) {
+      await entry.browserSession.clearStorageData().catch(() => undefined);
+      await Promise.all([...entry.evidence.screenshots, ...entry.evidence.recordings].map(path => unlink(path).catch(() => undefined)));
+    }
     for (const tab of entry.tabs.values()) this.destroyTab(tab.view);
     entry.tabs.clear();
     this.sessions.delete(sessionId);
@@ -153,6 +163,7 @@ export class BrowserService {
     if (!approved) throw new Error('Browser navigation requires explicit approval.');
     const parsed = parseHttpUrl(url);
     const entry = this.require(sessionId);
+    assertOriginAllowed(parsed, entry.settings.originAllowlist);
     const tab = this.requireTab(entry, tabId);
     tab.snapshot.loading = true;
     this.emit(entry);
@@ -319,7 +330,7 @@ export class BrowserService {
     return { found: true, description: `Uploaded ${basename(filePath)} to the browser file input.` };
   }
 
-  async download(sessionId: string, tabId: string | undefined, url: string): Promise<BrowserDownloadResult> { const entry = this.require(sessionId); const tab = this.requireTab(entry, tabId ?? entry.activeTabId); return downloadBrowserResource(entry.downloadState, tab.view.webContents, parseHttpUrl(url).toString()); }
+  async download(sessionId: string, tabId: string | undefined, url: string): Promise<BrowserDownloadResult> { const entry = this.require(sessionId); const parsed = parseHttpUrl(url); assertOriginAllowed(parsed, entry.settings.originAllowlist); const tab = this.requireTab(entry, tabId ?? entry.activeTabId); return downloadBrowserResource(entry.downloadState, tab.view.webContents, parsed.toString(), entry.settings.downloadDirectory); }
 
   async dialog(sessionId: string, tabId: string | undefined, action: 'read' | 'accept' | 'dismiss', promptText?: string): Promise<BrowserDialog | { found: boolean; description: string }> {
     const entry = this.require(sessionId);
@@ -405,12 +416,14 @@ export class BrowserService {
     view.setVisible(false);
     view.setBounds(EMPTY_BOUNDS);
     await view.webContents.loadURL('about:blank');
+    const viewport = viewportForSettings(entry.settings);
+    if (viewport !== undefined) { await setViewport(view.webContents, viewport); tab.viewport = viewport; }
     return tab;
   }
 
   private configureTab(entry: BrowserSessionEntry, tab: BrowserTabEntry): void {
     const contents = tab.view.webContents;
-    contents.on('will-navigate', (event, destination) => { if (!isHttpUrl(destination) && destination !== 'about:blank') event.preventDefault(); });
+    contents.on('will-navigate', (event, destination) => { if ((!isHttpUrl(destination) && destination !== 'about:blank') || !isAllowedOrigin(destination, entry.settings.originAllowlist)) event.preventDefault(); });
     contents.setWindowOpenHandler(({ url }) => { appendCapped(entry.evidence.errors, `Blocked popup navigation: ${redact(url)}`, MAX_ERROR_ENTRIES); this.emit(entry); return { action: 'deny' }; });
     contents.on('console-message', details => { appendCapped(entry.evidence.console, { level: consoleLevel(details.level), message: redact(details.message), timestamp: new Date().toISOString() }, MAX_CONSOLE_ENTRIES); this.emit(entry); });
     contents.on('did-start-loading', () => { tab.snapshot.loading = true; this.emit(entry); });
@@ -575,6 +588,41 @@ export class BrowserService {
 }
 
 function parseHttpUrl(value: string): URL { const parsed = new URL(value); if (!isHttpUrl(parsed.toString())) throw new Error('Browser navigation only supports HTTP(S) URLs.'); return parsed; }
+
+function isAllowedOrigin(value: string, allowlist: readonly string[]): boolean {
+  if (value === 'about:blank' || allowlist.length === 0) return true;
+  try { const parsed = new URL(value); return allowlist.some(item => { try { return new URL(item).origin === parsed.origin; } catch { return item.trim() === parsed.origin; } }); }
+  catch { return false; }
+}
+
+function assertOriginAllowed(value: URL, allowlist: readonly string[]): void { if (!isAllowedOrigin(value.toString(), allowlist)) throw new Error(`Browser origin is not allowed: ${value.origin}.`); }
+
+function viewportForSettings(settings: BrowserSettings): BrowserViewport | undefined {
+  if (settings.viewportProfile === 'custom') return { ...settings.customViewport };
+  const profiles: Record<Exclude<BrowserSettings['viewportProfile'], 'custom'>, BrowserViewport> = {
+    desktop: { width: 1_440, height: 900, mobile: false, deviceScaleFactor: 1 },
+    laptop: { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 },
+    tablet: { width: 768, height: 1_024, mobile: true, deviceScaleFactor: 2 },
+    mobile: { width: 390, height: 844, mobile: true, deviceScaleFactor: 3 },
+  };
+  return profiles[settings.viewportProfile];
+}
+
+async function pruneEvidenceFiles(retentionDays: number): Promise<void> {
+  try {
+    const directory = desktopDataPath('browser-evidence');
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1_000;
+    for (const name of await readdir(directory)) {
+      const path = join(directory, name);
+      const details = await stat(path).catch(() => undefined);
+      if (details?.isFile() && details.mtimeMs < cutoff) await unlink(path).catch(() => undefined);
+    }
+  } catch { /* The evidence directory is created lazily on first capture. */ }
+}
+
+function defaultBrowserSettings(): BrowserSettings {
+  return { viewportProfile: 'desktop', customViewport: { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 }, downloadDirectory: '', sessionRetention: 'persistent', sessionRetentionMinutes: 60, originAllowlist: [], clearDataOnClose: false, evidenceRetentionDays: 30 };
+}
 function isHttpUrl(value: string): boolean { try { const protocol = new URL(value).protocol; return protocol === 'http:' || protocol === 'https:'; } catch { return false; } }
 function serializeForJavaScript(value: unknown): string { return JSON.stringify(value).replace(/\u2028/gu, '\\u2028').replace(/\u2029/gu, '\\u2029'); }
 function safeUrl(value: string): string { try { const url = new URL(value); url.username = ''; url.password = ''; url.hash = ''; for (const key of [...url.searchParams.keys()]) if (/token|key|secret|password|auth|signature/iu.test(key)) url.searchParams.set(key, '[REDACTED]'); return url.toString().slice(0, 4_096); } catch { return redact(value); } }

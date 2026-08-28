@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pencil, Search, Trash2 } from 'lucide-react';
 import { Button, Card, Modal, TextInput, Tooltip, useToast } from '../../components/ui.js';
 import { formatShortcutEvent, type KeyboardShortcutAction, type KeyboardShortcutBindings, KEYBOARD_SHORTCUT_DEFINITIONS } from '../../services/keyboard-shortcuts.js';
+import { useDebounce } from '../../hooks/use-debounce.js';
 
 export function KeyboardShortcutsPage({ bindings, onUpdate }: { bindings: KeyboardShortcutBindings; onUpdate: (action: KeyboardShortcutAction, shortcut: string | null) => Promise<void> }) {
   const [query, setQuery] = useState('');
@@ -9,7 +10,8 @@ export function KeyboardShortcutsPage({ bindings, onUpdate }: { bindings: Keyboa
   const [capturing, setCapturing] = useState(false);
   const [saving, setSaving] = useState(false);
   const { error } = useToast();
-  const rows = useMemo(() => KEYBOARD_SHORTCUT_DEFINITIONS.filter(definition => `${definition.label} ${definition.description}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())), [query]);
+  const debouncedQuery = useDebounce(query, 180);
+  const rows = useMemo(() => KEYBOARD_SHORTCUT_DEFINITIONS.filter(definition => `${definition.label} ${definition.description}`.toLocaleLowerCase().includes(debouncedQuery.trim().toLocaleLowerCase())), [debouncedQuery]);
   const definition = KEYBOARD_SHORTCUT_DEFINITIONS.find(item => item.action === editing);
   useEffect(() => {
     if (!capturing) return;

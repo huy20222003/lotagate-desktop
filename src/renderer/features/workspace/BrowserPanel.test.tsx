@@ -16,7 +16,7 @@ describe('BrowserPanel', () => {
     const navigate = vi.fn().mockResolvedValue({ ...session.tabs[0], url: 'https://example.com/' });
     const setViewBounds = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(window, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
-    Object.defineProperty(window, 'lotagate', { configurable: true, value: { browser: { create: vi.fn().mockResolvedValue(session), close: vi.fn().mockResolvedValue(undefined), onState, navigate, setViewBounds, createTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() } } });
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { approvals: { request: vi.fn().mockResolvedValue({ approvalId: 'approval-1', approved: true }) }, browser: { create: vi.fn().mockResolvedValue(session), close: vi.fn().mockResolvedValue(undefined), onState, navigate, setViewBounds, createTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() } } });
     render(<BrowserPanel onClose={vi.fn()} />);
     expect(await screen.findByRole('tab', { name: /New tab/u })).toBeVisible();
     await waitFor(() => expect(setViewBounds).toHaveBeenCalled());
@@ -33,7 +33,7 @@ describe('BrowserPanel', () => {
     const close = vi.fn().mockResolvedValue(undefined);
     const setViewBounds = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(window, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
-    Object.defineProperty(window, 'lotagate', { configurable: true, value: { browser: { list, close, onState, setViewBounds, create: vi.fn(), navigate: vi.fn(), createTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() } } });
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { approvals: { request: vi.fn().mockResolvedValue({ approvalId: 'approval-1', approved: true }) }, browser: { list, close, onState, setViewBounds, create: vi.fn(), navigate: vi.fn(), createTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() } } });
 
     render(<StrictMode><BrowserPanel sessionId="browser-1" onClose={vi.fn()} /></StrictMode>);
 

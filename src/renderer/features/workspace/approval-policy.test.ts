@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { shouldAutoApprove } from './approval-policy.js';
-import type { ApprovalRequest } from '../../../contracts/ipc/v1/workspace.js';
+import { shouldAutoApproveDesktop } from './approval-policy.js';
+import type { DesktopApprovalRequest } from '../../../contracts/ipc/v1/approval.js';
 
-const request = (overrides: Partial<ApprovalRequest> = {}): ApprovalRequest => ({
-  approvalId: 'approval-1', taskId: 'task-1', turnId: 'turn-1', toolName: 'command', displayName: 'Run command', kind: 'command', detail: { command: 'Get-Content README.md' }, ...overrides,
+const request = (overrides: Partial<DesktopApprovalRequest> = {}): DesktopApprovalRequest => ({
+  approvalId: 'approval-1', source: 'agent', surface: 'composer', requestedAt: new Date().toISOString(), taskId: 'task-1', turnId: 'turn-1', toolName: 'command', displayName: 'Run command', kind: 'command', detail: { command: 'Get-Content README.md' }, risk: 'normal', ...overrides,
 });
 
 describe('approval policy', () => {
   it('automatically approves requested actions in approve-for-me mode', () => {
-    expect(shouldAutoApprove(request({ detail: { command: 'Remove-Item output.txt' } }), 'auto')).toBe(true);
+    expect(shouldAutoApproveDesktop(request({ detail: { command: 'Remove-Item output.txt' } }), 'auto')).toBe(true);
   });
 
   it('allows read-only commands without prompting in ask mode', () => {
-    expect(shouldAutoApprove(request(), 'ask')).toBe(true);
+    expect(shouldAutoApproveDesktop(request(), 'ask')).toBe(true);
   });
 
   it('keeps mutating commands in the inline approval flow in ask mode', () => {
-    expect(shouldAutoApprove(request({ detail: { command: 'Set-Content README.md' } }), 'ask')).toBe(false);
+    expect(shouldAutoApproveDesktop(request({ detail: { command: 'Set-Content README.md' } }), 'ask')).toBe(false);
   });
 });

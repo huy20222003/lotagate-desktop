@@ -2,18 +2,22 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ApprovalRequest } from '../../../contracts/ipc/v1/workspace.js';
+import type { DesktopApprovalRequest } from '../../../contracts/ipc/v1/approval.js';
 import { FileChangesDrawer, InlineApproval } from './WorkspaceOverlays.js';
 import { SourcesDrawer } from './SourcesDrawer.js';
 
-const request: ApprovalRequest = {
+const request: DesktopApprovalRequest = {
   approvalId: 'approval-1',
+  source: 'agent',
+  surface: 'composer',
+  requestedAt: new Date().toISOString(),
   taskId: 'task-1',
   turnId: 'turn-1',
   toolName: 'shell.exec',
   displayName: 'Shell command',
   kind: 'shell',
   detail: { summary: 'Run command: npm test', command: 'npm test' },
+  risk: 'normal',
 };
 
 describe('InlineApproval', () => {

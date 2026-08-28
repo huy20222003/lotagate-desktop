@@ -7,9 +7,9 @@ export type BrowserDownloadResult = { found: boolean; path?: string; filename?: 
 export type PendingBrowserDownload = { path: string; resolve: (result: BrowserDownloadResult) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
 export type BrowserDownloadState = { pending: PendingBrowserDownload | undefined };
 
-export async function downloadBrowserResource(state: BrowserDownloadState, contents: WebContents, url: string): Promise<BrowserDownloadResult> {
+export async function downloadBrowserResource(state: BrowserDownloadState, contents: WebContents, url: string, configuredDirectory = ''): Promise<BrowserDownloadResult> {
   if (state.pending !== undefined) throw new Error('A browser download is already in progress.');
-  const directory = join(app.getPath('downloads'), 'LotaGate Browser');
+  const directory = configuredDirectory.trim().length > 0 ? configuredDirectory : join(app.getPath('downloads'), 'LotaGate Browser');
   await mkdir(directory, { recursive: true });
   const filename = safeFilename(basename(new URL(url).pathname) || 'download');
   const destination = join(directory, `${Date.now()}-${randomUUID()}-${filename}`);

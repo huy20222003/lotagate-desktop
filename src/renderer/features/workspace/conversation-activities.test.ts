@@ -18,4 +18,16 @@ describe('mergeChatActivities', () => {
     expect(result).toHaveLength(2);
     expect(result[1]?.kind).toBe('error');
   });
+
+  it('does not restore transient command statuses into the transcript', () => {
+    const result = mergeChatActivities([
+      activity('user', 'Run the check'),
+      activity('assistant', 'Command completed.'),
+      activity('assistant', 'The check passed.'),
+    ]);
+    expect(result).toEqual([
+      expect.objectContaining({ kind: 'user', text: 'Run the check' }),
+      expect.objectContaining({ kind: 'assistant', text: 'The check passed.' }),
+    ]);
+  });
 });

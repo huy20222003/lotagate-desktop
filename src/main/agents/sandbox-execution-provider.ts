@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { realpath } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import type { FileChangeDiff } from '../../contracts/ipc/v1/workspace.js';
+import type { SandboxBackend, SandboxCleanupPolicy, SandboxMountMode, SandboxNetworkPolicy } from '../../contracts/ipc/v1/settings.js';
 
 const DEFAULT_RUNTIME = 'docker';
 const DEFAULT_IMAGE = 'node:22-bookworm-slim';
@@ -29,10 +31,14 @@ export class SandboxUnavailableError extends Error {
 }
 
 export interface ContainerSandboxOptions {
-  runtimeExecutable?: string;
+  backend?: SandboxBackend;
   image?: string;
-  network?: 'none' | 'full';
+  network?: SandboxNetworkPolicy;
+  mountMode?: SandboxMountMode;
   memoryMb?: number;
+  cpuCores?: number;
+  pidsLimit?: number;
+  cleanup?: SandboxCleanupPolicy;
 }
 
 /**
@@ -41,30 +47,32 @@ export interface ContainerSandboxOptions {
  * host filesystem or shell executor when this provider is selected.
  */
 export class ContainerSandboxExecutionProvider implements SandboxExecutionProvider {
-  private readonly runtimeExecutables: readonly string[];
-  private readonly image: string;
-  private readonly network: 'none' | 'full';
-  private readonly memoryMb: number;
+  private readonly getOptions: () => Promise<ContainerSandboxOptions>;
 
-  constructor(options: ContainerSandboxOptions = {}) {
-    const configuredRuntime = options.runtimeExecutable ?? process.env['LOTAGATE_SANDBOX_RUNTIME'];
-    this.runtimeExecutables = [...new Set(configuredRuntime === undefined ? [DEFAULT_RUNTIME, 'podman'] : [configuredRuntime])];
-    this.image = options.image ?? process.env['LOTAGATE_SANDBOX_IMAGE'] ?? DEFAULT_IMAGE;
-    this.network = options.network ?? 'none';
-    this.memoryMb = options.memoryMb ?? 2_048;
-  }
+  constructor(optionsOrResolver: ContainerSandboxOptions | (() => ContainerSandboxOptions | Promise<ContainerSandboxOptions>) = {}) { this.getOptions = typeof optionsOrResolver === 'function' ? async () => optionsOrResolver() : async () => optionsOrResolver; }
 
   async execute(input: SandboxExecutionInput): Promise<SandboxExecutionResult> {
     const root = await realpath(input.root);
+    const options = await this.getOptions();
+    if (options.backend === 'disabled') throw new SandboxUnavailableError('The Desktop sandbox is disabled in Settings.');
+    const runtimeExecutables = runtimeCandidates(options.backend);
+    const image = options.image ?? process.env['LOTAGATE_SANDBOX_IMAGE'] ?? DEFAULT_IMAGE;
+    const network = options.network ?? 'none';
+    const mountMode = options.mountMode ?? 'read-write';
+    const memoryMb = options.memoryMb ?? 2_048;
+    const cpuCores = options.cpuCores ?? 2;
+    const pidsLimit = options.pidsLimit ?? 128;
+    const cleanup = options.cleanup ?? 'always';
     const payload = JSON.stringify({ action: input.action, params: input.params });
     const timeoutMs = typeof input.timeoutMs === 'number' ? Math.min(Math.max(input.timeoutMs, 100), 120_000) : DEFAULT_TIMEOUT_MS;
     let unavailable: SandboxUnavailableError | undefined;
-    for (const runtime of this.runtimeExecutables) {
+    for (const runtime of runtimeExecutables) {
+      const containerName = `lotagate-sandbox-${randomUUID()}`;
       const response = await runContainer(runtime, [
-        'run', '--rm', '--init', '--network', this.network === 'none' ? 'none' : 'bridge',
-        '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '128',
-        '--memory', `${this.memoryMb}m`, '--mount', `type=bind,source=${root},target=/workspace`,
-        '--workdir', '/workspace', this.image, 'node', '-e', CONTAINER_SCRIPT,
+        'run', ...(cleanup === 'always' ? ['--rm'] : []), '--name', containerName, '--init', '--network', network === 'none' ? 'none' : 'bridge',
+        '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', String(pidsLimit),
+        '--memory', `${memoryMb}m`, '--cpus', String(cpuCores), '--mount', `type=bind,source=${root},target=/workspace${mountMode === 'read-only' ? ',readonly' : ''}`,
+        '--workdir', '/workspace', image, 'node', '-e', CONTAINER_SCRIPT,
       ], payload, timeoutMs, input.signal);
       if (response.unavailable) { unavailable = new SandboxUnavailableError(response.message); continue; }
       if (response.exitCode !== 0) throw new Error(response.stderr.trim() || `Sandbox process exited with code ${String(response.exitCode)}.`);
@@ -73,10 +81,21 @@ export class ContainerSandboxExecutionProvider implements SandboxExecutionProvid
       catch { throw new Error('The sandbox returned an invalid execution result.'); }
       if (!isSandboxResult(parsed)) throw new Error('The sandbox returned an incomplete execution result.');
       if (parsed.ok !== true) throw new Error(parsed.error);
+      if (cleanup === 'on-success') await removeContainer(runtime, containerName);
       return { result: parsed.result, ...(parsed.fileChange === undefined ? {} : { fileChange: emptyFileChange(parsed.fileChange) }) };
     }
     throw unavailable ?? new SandboxUnavailableError('No supported sandbox runtime is available.');
   }
+}
+
+async function removeContainer(runtime: string, name: string): Promise<void> {
+  await runContainer(runtime, ['rm', '--force', name], '', 10_000);
+}
+
+function runtimeCandidates(backend: SandboxBackend | undefined): readonly string[] {
+  if (backend === 'docker') return ['docker'];
+  if (backend === 'podman') return ['podman'];
+  return [DEFAULT_RUNTIME, 'podman'];
 }
 
 function runContainer(executable: string, args: string[], input: string, timeoutMs: number, signal?: AbortSignal): Promise<{ stdout: string; stderr: string; exitCode: number | null; unavailable: boolean; message: string }> {

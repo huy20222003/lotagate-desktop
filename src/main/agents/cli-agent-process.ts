@@ -29,10 +29,25 @@ export class CliAgentProcess {
   private readonly pending = new Map<string, PendingRequest>();
   private stopping = false;
   private initialized = false;
+  private initialization: Promise<DesktopAgentResult> | undefined;
+  private initializationResult: DesktopAgentResult | undefined;
 
   constructor(private readonly options: CliAgentProcessOptions, private readonly handler: CliAgentEventHandler) {}
 
   async initialize(): Promise<DesktopAgentResult> {
+    if (this.initialized && this.initializationResult !== undefined) return this.initializationResult;
+    if (this.initialization !== undefined) return this.initialization;
+    const initialization = this.performInitialization();
+    this.initialization = initialization;
+    try {
+      return await initialization;
+    } finally {
+      if (this.initialization === initialization) this.initialization = undefined;
+    }
+  }
+
+  private async performInitialization(): Promise<DesktopAgentResult> {
+    if (this.initialized && this.initializationResult !== undefined) return this.initializationResult;
     this.ensureStarted();
     const result = await this.request('initialize', { client: 'lotagate-desktop', version: 2, browserHost: true, executionBroker: true });
     if (!isDesktopAgentResult(result)) throw new CliAgentProcessError('The CLI returned an invalid Desktop protocol handshake.');
@@ -43,6 +58,7 @@ export class CliAgentProcess {
       throw new CliAgentProcessError(`The CLI does not support the required Desktop execution protocol. Missing capabilities: ${missing.join(', ')}.`);
     }
     this.initialized = true;
+    this.initializationResult = result;
     return result;
   }
 
@@ -93,6 +109,8 @@ export class CliAgentProcess {
     }
     this.rejectPending(new CliAgentProcessError('The CLI agent process was shut down.'));
     this.child = undefined;
+    this.initialized = false;
+    this.initializationResult = undefined;
   }
 
   private ensureStarted(): void {
@@ -180,6 +198,7 @@ export class CliAgentProcess {
     this.rejectPending(error);
     this.child = undefined;
     this.initialized = false;
+    this.initializationResult = undefined;
     if (!this.stopping) this.handler.onExit?.(error);
   }
 

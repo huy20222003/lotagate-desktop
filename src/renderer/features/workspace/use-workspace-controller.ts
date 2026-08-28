@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Activity, ApprovalRequest, Artifact, FileChangeSummary, PlanSnapshot, SubagentSnapshot, Task, TrustRequest, Workspace } from '../../../contracts/ipc/v1/workspace.js';
+import type { Activity, Artifact, FileChangeSummary, PlanSnapshot, SubagentSnapshot, Task, TrustRequest, Workspace } from '../../../contracts/ipc/v1/workspace.js';
+import type { DesktopApprovalRequest } from '../../../contracts/ipc/v1/approval.js';
 import { sessionSlugFromPrompt } from './task-title.js';
-import { shouldAutoApprove, type ApprovalMode } from './approval-policy.js';
+import { shouldAutoApproveDesktop, type ApprovalMode } from './approval-policy.js';
 import { EMPTY_FILE_CHANGE_SUMMARIES, EMPTY_FILE_CHANGE_SUMMARY, fileChangeSummariesFromActivities, mergeFileChange, mergeFileChangeForTurn, mergeFileChangeSummaries } from './file-changes.js';
 import { applyPlanEvent, applySubagentEvent } from './orchestration-events.js';
 import { readSelectedModel, writeSelectedModel } from './model-preference.js';
@@ -32,7 +33,7 @@ export function useWorkspaceController() {
   const [plan, setPlan] = useState<PlanSnapshot | undefined>();
   const [subagents, setSubagents] = useState<SubagentSnapshot[]>([]);
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
-  const [approval, setApproval] = useState<ApprovalRequest | undefined>();
+  const [approval, setApproval] = useState<DesktopApprovalRequest | undefined>();
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>('auto');
   const [trust, setTrust] = useState<TrustRequest | undefined>();
   const [models, setModels] = useState<WorkspaceModelOption[]>([]);
@@ -64,6 +65,23 @@ export function useWorkspaceController() {
   const steeringQueueIdRef = useRef<string | undefined>();
   const suppressQueueRef = useRef(false);
   useEffect(() => { draftTaskRef.current = task; }, [task]);
+  useEffect(() => { void window.lotagate.settings.get().then(settings => { setApprovalMode(settings.approvalMode); }).catch(() => undefined); }, []);
+  useEffect(() => {
+    const unsubscribe = window.lotagate.approvals.onRequest(request => {
+      if (request.surface !== 'composer' || request.source === 'automation') return;
+      if (request.workspaceCwd !== undefined && request.workspaceCwd !== workspace?.rootPath) return;
+      if (shouldAutoApproveDesktop(request, approvalMode)) { void window.lotagate.approvals.respond(request.approvalId, true).catch(reason => setError(toMessage(reason))); return; }
+      setApproval(request);
+    });
+    return unsubscribe;
+  }, [approvalMode, workspace?.rootPath]);
+  useEffect(() => window.lotagate.approvals.onResolved(resolution => {
+    setApproval(current => current?.approvalId === resolution.approvalId ? undefined : current);
+  }), []);
+  const updateApprovalMode = useCallback((next: ApprovalMode) => {
+    setApprovalMode(next);
+    void window.lotagate.settings.update({ approvalMode: next }).catch(() => undefined);
+  }, []);
   const showContextCompactionStatus = useCallback((phase: ContextCompactionPhase | undefined) => {
     setContextCompactionStatus(phase);
   }, []);
@@ -243,11 +261,6 @@ export function useWorkspaceController() {
       }
     }
     if (eventTask !== undefined && eventTask.id === currentTaskId) {
-      if (envelope.event.event === 'approval.requested') {
-        const request: ApprovalRequest = { approvalId: String(data['approvalId']), taskId: eventTask.id, turnId: String(data['turnId']), toolName: String(data['toolName'] ?? 'tool'), displayName: String(data['displayName'] ?? data['toolName'] ?? 'Tool'), kind: String(data['kind'] ?? 'action'), detail: (data['detail'] as Record<string, unknown> | undefined) ?? {}, ...(data['executionBoundary'] === 'host' || data['executionBoundary'] === 'sandbox' ? { executionBoundary: data['executionBoundary'] } : {}), ...(typeof data['fallbackReason'] === 'string' ? { fallbackReason: data['fallbackReason'] } : {}) };
-        if (shouldAutoApprove(request, approvalMode)) void window.lotagate.agent.approvalRespond(workspace.rootPath, { approvalId: request.approvalId, approved: true }).catch(reason => setError(toMessage(reason)));
-        else setApproval(request);
-      }
       if (envelope.event.event === 'trust.requested') setTrust({ trustRequestId: String(data['trustRequestId']), taskId: eventTask.id, sessionId: String(data['sessionId']), path: String(data['path']) });
       if (envelope.event.event === 'file.changed') {
         setFileChanges(current => mergeFileChange(current, data['change']));
@@ -461,7 +474,11 @@ export function useWorkspaceController() {
     }).catch(() => undefined);
   }, [task]);
 
-  const respondApproval = useCallback(async (approved: boolean) => { if (!approval || workspace === undefined) return; await window.lotagate.agent.approvalRespond(workspace.rootPath, { approvalId: approval.approvalId, approved }); setApproval(undefined); }, [approval, workspace]);
+  const respondApproval = useCallback(async (approved: boolean) => {
+    if (!approval || workspace === undefined) return;
+    await window.lotagate.approvals.respond(approval.approvalId, approved);
+    setApproval(undefined);
+  }, [approval, workspace]);
   const respondTrust = useCallback(async (trusted: boolean) => { if (!trust || workspace === undefined) return; await window.lotagate.agent.trustRespond(workspace.rootPath, { trustRequestId: trust.trustRequestId, trusted }); if (trusted) { const updated = await window.lotagate.workspaces.trust(workspace.id, true); setWorkspace(updated); setWorkspaces(current => current.map(item => item.id === updated.id ? updated : item)); } setTrust(undefined); }, [trust, workspace]);
   const ensureDraftTask = useCallback(async (): Promise<Task | undefined> => {
     if (task) { draftTaskRef.current = task; return task; }
@@ -566,7 +583,7 @@ export function useWorkspaceController() {
     setTask(current => current?.id === updated.id ? updated : current);
   }, []);
 
-  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode, trust, models, selectedModel, setSelectedModel: selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, removeQueuedMessage, editQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, trust, models, selectedModel, selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById]);
+  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode: updateApprovalMode, trust, models, selectedModel, setSelectedModel: selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, removeQueuedMessage, editQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, trust, models, selectedModel, selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById, updateApprovalMode]);
 }
 
 async function loadAttachmentPreviews(taskId: string, attachmentIds: readonly string[] = [], availableArtifacts?: Artifact[]): Promise<AttachmentPreview[]> {

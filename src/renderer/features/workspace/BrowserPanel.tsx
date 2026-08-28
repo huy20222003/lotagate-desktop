@@ -1,10 +1,10 @@
 import { ArrowLeft, ArrowRight, Camera, Globe2, Plus, RefreshCw, X } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import type { BrowserSessionSnapshot, BrowserTabSnapshot } from '../../../contracts/ipc/v1/workspace.js';
 import { Tooltip } from '../../components/ui.js';
 import { useResizableSidePanel } from './use-resizable-panel.js';
 
-export function BrowserPanel({ taskId, sessionId, onClose }: { taskId?: string; sessionId?: string; onClose: () => void }) {
+export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: string; sessionId?: string; cwd?: string; onClose: () => void }) {
   const [browserSession, setBrowserSession] = useState<BrowserSessionSnapshot>();
   const [address, setAddress] = useState('');
   const [error, setError] = useState<string>();
@@ -31,9 +31,6 @@ export function BrowserPanel({ taskId, sessionId, onClose }: { taskId?: string; 
       activeSessionId = snapshot.id;
       if (sessionId === undefined) ownedSessionId = snapshot.id;
       if (!disposed) setBrowserSession(snapshot);
-      // A session supplied by the agent is owned by the main-process broker.
-      // React StrictMode and prop changes can settle an older load after its
-      // effect has been disposed, so only close sessions created by this panel.
       else if (sessionId === undefined) void window.lotagate.browser.close(snapshot.id).catch(() => undefined);
     }).catch(reason => { if (!disposed) setError(toBrowserError(reason, 'Unable to start browser.')); });
     return () => {
@@ -70,12 +67,18 @@ export function BrowserPanel({ taskId, sessionId, onClose }: { taskId?: string; 
     catch (reason) { setError(toBrowserError(reason, 'Browser action failed.')); }
     finally { setBusy(false); }
   }, []);
-  const navigate = useCallback((event: React.FormEvent<HTMLFormElement>) => {
+  const navigate = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!browserSession || !activeTab || address.trim().length === 0) return;
     const value = /^https?:\/\//iu.test(address.trim()) ? address.trim() : `https://${address.trim()}`;
-    void runAction(() => window.lotagate.browser.navigate(browserSession.id, activeTab.id, value, true));
-  }, [activeTab, address, browserSession, runAction]);
+    void (async () => {
+      const action = () => window.lotagate.browser.navigate(browserSession.id, activeTab.id, value, true);
+      try {
+        const resolution = await window.lotagate.approvals.request({ source: 'browser', surface: 'composer', toolName: 'browser.navigate', displayName: 'Navigate browser', kind: 'browser', detail: { summary: `Navigate to ${value}` }, ...(cwd === undefined ? {} : { workspaceCwd: cwd }) });
+        if (resolution.approved) await runAction(action);
+      } catch (reason) { setError(toBrowserError(reason, 'Browser approval failed.')); }
+    })();
+  }, [activeTab, address, browserSession, cwd, runAction]);
   const createTab = useCallback(() => { if (browserSession) void runAction(async () => { await window.lotagate.browser.createTab(browserSession.id); setAddress(''); }); }, [browserSession, runAction]);
   const closeTab = useCallback((tab: BrowserTabSnapshot) => { if (browserSession) void runAction(() => window.lotagate.browser.closeTab(browserSession.id, tab.id)); }, [browserSession, runAction]);
   const selectTab = useCallback((tab: BrowserTabSnapshot) => { if (browserSession && tab.id !== browserSession.activeTabId) void runAction(() => window.lotagate.browser.selectTab(browserSession.id, tab.id)); }, [browserSession, runAction]);
@@ -93,7 +96,16 @@ export function BrowserPanel({ taskId, sessionId, onClose }: { taskId?: string; 
     });
   }, [activeTab, browserSession, runAction, taskId]);
 
-  return <aside className={`browser-panel${resizing ? ' is-resizing' : ''}`} style={{ width: `${panelWidth}px` }} aria-label="Browser"><div className="browser-resize-handle" role="separator" aria-label="Resize browser panel" aria-orientation="vertical" tabIndex={0} onPointerDown={startResize} onKeyDown={handleResizeKeyDown} /><header className="browser-panel-header"><div className="browser-tabs" role="tablist" aria-label="Browser tabs">{browserSession?.tabs.map(tab => <button type="button" role="tab" aria-selected={tab.id === browserSession.activeTabId} className={`browser-tab${tab.id === browserSession.activeTabId ? ' is-active' : ''}`} key={tab.id} onClick={() => selectTab(tab)}><Globe2 size={13} /><span title={tab.title}>{tab.title}</span>{browserSession.tabs.length > 1 ? <span className="browser-tab-close" role="button" aria-label={`Close ${tab.title}`} onClick={event => { event.stopPropagation(); closeTab(tab); }}><X size={12} /></span> : null}</button>)}</div><div className="browser-panel-actions"><Tooltip label="Capture screenshot"><button type="button" className="icon-button ui-icon-button" aria-label="Capture screenshot" disabled={!activeTab || activeTab.url === 'about:blank' || busy} onClick={captureScreenshot}><Camera size={15} /></button></Tooltip><Tooltip label="New browser tab"><button type="button" className="icon-button ui-icon-button" aria-label="New browser tab" onClick={createTab}><Plus size={15} /></button></Tooltip><Tooltip label="Close browser"><button type="button" className="icon-button ui-icon-button" aria-label="Close browser" onClick={onClose}><X size={16} /></button></Tooltip></div></header><form className="browser-toolbar" onSubmit={navigate}><button type="button" className="icon-button ui-icon-button" aria-label="Go back" disabled={!activeTab?.canGoBack || busy} onClick={() => history('back')}><ArrowLeft size={15} /></button><button type="button" className="icon-button ui-icon-button" aria-label="Go forward" disabled={!activeTab?.canGoForward || busy} onClick={() => history('forward')}><ArrowRight size={15} /></button><button type="button" className="icon-button ui-icon-button" aria-label="Reload page" disabled={!activeTab || busy} onClick={reload}><RefreshCw size={14} /></button><input className="browser-address" value={address} onChange={event => setAddress(event.target.value)} placeholder="Enter a URL" aria-label="Browser address" disabled={!activeTab || busy} /></form>{error ? <p className="browser-error" role="alert">{error}</p> : null}<div ref={hostRef} className="browser-view-host" aria-label={activeTab?.title ?? 'Browser page'}>{!activeTab || activeTab.url === 'about:blank' ? <div className="browser-empty"><Globe2 size={28} /><strong>Open a page</strong><span>Enter an HTTP(S) address above.</span></div> : null}</div></aside>;
+  return <aside className={`browser-panel${resizing ? ' is-resizing' : ''}`} style={{ width: `${panelWidth}px` }} aria-label="Browser">
+    <div className="browser-resize-handle" role="separator" aria-label="Resize browser panel" aria-orientation="vertical" tabIndex={0} onPointerDown={startResize} onKeyDown={handleResizeKeyDown} />
+    <header className="browser-panel-header">
+      <div className="browser-panel-heading"><span>AGENT BROWSER</span><strong>Browser</strong></div>
+      <div className="browser-tabs" role="tablist" aria-label="Browser tabs">{browserSession?.tabs.map(tab => <button type="button" role="tab" aria-selected={tab.id === browserSession.activeTabId} className={`browser-tab${tab.id === browserSession.activeTabId ? ' is-active' : ''}`} key={tab.id} onClick={() => selectTab(tab)}><Globe2 size={13} /><span title={tab.title}>{tab.title}</span>{browserSession.tabs.length > 1 ? <span className="browser-tab-close" role="button" aria-label={`Close ${tab.title}`} onClick={event => { event.stopPropagation(); closeTab(tab); }}><X size={12} /></span> : null}</button>)}</div>
+      <div className="browser-panel-actions"><Tooltip label="Capture screenshot"><button type="button" className="icon-button ui-icon-button" aria-label="Capture screenshot" disabled={!activeTab || activeTab.url === 'about:blank' || busy} onClick={captureScreenshot}><Camera size={15} /></button></Tooltip><Tooltip label="New browser tab"><button type="button" className="icon-button ui-icon-button" aria-label="New browser tab" onClick={createTab}><Plus size={15} /></button></Tooltip><Tooltip label="Close browser"><button type="button" className="icon-button ui-icon-button" aria-label="Close browser" onClick={onClose}><X size={16} /></button></Tooltip></div>
+    </header>
+    <form className="browser-toolbar" onSubmit={navigate}><div className="browser-nav-actions"><button type="button" className="icon-button ui-icon-button" aria-label="Go back" disabled={!activeTab?.canGoBack || busy} onClick={() => history('back')}><ArrowLeft size={15} /></button><button type="button" className="icon-button ui-icon-button" aria-label="Go forward" disabled={!activeTab?.canGoForward || busy} onClick={() => history('forward')}><ArrowRight size={15} /></button><button type="button" className="icon-button ui-icon-button" aria-label="Reload page" disabled={!activeTab || busy} onClick={reload}><RefreshCw size={14} /></button></div><input className="browser-address" value={address} onChange={event => setAddress(event.target.value)} placeholder="Enter an HTTP(S) address" aria-label="Browser address" disabled={!activeTab || busy} /></form>
+    <div className="browser-panel-content">{error ? <p className="browser-error" role="alert">{error}</p> : null}<div ref={hostRef} className="browser-view-host" aria-label={activeTab?.title ?? 'Browser page'}>{!activeTab || activeTab.url === 'about:blank' ? <div className="browser-empty"><Globe2 size={28} /><strong>Open a page</strong><span>Enter an HTTP(S) address above.</span></div> : null}</div></div>
+  </aside>;
 }
 
 function toBrowserError(reason: unknown, fallback: string): string { return reason instanceof Error && reason.message.trim().length > 0 ? reason.message : fallback; }

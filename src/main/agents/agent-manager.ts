@@ -4,7 +4,7 @@ import type { DesktopAgentResult, DesktopEvent, DesktopExecutionPolicy, DesktopH
 import { requireDirectory } from '../security/path-policy.js';
 import { CACHE_TTL_MS } from '../cache/cache-policy.js';
 import type { PersistentCache } from '../cache/persistent-cache.js';
-import { INTERACTIVE_DESKTOP_EXECUTION_POLICY } from './desktop-execution-policy.js';
+import { buildInteractiveDesktopExecutionPolicy } from './desktop-execution-policy.js';
 
 export interface AgentManagerHandler {
   onEvent(cwd: string, event: DesktopEvent): void;
@@ -25,8 +25,9 @@ export class AgentManager {
   private readonly processes = new Map<string, CliAgentProcess>();
   private readonly recoveryAttempts = new Map<string, number>();
   private readonly recoveryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly sessionTasks = new Map<string, string>();
 
-  constructor(private readonly handler: AgentManagerHandler, private readonly cache?: PersistentCache) {}
+  constructor(private readonly handler: AgentManagerHandler, private readonly cache?: PersistentCache, private readonly getInteractiveExecutionPolicy: () => Promise<DesktopExecutionPolicy> = async () => buildInteractiveDesktopExecutionPolicy()) {}
 
   async initialize(cwd: string): Promise<DesktopAgentResult> {
     const process = this.getOrCreate(await requireDirectory(cwd));
@@ -36,14 +37,15 @@ export class AgentManager {
   async sessionCreate(cwd: string, input: { model?: string; name?: string }): Promise<unknown> { return this.request(cwd, 'session.create', input); }
   async sessionList(cwd: string): Promise<unknown> { return this.request(cwd, 'session.list', {}); }
   async sessionResume(cwd: string, sessionId: string): Promise<unknown> { return this.request(cwd, 'session.resume', { sessionId }); }
-  async turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; runId?: string; execution?: DesktopExecutionPolicy; skills?: DesktopSkillSelection; attachments?: CliAttachmentInput[] }): Promise<unknown> {
-    const process = this.getOrCreate(await requireDirectory(cwd));
+  async turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; runId?: string; taskId?: string; execution?: DesktopExecutionPolicy; skills?: DesktopSkillSelection; attachments?: CliAttachmentInput[] }): Promise<unknown> {
+    const process = await this.initializedProcess(cwd);
+    if (input.taskId !== undefined) this.sessionTasks.set(`${cwd}:${input.sessionId}`, input.taskId);
     const attachmentIds: string[] = [];
     for (const attachment of input.attachments ?? []) {
       await process.uploadAttachment(attachment);
       attachmentIds.push(attachment.id);
     }
-    return process.request('turn.start', { sessionId: input.sessionId, prompt: input.prompt, ...(input.model === undefined ? {} : { model: input.model }), ...(input.runId === undefined ? {} : { runId: input.runId }), ...(input.skills === undefined ? {} : { skills: [...input.skills] }), execution: input.execution ?? INTERACTIVE_DESKTOP_EXECUTION_POLICY, ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
+    return process.request('turn.start', { sessionId: input.sessionId, prompt: input.prompt, ...(input.model === undefined ? {} : { model: input.model }), ...(input.runId === undefined ? {} : { runId: input.runId }), ...(input.skills === undefined ? {} : { skills: [...input.skills] }), execution: input.execution ?? await this.getInteractiveExecutionPolicy(), ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
   }
   async turnCancel(cwd: string, turnId: string): Promise<unknown> { return this.request(cwd, 'turn.cancel', { turnId }); }
   async approvalRespond(cwd: string, input: { approvalId: string; approved: boolean }): Promise<unknown> { return this.request(cwd, 'approval.respond', input); }
@@ -58,6 +60,7 @@ export class AgentManager {
     const process = this.processes.get(canonical);
     if (process === undefined) return;
     this.processes.delete(canonical);
+    for (const key of this.sessionTasks.keys()) if (key.startsWith(`${canonical}:`)) this.sessionTasks.delete(key);
     this.clearRecovery(canonical);
     await process.shutdown();
   }
@@ -65,6 +68,7 @@ export class AgentManager {
   async shutdownAll(): Promise<void> {
     const processes = [...this.processes.entries()];
     this.processes.clear();
+    this.sessionTasks.clear();
     for (const timer of this.recoveryTimers.values()) clearTimeout(timer);
     this.recoveryTimers.clear();
     await Promise.allSettled(processes.map(([, process]) => process.shutdown()));
@@ -74,7 +78,15 @@ export class AgentManager {
     const existing = this.processes.get(cwd);
     if (existing !== undefined) return existing;
     const eventHandler: CliAgentEventHandler = {
-      onEvent: event => this.handler.onEvent(cwd, event),
+      onEvent: event => {
+        const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
+        const taskId = sessionId === undefined ? undefined : this.sessionTasks.get(`${cwd}:${sessionId}`);
+        const decorated = taskId === undefined || event.data['taskId'] !== undefined ? event : { ...event, data: { ...event.data, taskId } };
+        if (event.event === 'turn.completed' || event.event === 'turn.failed' || event.event === 'turn.cancelled') {
+          if (sessionId !== undefined) this.sessionTasks.delete(`${cwd}:${sessionId}`);
+        }
+        this.handler.onEvent(cwd, decorated);
+      },
       onHostRequest: request => this.handler.onHostRequest === undefined
         ? Promise.resolve({ version: 2, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message: 'The Desktop host is unavailable.', retryable: false } })
         : this.handler.onHostRequest(cwd, request),
@@ -102,7 +114,13 @@ export class AgentManager {
   private clearRecovery(cwd: string): void { const timer = this.recoveryTimers.get(cwd); if (timer !== undefined) clearTimeout(timer); this.recoveryTimers.delete(cwd); this.recoveryAttempts.delete(cwd); }
 
   private async request(cwd: string, method: string, input: Record<string, unknown>): Promise<unknown> {
-    return (this.getOrCreate(await requireDirectory(cwd))).request(method, input);
+    return (await this.initializedProcess(cwd)).request(method, input);
+  }
+
+  private async initializedProcess(cwd: string): Promise<CliAgentProcess> {
+    const process = this.getOrCreate(await requireDirectory(cwd));
+    await process.initialize();
+    return process;
   }
 
   private async cachedProtocolResult(cwd: string, kind: string, ttlMs: number, load: () => Promise<unknown>): Promise<unknown> {

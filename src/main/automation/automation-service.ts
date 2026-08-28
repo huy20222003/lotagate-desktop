@@ -110,7 +110,7 @@ export class AutomationService {
     return this.updateRun(run, { status: 'cancelled', finishedAt: new Date().toISOString(), error: 'Cancelled by the user.' });
   }
 
-  async requestApproval(runId: string, input: Omit<AutomationApproval, 'requestedAt'>, respond: (approved: boolean) => Promise<unknown>): Promise<boolean> {
+  async requestApproval(runId: string, input: Omit<AutomationApproval, 'requestedAt'>, respond: (approved: boolean) => Promise<unknown>, onRegistered?: (approval: AutomationApproval) => void): Promise<boolean> {
     const run = await this.findRun(runId);
     if (run.status !== 'running' && run.status !== 'awaiting_approval') throw new Error('This automation run is not active.');
     const approval = automationApprovalSchema.parse({ ...input, requestedAt: new Date().toISOString() });
@@ -118,6 +118,7 @@ export class AutomationService {
     const automation = await this.get(run.automationId);
     const decision = new Promise<boolean>(resolve => { this.approvals.set(approval.approvalId, { runId, approval, respond, resolve }); });
     this.emit({ type: 'approval_requested', automationId: automation.id, automation, run: updated });
+    onRegistered?.(approval);
     return decision;
   }
 

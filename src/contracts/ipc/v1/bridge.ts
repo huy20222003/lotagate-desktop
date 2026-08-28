@@ -2,6 +2,7 @@ import type { DesktopRendererAuthApi } from './auth.js';
 import type { ExtensionDetail, ExtensionDetailInput, ExtensionDetailWriteInput, HookCreateInput, HookRemoveInput } from './extensions.js';
 import type { DesktopAgentResult } from '../../agent-protocol/v1/desktop.js';
 import type { DesktopWorkspaceApi, DesktopTaskApi, AgentEventEnvelope, DesktopGitApi, DesktopTerminalApi, DesktopSettingsApi, DesktopAutomationApi, DesktopBrowserApi } from './workspace.js';
+import type { DesktopApprovalApi } from './approval.js';
 
 export interface DesktopBridge {
   menu: {
@@ -26,7 +27,6 @@ export interface DesktopBridge {
     sessionResume(cwd: string, sessionId: string): Promise<unknown>;
     turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; runId?: string; taskId?: string; execution?: import('../../agent-protocol/v1/desktop.js').DesktopExecutionPolicy; skills?: string[]; attachmentIds?: string[] }): Promise<unknown>;
     turnCancel(cwd: string, turnId: string): Promise<unknown>;
-    approvalRespond(cwd: string, input: { approvalId: string; approved: boolean }): Promise<unknown>;
     trustRespond(cwd: string, input: { trustRequestId: string; trusted: boolean }): Promise<unknown>;
     modelList(cwd: string): Promise<unknown>;
     commandList(cwd: string): Promise<unknown>;
@@ -49,6 +49,7 @@ export interface DesktopBridge {
   settings: DesktopSettingsApi;
   automations: DesktopAutomationApi;
   browser: DesktopBrowserApi;
+  approvals: DesktopApprovalApi;
   operations: {
     notify(title: string, body: string): Promise<void>;
     showWindow(): Promise<void>;

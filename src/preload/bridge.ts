@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopBridge } from '../contracts/ipc/v1/bridge.js';
 import type { AgentEventEnvelope } from '../contracts/ipc/v1/workspace.js';
+import type { DesktopApprovalRequest, DesktopApprovalResolution } from '../contracts/ipc/v1/approval.js';
 
 const bridge: DesktopBridge = {
   menu: {
@@ -42,7 +43,6 @@ const bridge: DesktopBridge = {
     sessionResume: (cwd, sessionId) => ipcRenderer.invoke('agent.sessionResume', cwd, sessionId),
     turnStart: (cwd, input) => ipcRenderer.invoke('agent.turnStart', cwd, input),
     turnCancel: (cwd, turnId) => ipcRenderer.invoke('agent.turnCancel', cwd, turnId),
-    approvalRespond: (cwd, input) => ipcRenderer.invoke('agent.approvalRespond', cwd, input),
     trustRespond: (cwd, input) => ipcRenderer.invoke('agent.trustRespond', cwd, input),
     modelList: cwd => ipcRenderer.invoke('agent.modelList', cwd),
     commandList: cwd => ipcRenderer.invoke('agent.commandList', cwd),
@@ -171,6 +171,12 @@ const bridge: DesktopBridge = {
     list: () => ipcRenderer.invoke('browser.list'),
     evidence: id => ipcRenderer.invoke('browser.evidence', id),
     onState: listener => { const handler = (_event: Electron.IpcRendererEvent, snapshot: Parameters<typeof listener>[0]) => listener(snapshot); ipcRenderer.on('browser.state', handler); return () => ipcRenderer.removeListener('browser.state', handler); },
+  },
+  approvals: {
+    request: input => ipcRenderer.invoke('approval.request', input),
+    respond: (approvalId, approved) => ipcRenderer.invoke('approval.respond', approvalId, approved),
+    onRequest: listener => { const handler = (_event: Electron.IpcRendererEvent, request: DesktopApprovalRequest) => listener(request); ipcRenderer.on('approval.requested', handler); return () => ipcRenderer.removeListener('approval.requested', handler); },
+    onResolved: listener => { const handler = (_event: Electron.IpcRendererEvent, resolution: DesktopApprovalResolution) => listener(resolution); ipcRenderer.on('approval.resolved', handler); return () => ipcRenderer.removeListener('approval.resolved', handler); },
   },
   operations: { notify: (title, body) => ipcRenderer.invoke('operations.notify', title, body), showWindow: () => ipcRenderer.invoke('operations.showWindow'), exportDiagnostics: () => ipcRenderer.invoke('operations.exportDiagnostics'), checkForUpdates: () => ipcRenderer.invoke('operations.checkForUpdates'), onDeepLink: listener => { const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url); ipcRenderer.on('operations.deepLink', handler); return () => ipcRenderer.removeListener('operations.deepLink', handler); } },
 };

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { DesktopEvent } from '../../agent-protocol/v1/desktop.js';
 import type { Automation, AutomationCreateInput, AutomationRun, AutomationStateEvent, AutomationUpdateInput } from './automation.js';
+import type { DesktopSettingsSnapshot } from './settings.js';
 
 export const workspaceSchema = z.object({
   id: z.string().min(1),
@@ -57,18 +58,6 @@ export const artifactSchema = z.object({
   deletedAt: z.string().datetime().optional(),
 });
 
-export const approvalRequestSchema = z.object({
-  approvalId: z.string().min(1),
-  taskId: z.string().min(1),
-  turnId: z.string().min(1),
-  toolName: z.string().min(1),
-  displayName: z.string().min(1),
-  kind: z.string().min(1),
-  detail: z.record(z.string(), z.unknown()),
-  executionBoundary: z.enum(['sandbox', 'host']).optional(),
-  fallbackReason: z.string().max(512).optional(),
-});
-
 export const trustRequestSchema = z.object({
   trustRequestId: z.string().min(1),
   taskId: z.string().min(1),
@@ -94,7 +83,6 @@ export interface ActivityPage { activities: Activity[]; nextCursor: string | nul
 export type Artifact = z.infer<typeof artifactSchema>;
 export interface ArtifactPreview { artifact: Artifact; content?: string; dataUrl?: string; }
 export interface ArtifactMedia { artifact: Artifact; mimeType: string; bytes: Uint8Array; }
-export type ApprovalRequest = z.infer<typeof approvalRequestSchema>;
 export type TrustRequest = z.infer<typeof trustRequestSchema>;
 export type AgentEventEnvelope = z.infer<typeof agentEventEnvelopeSchema>;
 export type AgentEvent = DesktopEvent;
@@ -218,8 +206,8 @@ export const terminalExecutionInputSchema = z.object({
 export type TerminalExecutionInput = z.infer<typeof terminalExecutionInputSchema>;
 
 export interface DesktopSettingsApi {
-  get(): Promise<Record<string, unknown>>;
-  update(patch: Record<string, unknown>): Promise<Record<string, unknown>>;
+  get(): Promise<DesktopSettingsSnapshot>;
+  update(patch: Partial<DesktopSettingsSnapshot>): Promise<DesktopSettingsSnapshot>;
 }
 
 export interface DesktopAutomationApi {

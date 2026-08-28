@@ -14,4 +14,10 @@ describe('agentStatusForEvent', () => {
   it('uses the same canonical label while a tool is running', () => {
     expect(agentStatusForEvent('tool.started', { toolName: 'filesystem.read', displayName: 'filesystem.read', kind: 'filesystem' })).toBe('I’ll inspect the workspace with Read file.');
   });
+
+  it('does not keep command lifecycle completion in the live status', () => {
+    expect(agentStatusForEvent('command.completed', { success: true })).toBeUndefined();
+    expect(agentStatusForEvent('command.failed', {})).toBeUndefined();
+    expect(agentStatusForEvent('command.cancelled', {})).toBeUndefined();
+  });
 });

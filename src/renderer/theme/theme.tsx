@@ -111,6 +111,7 @@ function readSystemTheme(): ThemeMode {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+
 function clampContrast(value: number): number { return Math.min(100, Math.max(0, Math.round(value))); }
 
 function fontStack(choice: FontChoice): string {
@@ -119,7 +120,7 @@ function fontStack(choice: FontChoice): string {
   return 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 }
 
-function readColors(settings: Record<string, unknown>): Partial<Record<ThemeColor, string>> {
+function readColors(settings: { accentColor?: unknown; backgroundColor?: unknown; foregroundColor?: unknown }): Partial<Record<ThemeColor, string>> {
   const colors: Partial<Record<ThemeColor, string>> = {};
   for (const color of ['accent', 'background', 'foreground'] as ThemeColor[]) {
     const value = settings[`${color}Color`];

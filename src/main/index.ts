@@ -20,6 +20,7 @@ import { BrowserService } from './browser/browser-service.js';
 import { BrowserHostToolBroker } from './agents/browser-host-tool-broker.js';
 import { DesktopHostExecutionBroker } from './agents/desktop-host-execution-broker.js';
 import { ContainerSandboxExecutionProvider } from './agents/sandbox-execution-provider.js';
+import { buildInteractiveDesktopExecutionPolicy } from './agents/desktop-execution-policy.js';
 import { AutomationService } from './automation/automation-service.js';
 import { DesktopOperations } from './operations/desktop-operations.js';
 import { WorkspaceFileSuggestions } from './workspaces/workspace-file-suggestions.js';
@@ -36,6 +37,8 @@ import { requireExistingPath } from './security/path-policy.js';
 import { artifactKind } from './artifacts/artifact-kind.js';
 import { formatToolDisplayName } from '../shared/tool-display.js';
 import { AutomationOsScheduler } from './automation/automation-os-scheduler.js';
+import { ApprovalCoordinator } from './approvals/approval-coordinator.js';
+import type { DesktopApprovalInput } from '../contracts/ipc/v1/approval.js';
 
 loadRuntimeEnvironment();
 const runtimeConfig = readRuntimeConfig();
@@ -43,6 +46,7 @@ const automationDispatchRequested = process.argv.includes('--automation-dispatch
 let agentManager: AgentManager | undefined;
 let browserService: BrowserService | undefined;
 let automationService: AutomationService | undefined;
+let approvalCoordinator: ApprovalCoordinator | undefined;
 let automationDispatchHandler: (() => Promise<void>) | undefined;
 let pendingAutomationDispatch = false;
 let shuttingDown = false;
@@ -79,10 +83,15 @@ app.whenReady().then(async () => {
   const extensionFiles = new ExtensionFileService(workspaces);
   const tasks = new TaskStore();
   const artifacts = new ArtifactService();
+  const settings = new SettingsService();
+  const approvals = new ApprovalCoordinator();
+  approvalCoordinator = approvals;
+  approvals.onRequest(request => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('approval.requested', request); });
+  approvals.onResolved(resolution => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('approval.resolved', resolution); });
   const taskProjector = new TaskEventProjector(tasks);
   const browser = new BrowserService(snapshot => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('browser.state', snapshot);
-  });
+  }, async () => (await settings.get()).browser);
   browserService = browser;
   const browserHost = new BrowserHostToolBroker(browser, (cwd, activity) => {
     logger.debug('agent.browser', { cwd, event: activity.event, action: activity.data['action'] });
@@ -90,7 +99,10 @@ app.whenReady().then(async () => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
   });
   const hostExecution = new DesktopHostExecutionBroker({
-    sandbox: new ContainerSandboxExecutionProvider(),
+    sandbox: new ContainerSandboxExecutionProvider(async () => {
+      const configured = (await settings.get()).sandbox;
+      return { backend: configured.backend, image: configured.image, network: configured.networkPolicy, mountMode: configured.mountMode, memoryMb: configured.memoryMb, cpuCores: configured.cpuCores, pidsLimit: configured.pidsLimit, cleanup: configured.cleanup };
+    }),
     onFileChanged: (cwd, change) => logger.debug('agent.host.file.changed', { cwd, path: change.path, kind: change.kind }),
   });
   const operations = new DesktopOperations();
@@ -104,15 +116,25 @@ app.whenReady().then(async () => {
       if (event.event === 'approval.requested') {
         const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
         const binding = sessionId === undefined ? undefined : automationSessions.get(sessionId);
+        const executionBoundary = event.data['executionBoundary'] === 'sandbox' || event.data['executionBoundary'] === 'host' ? event.data['executionBoundary'] : undefined;
+        const fallbackReason = typeof event.data['fallbackReason'] === 'string' ? event.data['fallbackReason'] : undefined;
+        const approvalId = String(event.data['approvalId']);
+        const toolName = String(event.data['toolName'] ?? 'tool');
+        const displayName = formatToolDisplayName(event.data['toolName'], event.data['displayName']);
+        const kind = String(event.data['kind'] ?? 'action');
+        const detail = typeof event.data['detail'] === 'object' && event.data['detail'] !== null && !Array.isArray(event.data['detail']) ? event.data['detail'] as Record<string, unknown> : {};
+        const commonInput: Omit<DesktopApprovalInput, 'source' | 'surface'> = { approvalId, toolName, displayName, kind, detail, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }), risk: fallbackReason === undefined ? 'normal' : 'elevated', workspaceCwd: cwd, ...(typeof event.data['taskId'] === 'string' ? { taskId: event.data['taskId'] } : {}), ...(typeof event.data['turnId'] === 'string' ? { turnId: event.data['turnId'] } : {}) };
         if (binding !== undefined) {
-          const executionBoundary = event.data['executionBoundary'] === 'sandbox' || event.data['executionBoundary'] === 'host' ? event.data['executionBoundary'] : undefined;
-          const fallbackReason = typeof event.data['fallbackReason'] === 'string' ? event.data['fallbackReason'] : undefined;
-          const approval: Omit<AutomationApproval, 'requestedAt'> = { approvalId: String(event.data['approvalId']), toolName: String(event.data['toolName'] ?? 'tool'), displayName: formatToolDisplayName(event.data['toolName'], event.data['displayName']), kind: String(event.data['kind'] ?? 'action'), detail: typeof event.data['detail'] === 'object' && event.data['detail'] !== null && !Array.isArray(event.data['detail']) ? event.data['detail'] as Record<string, unknown> : {}, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }) };
-          void automations.requestApproval(binding.runId, approval, approved => agents.approvalRespond(binding.cwd, { approvalId: approval.approvalId, approved })).catch(error => logger.warn('automation.approval.registration.failed', { runId: binding.runId, message: error instanceof Error ? error.message : 'Unable to register automation approval.' }));
+          const approval: Omit<AutomationApproval, 'requestedAt'> = { approvalId, toolName, displayName, kind, detail, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }) };
+          void automations.requestApproval(binding.runId, approval, approved => agents.approvalRespond(binding.cwd, { approvalId, approved }), registered => {
+            void approvals.request({ ...commonInput, source: 'automation', surface: 'automation' }, approved => automations.respondApproval(binding.runId, registered.approvalId, approved)).catch(error => logger.warn('approval.registration.failed', { approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
+          }).catch(error => logger.warn('automation.approval.registration.failed', { runId: binding.runId, message: error instanceof Error ? error.message : 'Unable to register automation approval.' }));
+        } else {
+          void approvals.request({ ...commonInput, source: 'agent', surface: 'composer' }, approved => agents.approvalRespond(cwd, { approvalId, approved })).catch(error => logger.warn('approval.registration.failed', { cwd, approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
         }
       }
       void taskProjector.apply(cwd, event).catch(() => undefined);
-      for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
+      if (event.event !== 'approval.requested') for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
     },
     onDiagnostic: (cwd, diagnostic) => { logger.warn('agent.diagnostic', { cwd, kind: diagnostic.kind, message: diagnostic.message }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic }); },
     onHostRequest: async (cwd, request) => request.tool === 'browser'
@@ -124,7 +146,10 @@ app.whenReady().then(async () => {
       logger.error('agent.process.exit', { cwd, error: error.message });
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic: { kind: 'protocol', message: error.message } });
     },
-  }, cache);
+  }, cache, async () => {
+    const configured = await settings.get();
+    return buildInteractiveDesktopExecutionPolicy(configured.sandbox.hostFallback);
+  });
   agentManager = agents;
   const git = new GitService();
   const executeAutomation = async (automation: Automation, run: AutomationRun, signal: AbortSignal): Promise<AutomationExecutionResult> => {
@@ -134,7 +159,7 @@ app.whenReady().then(async () => {
     let preserveWorkspace = true;
     const task = await tasks.create({ workspaceId: workspace.id, cwd: executionWorkspace.cwd, title: automation.name, prompt: automation.prompt });
     const cli = await agents.initialize(executionWorkspace.cwd);
-    const execution = buildAutomationExecutionPolicy(automation, run.attempt);
+    const execution = buildAutomationExecutionPolicy(automation, run.attempt, (await settings.get()).sandbox.hostFallback);
     if (!supportsAutomationExecution(cli.capabilities)) throw new Error('The installed CLI does not support the required Desktop execution protocol. Update the Desktop CLI runtime before running this automation.');
     const session = await agents.sessionCreate(executionWorkspace.cwd, { name: task.title });
     const sessionId = extractSessionId(session);
@@ -146,7 +171,7 @@ app.whenReady().then(async () => {
     browserHost.setRunPolicy(run.id, automation.browserAccess);
     browserHost.bindSessionToRun(executionWorkspace.cwd, sessionId, run.id);
     try {
-      await agents.turnStart(executionWorkspace.cwd, { sessionId, prompt: automation.prompt, ...(automation.model === undefined ? {} : { model: automation.model }), runId: run.id, skills: automation.skills, execution });
+      await agents.turnStart(executionWorkspace.cwd, { sessionId, prompt: automation.prompt, ...(automation.model === undefined ? {} : { model: automation.model }), runId: run.id, taskId: task.id, skills: automation.skills, execution });
       const completedTask = await waitForAutomationTask(tasks, task.id, signal);
       const outputs = await collectAutomationOutputs(tasks, artifacts, task.id, executionWorkspace.cwd);
       preserveWorkspace = automation.permissionPolicy === 'review';
@@ -172,7 +197,7 @@ app.whenReady().then(async () => {
       operations.notify(`Automation · ${event.automation.name}`, detail);
     }
   });
-  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, extensionFiles, git, terminal: new TerminalService(workspaces, tasks), interactiveTerminal: new InteractiveTerminalService(workspaces), settings: new SettingsService(), artifacts, browser, automations, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger });
+  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, extensionFiles, git, terminal: new TerminalService(workspaces, tasks), interactiveTerminal: new InteractiveTerminalService(workspaces), settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }
@@ -200,7 +225,7 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   shuttingDown = true;
   automationService?.stop();
-  void Promise.all([agentManager?.shutdownAll(), browserService?.closeAll()]).finally(async () => { await logger.close(); app.quit(); });
+  void Promise.all([agentManager?.shutdownAll(), browserService?.closeAll(), approvalCoordinator?.cancelAll()]).finally(async () => { await logger.close(); app.quit(); });
 });
 
 function extractSessionId(value: unknown): string | undefined {

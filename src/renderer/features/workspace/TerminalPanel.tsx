@@ -43,11 +43,14 @@ export function TerminalPanel({ cwd, onClose }: { cwd: string; onClose: () => vo
       setError(reason instanceof Error ? reason.message : 'Unable to open terminal.');
     }
   }, [cwd]);
+  const requestOpenTab = useCallback(() => {
+    void window.lotagate.approvals.request({ source: 'terminal', surface: 'composer', toolName: 'terminal.open', displayName: 'Open terminal', kind: 'terminal', detail: { summary: `Open an interactive terminal in ${cwd}` }, workspaceCwd: cwd }).then(resolution => { if (resolution.approved) return openTab(); return undefined; }).catch(reason => setError(reason instanceof Error ? reason.message : 'Terminal approval failed.'));
+  }, [cwd, openTab]);
 
   useEffect(() => {
-    void openTab();
+    requestOpenTab();
     return () => { for (const tab of tabsRef.current) void window.lotagate.terminal.close(tab.id).catch(() => undefined); };
-  }, [cwd, openTab]);
+  }, [cwd, requestOpenTab]);
 
   const closeTab = useCallback((id: string) => {
     void window.lotagate.terminal.close(id).catch(() => undefined);
@@ -60,7 +63,7 @@ export function TerminalPanel({ cwd, onClose }: { cwd: string; onClose: () => vo
     });
   }, [activeId]);
 
-  return <section className="terminal-panel" aria-label="Terminal"><header className="terminal-panel-header"><div className="terminal-tab-strip">{tabs.length > 0 ? <Tabs value={activeId} items={tabs.map(tab => ({ value: tab.id, label: tab.label }))} onChange={setActiveId} onClose={closeTab} ariaLabel="Terminal tabs" /> : null}</div><div className="terminal-panel-actions"><Tooltip label="New terminal"><button type="button" className="icon-button ui-icon-button" aria-label="New terminal" onClick={() => void openTab()}><Plus size={15} /></button></Tooltip><Tooltip label="Close terminal"><button type="button" className="icon-button ui-icon-button" aria-label="Close terminal" onClick={onClose}><X size={15} /></button></Tooltip></div></header>{error ? <p className="terminal-error">{error}</p> : null}<div className="terminal-output">{tabs.map(tab => <TerminalSessionView key={tab.id} sessionId={tab.id} active={tab.id === activeId} onReady={registerTerminal} onDispose={unregisterTerminal} onError={handleError} />)}</div></section>;
+  return <section className="terminal-panel" aria-label="Terminal"><header className="terminal-panel-header"><div className="terminal-tab-strip">{tabs.length > 0 ? <Tabs value={activeId} items={tabs.map(tab => ({ value: tab.id, label: tab.label }))} onChange={setActiveId} onClose={closeTab} ariaLabel="Terminal tabs" /> : null}</div><div className="terminal-panel-actions"><Tooltip label="New terminal"><button type="button" className="icon-button ui-icon-button" aria-label="New terminal" onClick={requestOpenTab}><Plus size={15} /></button></Tooltip><Tooltip label="Close terminal"><button type="button" className="icon-button ui-icon-button" aria-label="Close terminal" onClick={onClose}><X size={15} /></button></Tooltip></div></header>{error ? <p className="terminal-error">{error}</p> : null}<div className="terminal-output">{tabs.map(tab => <TerminalSessionView key={tab.id} sessionId={tab.id} active={tab.id === activeId} onReady={registerTerminal} onDispose={unregisterTerminal} onError={handleError} />)}</div></section>;
 }
 
 function TerminalSessionView({ sessionId, active, onReady, onDispose, onError }: { sessionId: string; active: boolean; onReady: (sessionId: string, terminal: XTerm) => void; onDispose: (sessionId: string) => void; onError: (message: string) => void }) {
