@@ -202,10 +202,10 @@
 .automation-run-actions { display: flex; flex: 0 0 auto; gap: 4px; }
 .automation-run-actions .ui-button { min-height: 27px; padding: 0 7px; font-size: 11px; }
 .automation-history-loading { display: grid; min-height: 120px; place-items: center; }
-.automation-form-dialog { width: min(760px, calc(100vw - 40px)); }
-.automation-form-scroll { min-height: 0; overflow: hidden; }
-.automation-form-scroll .scrollbar-viewport { max-height: min(680px, calc(100vh - 145px)); overflow-x: hidden; overflow-y: auto; }
-.automation-form { display: grid; gap: 18px; padding: 18px 20px 4px; }
+.automation-form-dialog { width: min(760px, calc(100vw - 40px)); max-height: calc(100vh - 40px); }
+.automation-form-scroll { min-height: 0; max-height: min(680px, calc(100vh - 145px)); flex: 0 1 auto; overflow: hidden; }
+.automation-form-scroll .scrollbar-viewport { height: auto; max-height: inherit; overflow-x: hidden; overflow-y: auto; }
+.automation-form { display: grid; gap: 18px; padding: 18px 20px 24px; }
 .automation-form-section { display: grid; gap: 12px; border-bottom: 1px solid var(--color-border-subtle); padding-bottom: 8px; }
 .automation-form-section:last-child { border-bottom: 0; }
 .automation-form-heading { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 2px; color: var(--color-text); }

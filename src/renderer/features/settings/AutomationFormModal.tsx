@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Clock3 } from 'lucide-react';
 import { automationCreateInputSchema, type Automation, type AutomationCreateInput, type AutomationTool } from '../../../contracts/ipc/v1/automation.js';
-import type { Workspace } from '../../../contracts/ipc/v1/workspace.js';
+import type { GitBranch, Workspace } from '../../../contracts/ipc/v1/workspace.js';
 import { Button, Checkbox, Dropdown, Field, Modal, TextArea, TextInput } from '../../components/ui.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
+import { ExtensionCommandClient } from './extension-command-client.js';
+import { extractWorkspaceModels, type WorkspaceModelOption } from '../workspace/model-catalog.js';
 
 export interface AutomationFormValue {
   name: string;
@@ -13,7 +15,7 @@ export interface AutomationFormValue {
   branch: string;
   worktree: boolean;
   model: string;
-  skillsText: string;
+  skills: string[];
   permissionPolicy: 'ask' | 'allowlist' | 'review' | 'autonomous';
   browserAccess: 'disabled' | 'read-only' | 'interactive' | 'autonomous';
   scheduleKind: 'manual' | 'once' | 'interval' | 'daily' | 'weekly' | 'cron';
@@ -38,7 +40,7 @@ const TOOL_OPTIONS: Array<{ value: AutomationTool; label: string }> = [
   { value: 'git.read', label: 'Read Git' }, { value: 'git.stage', label: 'Stage Git changes' },
   { value: 'git.commit', label: 'Create commits' }, { value: 'git.push', label: 'Push to remote' },
   { value: 'browser.navigate', label: 'Navigate browser' }, { value: 'browser.inspect', label: 'Inspect pages' },
-  { value: 'browser.interact', label: 'Interact with pages' }, { value: 'browser.download', label: 'Download browser files' },
+  { value: 'browser.interact', label: 'Interact with pages' }, { value: 'browser.download', label: 'Download browser files' }, { value: 'browser.upload', label: 'Upload browser files' },
   { value: 'artifact.create', label: 'Create artifacts' },
 ];
 const DAY_OPTIONS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -52,7 +54,7 @@ export function createAutomationFormValue(workspaces: Workspace[], automation?: 
   return {
     name: automation?.name ?? '', description: automation?.description ?? '', prompt: automation?.prompt ?? '',
     workspaceId: automation?.workspaceId ?? workspaces[0]?.id ?? '', branch: automation?.branch ?? '', worktree: automation?.worktree ?? false,
-    model: automation?.model ?? '', skillsText: automation?.skills.join(', ') ?? '', permissionPolicy: automation?.permissionPolicy ?? 'ask', browserAccess: automation?.browserAccess ?? 'disabled',
+    model: automation?.model ?? '', skills: automation?.skills ?? [], permissionPolicy: automation?.permissionPolicy ?? 'ask', browserAccess: automation?.browserAccess ?? 'disabled',
     scheduleKind, at, everyMinutes: schedule?.kind === 'interval' ? String(schedule.everyMinutes) : '60', startAt,
     time: schedule && (schedule.kind === 'daily' || schedule.kind === 'weekly') ? schedule.time : '09:00',
     days: schedule?.kind === 'weekly' ? schedule.days : [1], cron: schedule?.kind === 'cron' ? schedule.expression : '0 9 * * 1-5',
@@ -65,9 +67,49 @@ export function createAutomationFormValue(workspaces: Workspace[], automation?: 
 
 export function AutomationFormModal({ workspaces, automation, onClose, onSubmit }: { workspaces: Workspace[]; automation?: Automation; onClose: () => void; onSubmit: (input: AutomationCreateInput) => Promise<void> }) {
   const [value, setValue] = useState(() => createAutomationFormValue(workspaces, automation));
+  const [models, setModels] = useState<WorkspaceModelOption[]>([]);
+  const [branches, setBranches] = useState<GitBranch[]>([]);
+  const [skillOptions, setSkillOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [optionsLoading, setOptionsLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const extensionClient = useMemo(() => new ExtensionCommandClient(), []);
+  const selectedWorkspace = workspaces.find(workspace => workspace.id === value.workspaceId);
+  const textModelOptions = useMemo(() => models.filter(model => model.category === 'text').map(model => ({ value: model.id, label: model.label })), [models]);
+  const branchOptions = useMemo(() => [{ value: DEFAULT_BRANCH_OPTION, label: 'Default (HEAD)' }, ...branches.filter(branch => !branch.remote).map(branch => ({ value: branch.name, label: branch.name }))], [branches]);
+  const availableSkillOptions = useMemo(() => {
+    const options = [...skillOptions];
+    for (const skill of value.skills) if (!options.some(option => option.value === skill)) options.push({ value: skill, label: `${skill} (unavailable)` });
+    return options;
+  }, [skillOptions, value.skills]);
   const update = <K extends keyof AutomationFormValue>(key: K, next: AutomationFormValue[K]) => setValue(current => ({ ...current, [key]: next }));
+  useEffect(() => {
+    const workspace = selectedWorkspace;
+    if (workspace === undefined) { setModels([]); setBranches([]); setSkillOptions([]); return; }
+    let active = true;
+    setOptionsLoading(true);
+    void (async () => {
+      try {
+        const modelAndSkills = (async () => {
+          await window.lotagate.agent.initialize(workspace.rootPath);
+          const [modelValue, skillRows] = await Promise.all([window.lotagate.agent.modelList(workspace.rootPath), extensionClient.list(workspace.rootPath, 'skill')]);
+          return { models: extractWorkspaceModels(modelValue), skills: skillRows.filter(row => row.status === 'ENABLED').map(row => ({ value: row.name, label: row.name })) };
+        })();
+        const branchList = Promise.resolve().then(() => window.lotagate.git.branchList(workspace.rootPath));
+        const [modelSkillsResult, branchesResult] = await Promise.allSettled([modelAndSkills, branchList]);
+        if (!active) return;
+        setModels(modelSkillsResult.status === 'fulfilled' ? modelSkillsResult.value.models : []);
+        setSkillOptions(modelSkillsResult.status === 'fulfilled' ? modelSkillsResult.value.skills : []);
+        setBranches(branchesResult.status === 'fulfilled' ? branchesResult.value : []);
+      } catch {
+        if (!active) return;
+        setModels([]); setSkillOptions([]); setBranches([]);
+      } finally {
+        if (active) setOptionsLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [extensionClient, selectedWorkspace]);
   const input = useMemo(() => buildInput(value), [value]);
   const parsed = automationCreateInputSchema.safeParse(input);
   const validationError = parsed.success ? undefined : parsed.error.issues[0]?.message ?? 'Review the automation settings.';
@@ -81,8 +123,8 @@ export function AutomationFormModal({ workspaces, automation, onClose, onSubmit 
         <Field label="Instructions" required><TextArea value={value.prompt} onChange={event => update('prompt', event.target.value)} placeholder="Inspect the project, run the checks, and summarize the result." rows={6} /></Field>
         <Field label="Workspace" required><Dropdown value={value.workspaceId} options={workspaces.map(workspace => ({ value: workspace.id, label: workspace.name }))} onChange={next => update('workspaceId', next)} disabled={workspaces.length === 0} /></Field>
         {value.workspaceId && workspaces.find(workspace => workspace.id === value.workspaceId)?.trusted !== true ? <p className="automation-warning">This workspace must be trusted before the automation can run.</p> : null}
-        <div className="automation-form-grid"><Field label="Base branch"><TextInput value={value.branch} onChange={event => update('branch', event.target.value)} placeholder="Optional, defaults to HEAD" /></Field><Field label="Model"><TextInput value={value.model} onChange={event => update('model', event.target.value)} placeholder="Use workspace default" /></Field></div>
-        <Field label="Skills (optional)"><TextInput value={value.skillsText} onChange={event => update('skillsText', event.target.value)} placeholder="skill-a, skill-b" /></Field>
+        <div className="automation-form-grid"><Field label="Base branch"><Dropdown value={value.branch || DEFAULT_BRANCH_OPTION} options={branchOptions} onChange={next => update('branch', next === DEFAULT_BRANCH_OPTION ? '' : next)} disabled={optionsLoading} placeholder="Default (HEAD)" /></Field><Field label="Model"><Dropdown value={value.model} options={textModelOptions} onChange={next => update('model', next)} disabled={optionsLoading || textModelOptions.length === 0} placeholder="Use workspace default" /></Field></div>
+        <Field label="Skills (optional)"><Dropdown multiple value={value.skills} options={availableSkillOptions} onChange={next => update('skills', next)} disabled={optionsLoading || availableSkillOptions.length === 0} placeholder="Select skills" /></Field>
         <Checkbox label="Use an isolated worktree" checked={value.worktree} onChange={next => update('worktree', next)} />
       </section>
 
@@ -110,9 +152,10 @@ export function AutomationFormModal({ workspaces, automation, onClose, onSubmit 
 function buildInput(value: AutomationFormValue): unknown {
   const timezone = value.timezone.trim() || DEFAULT_TIMEZONE;
   const schedule = value.scheduleKind === 'manual' ? { kind: 'manual' as const } : value.scheduleKind === 'once' ? { kind: 'once' as const, at: fromLocalDateTime(value.at), timezone } : value.scheduleKind === 'interval' ? { kind: 'interval' as const, everyMinutes: Number(value.everyMinutes), ...(value.startAt ? { startAt: fromLocalDateTime(value.startAt) } : {}), timezone } : value.scheduleKind === 'daily' ? { kind: 'daily' as const, time: value.time, timezone } : value.scheduleKind === 'weekly' ? { kind: 'weekly' as const, days: value.days, time: value.time, timezone } : { kind: 'cron' as const, expression: value.cron, timezone };
-  const skills = value.skillsText.split(',').map(skill => skill.trim()).filter(Boolean);
-  return { name: value.name, description: value.description, prompt: value.prompt, workspaceId: value.workspaceId, ...(value.branch.trim() ? { branch: value.branch.trim() } : {}), worktree: value.worktree, ...(value.model.trim() ? { model: value.model.trim() } : {}), skills, tools: value.tools, permissionPolicy: value.permissionPolicy, browserAccess: value.browserAccess, schedule, retryPolicy: { maxAttempts: Number(value.maxAttempts), backoffMs: Number(value.backoffSeconds) * 1_000 }, timeoutMs: Number(value.timeoutMinutes) * 60_000, notifications: value.notifications, keepSession: value.keepSession };
+  return { name: value.name, description: value.description, prompt: value.prompt, workspaceId: value.workspaceId, ...(value.branch.trim() ? { branch: value.branch.trim() } : {}), worktree: value.worktree, ...(value.model.trim() ? { model: value.model.trim() } : {}), skills: value.skills, tools: value.tools, permissionPolicy: value.permissionPolicy, browserAccess: value.browserAccess, schedule, retryPolicy: { maxAttempts: Number(value.maxAttempts), backoffMs: Number(value.backoffSeconds) * 1_000 }, timeoutMs: Number(value.timeoutMinutes) * 60_000, notifications: value.notifications, keepSession: value.keepSession };
 }
+
+const DEFAULT_BRANCH_OPTION = '__default_head__';
 
 function fromLocalDateTime(value: string): string { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toISOString(); }
 function toLocalDateTime(value: string): string { const date = new Date(value); if (Number.isNaN(date.getTime())) return ''; const pad = (number: number) => String(number).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; }

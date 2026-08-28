@@ -33,12 +33,16 @@ import { cleanupAutomationWorkspace, prepareAutomationWorkspace } from './automa
 import { requireExistingPath } from './security/path-policy.js';
 import { artifactKind } from './artifacts/artifact-kind.js';
 import { formatToolDisplayName } from '../shared/tool-display.js';
+import { AutomationOsScheduler } from './automation/automation-os-scheduler.js';
 
 loadRuntimeEnvironment();
 const runtimeConfig = readRuntimeConfig();
+const automationDispatchRequested = process.argv.includes('--automation-dispatch');
 let agentManager: AgentManager | undefined;
 let browserService: BrowserService | undefined;
 let automationService: AutomationService | undefined;
+let automationDispatchHandler: (() => Promise<void>) | undefined;
+let pendingAutomationDispatch = false;
 let shuttingDown = false;
 const logger = new DesktopLogger();
 const cache = new PersistentCache();
@@ -47,16 +51,20 @@ app.setAppUserModelId('com.lotagate.desktop');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.on('second-instance', (_event, commandLine) => {
+  if (commandLine.includes('--automation-dispatch')) {
+    if (automationDispatchHandler === undefined) pendingAutomationDispatch = true;
+    else void automationDispatchHandler().catch(error => logger.error('automation.dispatch.failed', { message: error instanceof Error ? error.message : 'Unable to dispatch automation runs.' }));
+    return;
+  }
   const deepLink = commandLine.find(argument => argument.startsWith('lotagate://'));
   if (deepLink) for (const window of BrowserWindow.getAllWindows()) window.webContents.send('operations.deepLink', deepLink);
   const window = BrowserWindow.getAllWindows()[0];
   if (window !== undefined) { if (window.isMinimized()) window.restore(); window.focus(); }
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   logger.info('app.ready', { platform: process.platform, arch: process.arch });
-  configureMediaPermissions();
-  setApplicationMenu('login');
+  if (!automationDispatchRequested) { configureMediaPermissions(); setApplicationMenu('login'); }
   const transport = new ApiTransport({
     baseUrl: runtimeConfig.apiBaseUrl,
     trustedOrigin: runtimeConfig.trustedOrigin,
@@ -80,8 +88,7 @@ app.whenReady().then(() => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
   });
   const operations = new DesktopOperations();
-  operations.initializeDeepLinks();
-  operations.initializeTray();
+  if (!automationDispatchRequested) { operations.initializeDeepLinks(); operations.initializeTray(); }
   const automations = new AutomationService();
   automationService = automations;
   const automationSessions = new Map<string, { runId: string; cwd: string }>();
@@ -129,7 +136,7 @@ app.whenReady().then(() => {
     browserHost.setRunPolicy(run.id, automation.browserAccess);
     browserHost.bindSessionToRun(executionWorkspace.cwd, sessionId, run.id);
     try {
-      await agents.turnStart(executionWorkspace.cwd, { sessionId, prompt: automation.prompt, ...(automation.model === undefined ? {} : { model: automation.model }), runId: run.id, execution });
+      await agents.turnStart(executionWorkspace.cwd, { sessionId, prompt: automation.prompt, ...(automation.model === undefined ? {} : { model: automation.model }), runId: run.id, skills: automation.skills, execution });
       const completedTask = await waitForAutomationTask(tasks, task.id, signal);
       const outputs = await collectAutomationOutputs(tasks, artifacts, task.id, executionWorkspace.cwd);
       preserveWorkspace = automation.permissionPolicy === 'review';
@@ -144,7 +151,9 @@ app.whenReady().then(() => {
   };
   const runAutomation = (id: string): Promise<AutomationRun> => automations.runNow(id, executeAutomation);
   const retryAutomation = (runId: string): Promise<AutomationRun> => automations.retry(runId, executeAutomation);
+  const osScheduler = new AutomationOsScheduler(message => logger.warn('automation.scheduler', { message }));
   automations.onState(event => {
+    void automations.list().then(items => osScheduler.sync(items)).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('automation.state', event);
     const run = event.run;
     if (event.type === 'reviewed' && run?.worktreePath !== undefined) void workspaces.require(event.automationId).then(workspace => cleanupAutomationWorkspace(git, workspace, run)).catch(error => logger.warn('automation.review.worktree.cleanup.failed', { runId: run?.id, message: error instanceof Error ? error.message : 'Unable to clean reviewed automation worktree.' }));
@@ -154,6 +163,16 @@ app.whenReady().then(() => {
     }
   });
   registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, extensionFiles, git, terminal: new TerminalService(workspaces, tasks), interactiveTerminal: new InteractiveTerminalService(workspaces), settings: new SettingsService(), artifacts, browser, automations, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger });
+  await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
+  automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
+  if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }
+  if (automationDispatchRequested) {
+    await automationDispatchHandler();
+    await agents.shutdownAll();
+    await browser.closeAll();
+    app.quit();
+    return;
+  }
   automations.start(executeAutomation, 60_000);
   const openMainWindow = () => { const window = createMainWindow(); browser.attachWindow(window); return window; };
   openMainWindow();

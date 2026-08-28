@@ -1,8 +1,11 @@
 import { BrowserWindow, session, WebContentsView, type Session, type WebContents } from 'electron';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { basename } from 'node:path';
 import type { BrowserEvidence, BrowserSessionSnapshot, BrowserTabSnapshot, BrowserViewBounds } from '../../contracts/ipc/v1/workspace.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
+import { accessibilityTree, enableDialogEvents, handleDialog, resetViewport, setViewport, uploadFile, type BrowserAccessibilityNode, type BrowserDialog, type BrowserViewport } from './browser-devtools.js';
+import { downloadBrowserResource, type BrowserDownloadState, type BrowserDownloadResult } from './browser-downloads.js';
 
 export interface BrowserConsoleEntry { level: string; message: string; timestamp: string; }
 export interface BrowserScreenshot { evidenceId: string; path: string; dataUrl: string; }
@@ -14,16 +17,40 @@ export type BrowserTarget =
 export interface BrowserPageState {
   tab: BrowserTabSnapshot;
   visibleText: string;
+  readyState: string;
+  html: string;
+  headings: Array<{ level: number; text: string }>;
+  links: Array<{ text: string; url: string }>;
   elements: Array<{ role: string; name: string; tag: string; type?: string; disabled: boolean }>;
 }
+export interface BrowserElementInspection {
+  found: boolean;
+  tag?: string;
+  id?: string;
+  role?: string;
+  name?: string;
+  text?: string;
+  value?: string;
+  checked?: boolean;
+  attributes?: Record<string, string>;
+  computedStyle?: Record<string, string>;
+  rect?: { x: number; y: number; width: number; height: number };
+  outerHTML?: string;
+  description: string;
+}
+export interface BrowserConsoleSnapshot { tab: BrowserTabSnapshot; console: BrowserConsoleEntry[]; errors: string[]; }
+export interface BrowserNetworkEntry { tabId: string; method: string; url: string; resourceType: string; statusCode?: number; fromCache?: boolean; error?: string; timestamp: string; }
+export interface BrowserAccessibilitySnapshot { tab: BrowserTabSnapshot; nodes: BrowserAccessibilityNode[]; }
 export interface BrowserInteractionResult { found: boolean; description: string; tag?: string; name?: string; value?: string; checked?: boolean; }
 export type BrowserWaitCondition = { type: 'selector' | 'text' | 'url'; value: string };
-type BrowserTabEntry = { view: WebContentsView; snapshot: BrowserTabSnapshot };
-type BrowserSessionEntry = { id: string; browserSession: Session; tabs: Map<string, BrowserTabEntry>; activeTabId: string; evidence: BrowserEvidence; createdAt: string; recordingTimer: ReturnType<typeof setInterval> | undefined; recordingCaptureInFlight: boolean };
+type BrowserTabEntry = { view: WebContentsView; snapshot: BrowserTabSnapshot; viewport: BrowserViewport | undefined };
+type BrowserSessionEntry = { id: string; browserSession: Session; tabs: Map<string, BrowserTabEntry>; activeTabId: string; evidence: BrowserEvidence; network: BrowserNetworkEntry[]; dialogs: Map<string, BrowserDialog>; downloadState: BrowserDownloadState; createdAt: string; recordingTimer: ReturnType<typeof setInterval> | undefined; recordingCaptureInFlight: boolean };
 type BrowserStateListener = (snapshot: BrowserSessionSnapshot) => void;
 
 const MAX_CONSOLE_ENTRIES = 200;
 const MAX_ERROR_ENTRIES = 100;
+const MAX_NETWORK_ENTRIES = 300;
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_RECORDING_FRAMES = 30;
 const EMPTY_BOUNDS: BrowserViewBounds = { x: 0, y: 0, width: 0, height: 0 };
 
@@ -53,7 +80,7 @@ export class BrowserService {
   async create(): Promise<BrowserSessionSnapshot> {
     const id = randomUUID();
     const createdAt = new Date().toISOString();
-    const entry: BrowserSessionEntry = { id, browserSession: session.fromPartition(`persist:lotagate-browser-${id}`), tabs: new Map(), activeTabId: '', evidence: { id, url: '', title: '', console: [], errors: [], screenshots: [], recordings: [], createdAt }, createdAt, recordingTimer: undefined, recordingCaptureInFlight: false };
+    const entry: BrowserSessionEntry = { id, browserSession: session.fromPartition(`persist:lotagate-browser-${id}`), tabs: new Map(), activeTabId: '', evidence: { id, url: '', title: '', console: [], errors: [], screenshots: [], recordings: [], createdAt }, network: [], dialogs: new Map(), downloadState: { pending: undefined }, createdAt, recordingTimer: undefined, recordingCaptureInFlight: false };
     this.sessions.set(id, entry);
     try {
       const tab = await this.createTabEntry(entry);
@@ -84,6 +111,7 @@ export class BrowserService {
     const entry = this.sessions.get(sessionId);
     if (entry === undefined) return;
     if (entry.recordingTimer) clearInterval(entry.recordingTimer);
+    if (entry.downloadState.pending !== undefined) { clearTimeout(entry.downloadState.pending.timer); entry.downloadState.pending.reject(new Error('Browser session closed before the download completed.')); entry.downloadState.pending = undefined; }
     for (const tab of entry.tabs.values()) this.destroyTab(tab.view);
     entry.tabs.clear();
     this.sessions.delete(sessionId);
@@ -200,17 +228,108 @@ export class BrowserService {
     const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
     const page = await tab.view.webContents.executeJavaScript(`(() => {
       const visibleText = (document.body?.innerText ?? '').slice(0, 20000);
+      const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6')).slice(0, 100).map((element) => ({ level: Number(element.tagName.slice(1)), text: (element.innerText || element.textContent || '').trim().replace(/\\s+/gu, ' ').slice(0, 512) }));
+      const links = Array.from(document.querySelectorAll('a[href]')).slice(0, 100).map((element) => ({ text: (element.innerText || element.textContent || '').trim().replace(/\\s+/gu, ' ').slice(0, 512), url: element.href.slice(0, 4096) }));
       const elements = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role]')).slice(0, 200).map((element) => {
-        const html = element as HTMLElement;
-        const input = element as HTMLInputElement;
+        const html = element;
+        const input = element;
         const role = element.getAttribute('role') || element.tagName.toLowerCase();
         const name = element.getAttribute('aria-label') || element.getAttribute('name') || element.getAttribute('placeholder') || (html.innerText || element.textContent || '').trim().replace(/\\s+/gu, ' ').slice(0, 256);
-        return { role, name, tag: element.tagName.toLowerCase(), ...(input.type ? { type: input.type } : {}), disabled: Boolean((element as HTMLButtonElement).disabled) };
+        return { role, name, tag: element.tagName.toLowerCase(), ...(input.type ? { type: input.type } : {}), disabled: Boolean(element.disabled) };
       });
-      return { visibleText, elements };
+      return { readyState: document.readyState, html: (document.documentElement?.outerHTML ?? '').slice(0, 30000), visibleText, headings, links, elements };
     })()`, true) as unknown;
-    const value = isPageInspection(page) ? page : { visibleText: '', elements: [] };
-    return { tab: { ...tab.snapshot }, visibleText: value.visibleText, elements: value.elements };
+    const value = isPageInspection(page) ? page : { visibleText: '', readyState: 'unknown', html: '', headings: [], links: [], elements: [] };
+    return { tab: { ...tab.snapshot }, readyState: value.readyState, html: value.html, headings: value.headings, links: value.links, visibleText: value.visibleText, elements: value.elements };
+  }
+
+  async inspectElement(sessionId: string, tabId: string | undefined, target: BrowserTarget): Promise<BrowserElementInspection> {
+    const entry = this.require(sessionId);
+    const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
+    const serializedTarget = serializeForJavaScript(target);
+    const result = await tab.view.webContents.executeJavaScript(`(() => {
+      const target = ${serializedTarget};
+      const normalized = (input) => (input || '').trim().replace(/\\s+/gu, ' ').toLowerCase();
+      const nameOf = (element) => normalized(element.getAttribute('aria-label') || element.getAttribute('name') || element.getAttribute('placeholder') || element.innerText || element.textContent);
+      const candidates = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],h1,h2,h3,h4,h5,h6'));
+      let element;
+      if (target.type === 'css') element = document.querySelector(target.selector);
+      else if (target.type === 'coordinates') element = document.elementFromPoint(target.x, target.y);
+      else if (target.type === 'text') element = candidates.find((candidate) => nameOf(candidate).includes(normalized(target.value)));
+      else if (target.type === 'accessibility') element = candidates.find((candidate) => (!target.role || (candidate.getAttribute('role') || candidate.tagName.toLowerCase()) === target.role) && (!target.name || nameOf(candidate).includes(normalized(target.name))));
+      if (!(element instanceof HTMLElement)) return { found: false, description: 'The requested browser element was not found.' };
+      const computed = getComputedStyle(element);
+      const attributes = {};
+      for (const name of ['id', 'class', 'role', 'aria-label', 'name', 'type', 'href', 'title', 'data-testid']) {
+        const value = element.getAttribute(name);
+        if (value !== null) attributes[name] = value.slice(0, 512);
+      }
+      const input = element;
+      const isPassword = input instanceof HTMLInputElement && input.type.toLowerCase() === 'password';
+      const rect = element.getBoundingClientRect();
+      const style = {};
+      for (const name of ['display', 'position', 'visibility', 'opacity', 'color', 'backgroundColor', 'fontSize', 'fontWeight', 'lineHeight', 'width', 'height', 'margin', 'padding', 'border', 'borderRadius', 'overflow', 'zIndex']) style[name] = computed[name];
+      return { found: true, description: 'Inspected ' + element.tagName.toLowerCase() + '.', tag: element.tagName.toLowerCase(), ...(element.id ? { id: element.id.slice(0, 256) } : {}), ...(element.getAttribute('role') ? { role: element.getAttribute('role') } : {}), name: nameOf(element).slice(0, 256), text: (element.innerText || element.textContent || '').trim().replace(/\\s+/gu, ' ').slice(0, 4096), ...(!isPassword && typeof input.value === 'string' ? { value: input.value.slice(0, 4096) } : {}), ...(input instanceof HTMLInputElement && (input.type === 'checkbox' || input.type === 'radio') ? { checked: input.checked } : {}), attributes, computedStyle: style, rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }, outerHTML: element.outerHTML.slice(0, 12000) };
+    })()`, true) as unknown;
+    if (!isElementInspection(result)) throw new Error('Browser returned an invalid element inspection.');
+    return result;
+  }
+
+  console(sessionId: string, tabId?: string, limit = 100): BrowserConsoleSnapshot {
+    const entry = this.require(sessionId);
+    const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
+    return { tab: { ...tab.snapshot }, console: entry.evidence.console.slice(-limit), errors: entry.evidence.errors.slice(-limit) };
+  }
+
+  network(sessionId: string, tabId?: string, limit = 100): { tab: BrowserTabSnapshot; requests: BrowserNetworkEntry[] } {
+    const entry = this.require(sessionId);
+    const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
+    return { tab: { ...tab.snapshot }, requests: entry.network.filter(item => item.tabId === tab.snapshot.id).slice(-limit) };
+  }
+
+  async accessibility(sessionId: string, tabId?: string): Promise<BrowserAccessibilitySnapshot> {
+    const entry = this.require(sessionId);
+    const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
+    return { tab: { ...tab.snapshot }, nodes: await accessibilityTree(tab.view.webContents) };
+  }
+
+  async setResponsiveViewport(sessionId: string, tabId: string | undefined, viewport: BrowserViewport): Promise<{ tab: BrowserTabSnapshot; viewport: BrowserViewport }> {
+    const entry = this.require(sessionId);
+    const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
+    await setViewport(tab.view.webContents, viewport);
+    tab.viewport = { ...viewport };
+    return { tab: { ...tab.snapshot }, viewport: { ...viewport } };
+  }
+
+  async resetResponsiveViewport(sessionId: string, tabId?: string): Promise<{ tab: BrowserTabSnapshot; viewport: null }> {
+    const entry = this.require(sessionId);
+    const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
+    await resetViewport(tab.view.webContents);
+    tab.viewport = undefined;
+    return { tab: { ...tab.snapshot }, viewport: null };
+  }
+
+  async upload(sessionId: string, tabId: string | undefined, selector: string, filePath: string): Promise<BrowserInteractionResult> {
+    const entry = this.require(sessionId);
+    const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
+    const details = await stat(filePath);
+    if (!details.isFile()) throw new Error('The browser upload path must be a file.');
+    if (details.size <= 0 || details.size > MAX_UPLOAD_BYTES) throw new Error('The browser upload file exceeds the 25 MB limit.');
+    await uploadFile(tab.view.webContents, selector, filePath);
+    return { found: true, description: `Uploaded ${basename(filePath)} to the browser file input.` };
+  }
+
+  async download(sessionId: string, tabId: string | undefined, url: string): Promise<BrowserDownloadResult> { const entry = this.require(sessionId); const tab = this.requireTab(entry, tabId ?? entry.activeTabId); return downloadBrowserResource(entry.downloadState, tab.view.webContents, parseHttpUrl(url).toString()); }
+
+  async dialog(sessionId: string, tabId: string | undefined, action: 'read' | 'accept' | 'dismiss', promptText?: string): Promise<BrowserDialog | { found: boolean; description: string }> {
+    const entry = this.require(sessionId);
+    const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
+    const active = entry.dialogs.get(tab.snapshot.id);
+    if (action === 'read') return active === undefined ? { found: false, description: 'No browser dialog is currently open.' } : { ...active };
+    if (active === undefined) throw new Error('No browser dialog is currently open.');
+    await handleDialog(tab.view.webContents, action === 'accept', promptText);
+    entry.dialogs.delete(tab.snapshot.id);
+    return { found: true, description: action === 'accept' ? 'Accepted the browser dialog.' : 'Dismissed the browser dialog.' };
   }
 
   async click(sessionId: string, tabId: string | undefined, target: BrowserTarget): Promise<BrowserInteractionResult> {
@@ -259,6 +378,7 @@ export class BrowserService {
     const entry = this.require(sessionId);
     const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
     const contents = tab.view.webContents;
+    void enableDialogEvents(contents, dialog => { entry.dialogs.set(tab.snapshot.id, dialog); this.emit(entry); });
     for (const modifier of modifiers) contents.sendInputEvent({ type: 'keyDown', keyCode: modifier });
     contents.sendInputEvent({ type: 'keyDown', keyCode: key });
     contents.sendInputEvent({ type: 'keyUp', keyCode: key });
@@ -278,7 +398,7 @@ export class BrowserService {
     const id = randomUUID();
     const view = new WebContentsView({ webPreferences: { session: entry.browserSession, nodeIntegration: false, contextIsolation: true, sandbox: true } });
     const snapshot: BrowserTabSnapshot = { id, title: 'New tab', url: 'about:blank', loading: false, canGoBack: false, canGoForward: false };
-    const tab: BrowserTabEntry = { view, snapshot };
+    const tab: BrowserTabEntry = { view, snapshot, viewport: undefined };
     entry.tabs.set(id, tab);
     this.hostWindow?.contentView.addChildView(view);
     this.configureTab(entry, tab);
@@ -301,9 +421,31 @@ export class BrowserService {
     contents.on('did-fail-load', (_event, errorCode, errorDescription) => { tab.snapshot.loading = false; appendCapped(entry.evidence.errors, redact(`${errorCode}: ${errorDescription}`), MAX_ERROR_ENTRIES); this.emit(entry); });
     contents.on('render-process-gone', (_event, details) => { appendCapped(entry.evidence.errors, redact(`Render process ended: ${details.reason}`), MAX_ERROR_ENTRIES); this.emit(entry); });
     if (entry.tabs.size === 1) {
+      entry.browserSession.webRequest.onCompleted(details => {
+        const owner = [...entry.tabs.values()].find(candidate => candidate.view.webContents.id === details.webContentsId);
+        if (owner === undefined) return;
+        appendCapped(entry.network, { tabId: owner.snapshot.id, method: details.method, url: safeUrl(details.url), resourceType: details.resourceType, statusCode: details.statusCode, fromCache: details.fromCache, timestamp: new Date().toISOString() }, MAX_NETWORK_ENTRIES);
+        this.emit(entry);
+      });
+      entry.browserSession.webRequest.onErrorOccurred(details => {
+        const owner = [...entry.tabs.values()].find(candidate => candidate.view.webContents.id === details.webContentsId);
+        if (owner === undefined) return;
+        appendCapped(entry.network, { tabId: owner.snapshot.id, method: details.method, url: safeUrl(details.url), resourceType: details.resourceType, error: redact(details.error), timestamp: new Date().toISOString() }, MAX_NETWORK_ENTRIES);
+        this.emit(entry);
+      });
       entry.browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
       entry.browserSession.setPermissionCheckHandler(() => false);
-      entry.browserSession.on('will-download', (_event, item) => { item.cancel(); appendCapped(entry.evidence.errors, 'Downloads require an explicit approved desktop download action.', MAX_ERROR_ENTRIES); this.emit(entry); });
+      entry.browserSession.on('will-download', (_event, item) => {
+        const pending = entry.downloadState.pending;
+        if (pending === undefined) { item.cancel(); appendCapped(entry.evidence.errors, 'Downloads require an explicit approved desktop download action.', MAX_ERROR_ENTRIES); this.emit(entry); return; }
+        entry.downloadState.pending = undefined;
+        clearTimeout(pending.timer);
+        item.setSavePath(pending.path);
+        item.once('done', (_doneEvent, state) => {
+          if (state !== 'completed') { pending.reject(new Error(`Browser download ${state}.`)); return; }
+          pending.resolve({ found: true, path: pending.path, filename: item.getFilename(), sizeBytes: item.getReceivedBytes(), description: `Downloaded ${item.getFilename()} to the Desktop downloads folder.` });
+        });
+      });
     }
   }
 
@@ -377,12 +519,12 @@ export class BrowserService {
       }
       if (action === 'read') {
         if (element instanceof HTMLInputElement && element.type.toLowerCase() === 'password') return { found: false, description: 'Reading password fields is blocked.', tag, name };
-        const field = element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+        const field = element;
         return { found: true, description: 'Read ' + tag + (name ? ' (' + name + ')' : '') + '.', tag, name, ...(typeof field.value === 'string' ? { value: field.value.slice(0, 4096) } : {}) };
       }
       if (action === 'clear') {
         if (element.matches(':disabled,[readonly]')) return { found: false, description: 'The requested browser field is disabled or read-only.', tag, name };
-        const input = element as HTMLInputElement | HTMLTextAreaElement;
+        const input = element;
         const prototype = Object.getPrototypeOf(input);
         const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
         if (descriptor?.set) descriptor.set.call(input, ''); else input.value = '';
@@ -391,7 +533,7 @@ export class BrowserService {
         return { found: true, description: 'Cleared ' + tag + (name ? ' (' + name + ')' : '') + '.', tag, name };
       }
       if (action === 'check') {
-        const input = element as HTMLInputElement;
+        const input = element;
         if (input.type !== 'checkbox' && input.type !== 'radio') return { found: false, description: 'The requested element is not a checkbox or radio input.', tag, name };
         const checked = value === 'true';
         input.checked = checked;
@@ -434,17 +576,20 @@ export class BrowserService {
 
 function parseHttpUrl(value: string): URL { const parsed = new URL(value); if (!isHttpUrl(parsed.toString())) throw new Error('Browser navigation only supports HTTP(S) URLs.'); return parsed; }
 function isHttpUrl(value: string): boolean { try { const protocol = new URL(value).protocol; return protocol === 'http:' || protocol === 'https:'; } catch { return false; } }
+function serializeForJavaScript(value: unknown): string { return JSON.stringify(value).replace(/\u2028/gu, '\\u2028').replace(/\u2029/gu, '\\u2029'); }
+function safeUrl(value: string): string { try { const url = new URL(value); url.username = ''; url.password = ''; url.hash = ''; for (const key of [...url.searchParams.keys()]) if (/token|key|secret|password|auth|signature/iu.test(key)) url.searchParams.set(key, '[REDACTED]'); return url.toString().slice(0, 4_096); } catch { return redact(value); } }
 function normalizeBounds(bounds: BrowserViewBounds): BrowserViewBounds { return { x: Math.max(0, Math.floor(bounds.x)), y: Math.max(0, Math.floor(bounds.y)), width: Math.min(10_000, Math.max(1, Math.floor(bounds.width))), height: Math.min(10_000, Math.max(1, Math.floor(bounds.height))) }; }
 function consoleLevel(level: 'info' | 'warning' | 'error' | 'debug'): string { return level; }
 function redact(value: string): string { return value.replace(/Bearer\s+[^\s]+/giu, 'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]{8,}/gu, '[REDACTED]').slice(0, 4_096); }
 function cloneEvidence(value: BrowserEvidence): BrowserEvidence { return { ...value, console: [...value.console], errors: [...value.errors], screenshots: [...value.screenshots], recordings: [...value.recordings] }; }
 function appendCapped<T>(items: T[], value: T, limit: number): void { items.push(value); if (items.length > limit) items.splice(0, items.length - limit); }
 function delay(milliseconds: number): Promise<void> { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
-function isPageInspection(value: unknown): value is { visibleText: string; elements: Array<{ role: string; name: string; tag: string; type?: string; disabled: boolean }> } {
+function isPageInspection(value: unknown): value is { visibleText: string; readyState: string; html: string; headings: Array<{ level: number; text: string }>; links: Array<{ text: string; url: string }>; elements: Array<{ role: string; name: string; tag: string; type?: string; disabled: boolean }> } {
   if (typeof value !== 'object' || value === null) return false;
   const record = value as Record<string, unknown>;
-  return typeof record['visibleText'] === 'string' && Array.isArray(record['elements']);
+  return typeof record['visibleText'] === 'string' && typeof record['readyState'] === 'string' && typeof record['html'] === 'string' && Array.isArray(record['headings']) && Array.isArray(record['links']) && Array.isArray(record['elements']);
 }
+function isElementInspection(value: unknown): value is BrowserElementInspection { return typeof value === 'object' && value !== null && typeof (value as Record<string, unknown>)['found'] === 'boolean' && typeof (value as Record<string, unknown>)['description'] === 'string'; }
 function isInteractionResult(value: unknown): value is BrowserInteractionResult {
   if (typeof value !== 'object' || value === null) return false;
   const record = value as Record<string, unknown>;

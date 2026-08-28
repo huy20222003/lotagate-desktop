@@ -92,6 +92,8 @@ export type DesktopExecutionPolicy = {
   retryAttempt?: number;
 };
 
+export type DesktopSkillSelection = readonly string[];
+
 export function parseDesktopResponse(value: unknown): DesktopResponse {
   return desktopResponseSchema.parse(value);
 }

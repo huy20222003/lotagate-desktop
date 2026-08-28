@@ -3,7 +3,7 @@ import { BUILTIN_TOOL_DISPLAY_NAMES, formatToolDisplayName } from './tool-displa
 
 describe('tool display names', () => {
   it('covers the complete 31-tool built-in catalog', () => {
-    expect(Object.keys(BUILTIN_TOOL_DISPLAY_NAMES)).toHaveLength(31);
+    expect(Object.keys(BUILTIN_TOOL_DISPLAY_NAMES)).toHaveLength(40);
   });
 
   it('prefers the canonical Desktop label over a protocol label', () => {

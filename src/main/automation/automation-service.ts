@@ -83,9 +83,10 @@ export class AutomationService {
   start(runner: AutomationRunner, pollMs = 60_000): void {
     this.stop();
     this.startupRecovery = this.recoverInterruptedRuns();
-    this.timer = setInterval(() => { void this.runDue(runner); }, pollMs);
-    void this.runDue(runner);
+    this.timer = setInterval(() => { void this.runDue(runner).catch(() => undefined); }, pollMs);
+    void this.runDue(runner).catch(() => undefined);
   }
+  async runDueNow(runner: AutomationRunner): Promise<void> { await this.runDue(runner); }
   stop(): void {
     if (this.timer !== undefined) clearInterval(this.timer);
     this.timer = undefined;
@@ -195,11 +196,13 @@ export class AutomationService {
     this.scanning = true;
     try {
       const now = Date.now();
+      const pending: Promise<unknown>[] = [];
       for (const automation of await this.list()) {
         if (this.running.size >= MAX_CONCURRENT_RUNS) break;
         if (!automation.enabled || automation.nextRunAt === null || Date.parse(automation.nextRunAt) > now || this.running.has(automation.id)) continue;
-        void this.executeRun(automation.id, runner, false).catch(() => undefined);
+        pending.push(this.executeRun(automation.id, runner, false).catch(() => undefined));
       }
+      await Promise.all(pending);
     } finally { this.scanning = false; }
   }
 

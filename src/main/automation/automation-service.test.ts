@@ -62,6 +62,17 @@ describe('AutomationService', () => {
     expect(attempts).toBe(2);
   });
 
+  it('waits for due runs when invoked by a headless scheduler', async () => {
+    const store = createStore();
+    const service = new AutomationService(store, createRunStore());
+    const automation = await service.create({ name: 'Headless automation', workspaceId: 'workspace-1', prompt: 'Run headless', schedule: { kind: 'interval', everyMinutes: 1, timezone: 'UTC' } });
+    await store.update(current => current.map(item => item.id === automation.id ? { ...item, nextRunAt: new Date(Date.now() - 1_000).toISOString() } : item));
+    let completed = false;
+    await service.runDueNow(async () => { await new Promise(resolve => setTimeout(resolve, 5)); completed = true; return { summary: 'Completed in the scheduler process.' }; });
+    expect(completed).toBe(true);
+    expect((await service.runs(automation.id))[0]?.status).toBe('succeeded');
+  });
+
   it('moves review-gated runs through an explicit approve decision', async () => {
     const service = new AutomationService(createStore(), createRunStore());
     const automation = await service.create({ name: 'Review automation', workspaceId: 'workspace-1', prompt: 'Review', schedule: { kind: 'manual' }, permissionPolicy: 'review' });

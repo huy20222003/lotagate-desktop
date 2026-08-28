@@ -39,6 +39,18 @@ describe('desktop UI primitives', () => {
     expect(onTabChange).toHaveBeenCalledWith('second');
   });
 
+  it('supports an optional controlled multi-select dropdown', async () => {
+    const onChange = vi.fn();
+    render(<Dropdown multiple value={['one']} options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]} onChange={onChange} placeholder="Select values" />);
+
+    const trigger = screen.getAllByRole('button', { name: 'Select option' }).at(-1);
+    if (!trigger) throw new Error('Dropdown trigger was not rendered.');
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Two' }));
+    expect(onChange).toHaveBeenCalledWith(['one', 'two']);
+  });
+
   it('keeps modal close action explicit', () => {
     const onClose = vi.fn();
     render(<Modal title="Confirm" onClose={onClose}>Body</Modal>);

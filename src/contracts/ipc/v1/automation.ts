@@ -9,7 +9,7 @@ export const automationBrowserAccessSchema = z.enum(['disabled', 'read-only', 'i
 export const automationToolSchema = z.enum([
   'filesystem.read', 'filesystem.write', 'terminal.read', 'terminal.execute',
   'git.read', 'git.stage', 'git.commit', 'git.push', 'browser.navigate',
-  'browser.inspect', 'browser.interact', 'browser.download', 'artifact.create',
+  'browser.inspect', 'browser.interact', 'browser.download', 'browser.upload', 'artifact.create',
 ]);
 
 export const automationScheduleSchema = z.discriminatedUnion('kind', [

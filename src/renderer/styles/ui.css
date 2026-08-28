@@ -139,6 +139,9 @@
 
 .ui-checkbox-root:focus-visible { box-shadow: 0 0 0 2px var(--color-focus-ring); }
 
+.ui-checkbox-root > span { display: grid; width: 100%; height: 100%; place-items: center; }
+.ui-checkbox-root svg { display: block; }
+
 .ui-check-control {
   display: inline-flex;
   align-items: center;

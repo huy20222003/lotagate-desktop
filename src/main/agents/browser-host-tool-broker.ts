@@ -1,6 +1,7 @@
 import type { DesktopHostRequest, DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
 import type { AutomationBrowserAccess } from '../../contracts/ipc/v1/automation.js';
 import { BrowserService, type BrowserTarget, type BrowserWaitCondition } from '../browser/browser-service.js';
+import { requireExistingPath } from '../security/path-policy.js';
 
 export interface BrowserHostActivity {
   event: 'browser.session.created' | 'browser.action.started' | 'browser.action.completed';
@@ -91,7 +92,7 @@ export class BrowserHostToolBroker {
     const activeTabId = tabId ?? this.browser.get(browserSessionId).activeTabId;
     this.onActivity?.(cwd, { event: 'browser.action.started', data: { sessionId: request.sessionId, runId: request.runId, browserSessionId, tabId: activeTabId, action: request.action } });
     try {
-      const result = await this.runAction(browserSessionId, activeTabId, request.action, request.params);
+      const result = await this.runAction(cwd, browserSessionId, activeTabId, request.action, request.params);
       this.onActivity?.(cwd, { event: 'browser.action.completed', data: { sessionId: request.sessionId, runId: request.runId, browserSessionId, tabId: activeTabId, action: request.action, success: true } });
       return { version: 1, type: 'host.response', requestId: request.requestId, tool: 'browser', ok: true, result: { browserSessionId, tabId: activeTabId, ...asRecord(result) } };
     } catch (error) {
@@ -114,7 +115,7 @@ export class BrowserHostToolBroker {
     return snapshot.id;
   }
 
-  private async runAction(sessionId: string, activeTabId: string, action: string, params: Record<string, unknown>): Promise<unknown> {
+  private async runAction(cwd: string, sessionId: string, activeTabId: string, action: string, params: Record<string, unknown>): Promise<unknown> {
     switch (action) {
       case 'browser.navigate': {
         const url = requiredString(params, 'url', 4096);
@@ -129,6 +130,18 @@ export class BrowserHostToolBroker {
         return this.browser.selectTab(sessionId, requiredString(params, 'tabId', 256));
       case 'browser.inspect':
         return this.browser.inspect(sessionId, activeTabId);
+      case 'browser.inspectElement':
+        return this.browser.inspectElement(sessionId, activeTabId, requiredTarget(params['target']));
+      case 'browser.console':
+        return this.browser.console(sessionId, activeTabId, optionalLimit(params, 'limit'));
+      case 'browser.network':
+        return this.browser.network(sessionId, activeTabId, optionalLimit(params, 'limit'));
+      case 'browser.accessibility':
+        return this.browser.accessibility(sessionId, activeTabId);
+      case 'browser.setViewport':
+        return this.browser.setResponsiveViewport(sessionId, activeTabId, requiredViewport(params));
+      case 'browser.resetViewport':
+        return this.browser.resetResponsiveViewport(sessionId, activeTabId);
       case 'browser.screenshot': {
         const screenshot = await this.browser.screenshot(sessionId, activeTabId);
         return { evidenceId: screenshot.evidenceId, path: screenshot.path };
@@ -149,6 +162,16 @@ export class BrowserHostToolBroker {
         return this.browser.readField(sessionId, activeTabId, requiredTarget(params['target']));
       case 'browser.type':
         return this.browser.type(sessionId, activeTabId, requiredTarget(params['target']), requiredString(params, 'value', 64 * 1024));
+      case 'browser.upload': {
+        const target = requiredTarget(params['target']);
+        if (target.type !== 'css') throw new Error('Browser upload requires a CSS selector targeting a file input.');
+        const filePath = await requireExistingPath(requiredString(params, 'path', 4_096), cwd);
+        return this.browser.upload(sessionId, activeTabId, target.selector, filePath);
+      }
+      case 'browser.download':
+        return this.browser.download(sessionId, activeTabId, requiredString(params, 'url', 4_096));
+      case 'browser.dialog':
+        return this.browser.dialog(sessionId, activeTabId, requiredDialogAction(params), optionalString(params, 'promptText', 4_096));
       case 'browser.press':
         return this.browser.press(sessionId, activeTabId, requiredString(params, 'key', 32), optionalStringArray(params, 'modifiers', 4, 32));
       case 'browser.scroll':
@@ -172,7 +195,7 @@ export class BrowserHostToolBroker {
 function assertBrowserAccess(request: DesktopHostRequest, access: AutomationBrowserAccess | undefined): void {
   if (access === undefined || access === 'autonomous' || access === 'interactive') return;
   if (access === 'disabled') throw new Error('Browser access is disabled for this automation.');
-  const readOnlyActions = new Set(['browser.navigate', 'browser.inspect', 'browser.screenshot', 'browser.readField', 'browser.waitFor', 'browser.tabs', 'browser.back', 'browser.forward', 'browser.reload']);
+  const readOnlyActions = new Set(['browser.navigate', 'browser.inspect', 'browser.inspectElement', 'browser.console', 'browser.network', 'browser.accessibility', 'browser.setViewport', 'browser.resetViewport', 'browser.screenshot', 'browser.readField', 'browser.waitFor', 'browser.tabs', 'browser.back', 'browser.forward', 'browser.reload']);
   if (!readOnlyActions.has(request.action)) throw new Error('This automation only has read-only browser access.');
 }
 
@@ -190,6 +213,26 @@ function optionalNumber(params: Record<string, unknown>, key: string, fallback =
   const value = params[key];
   if (value === undefined) return fallback;
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`Browser parameter "${key}" is invalid.`);
+  return value;
+}
+
+function requiredViewport(params: Record<string, unknown>): { width: number; height: number; mobile: boolean; deviceScaleFactor: number } {
+  const width = boundedInteger(params, 'width', 320, 3_840);
+  const height = boundedInteger(params, 'height', 240, 2_160);
+  const mobile = params['mobile'] === undefined ? false : requiredBoolean(params, 'mobile');
+  const deviceScaleFactor = params['deviceScaleFactor'] === undefined ? 1 : boundedNumber(params, 'deviceScaleFactor', 1, 3);
+  return { width, height, mobile, deviceScaleFactor };
+}
+
+function boundedInteger(params: Record<string, unknown>, key: string, minimum: number, maximum: number): number { const value = params[key]; if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum || value > maximum) throw new Error(`Browser parameter "${key}" is invalid.`); return value; }
+function boundedNumber(params: Record<string, unknown>, key: string, minimum: number, maximum: number): number { const value = params[key]; if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum) throw new Error(`Browser parameter "${key}" is invalid.`); return value; }
+function optionalString(params: Record<string, unknown>, key: string, maxLength: number): string | undefined { const value = params[key]; if (value === undefined) return undefined; if (typeof value !== 'string' || value.length > maxLength) throw new Error(`Browser parameter "${key}" is invalid.`); return value; }
+function requiredDialogAction(params: Record<string, unknown>): 'read' | 'accept' | 'dismiss' { const value = params['action']; if (value !== 'read' && value !== 'accept' && value !== 'dismiss') throw new Error('Browser dialog action is invalid.'); return value; }
+
+function optionalLimit(params: Record<string, unknown>, key: string): number {
+  const value = params[key];
+  if (value === undefined) return 100;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 200) throw new Error(`Browser parameter "${key}" is invalid.`);
   return value;
 }
 
