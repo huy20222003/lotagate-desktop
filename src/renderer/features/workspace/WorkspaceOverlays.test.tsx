@@ -56,6 +56,28 @@ describe('InlineApproval', () => {
     fireEvent.keyDown(deny, { key: 'ArrowUp' });
     expect(allow).toHaveFocus();
   });
+
+  it('confirms the focused Yes decision with Enter', async () => {
+    const onDecision = vi.fn(async () => undefined);
+    render(<InlineApproval request={request} onDecision={onDecision} />);
+
+    const allow = screen.getByRole('button', { name: 'Yes, allow' });
+    expect(allow).toHaveFocus();
+    fireEvent.keyDown(allow, { key: 'Enter' });
+
+    await waitFor(() => expect(onDecision).toHaveBeenCalledWith(true));
+  });
+
+  it('confirms Yes when a drawer control owns focus', async () => {
+    const onDecision = vi.fn(async () => undefined);
+    render(<><input aria-label="Drawer control" /><InlineApproval request={request} onDecision={onDecision} /></>);
+
+    const drawerControl = screen.getByRole('textbox', { name: 'Drawer control' });
+    drawerControl.focus();
+    fireEvent.keyDown(drawerControl, { key: 'Enter' });
+
+    await waitFor(() => expect(onDecision).toHaveBeenCalledWith(true));
+  });
 });
 
 describe('FileChangesDrawer', () => {

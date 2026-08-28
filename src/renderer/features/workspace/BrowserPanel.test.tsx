@@ -16,7 +16,8 @@ describe('BrowserPanel', () => {
     const navigate = vi.fn().mockResolvedValue({ ...session.tabs[0], url: 'https://example.com/' });
     const setViewBounds = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(window, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
-    Object.defineProperty(window, 'lotagate', { configurable: true, value: { approvals: { request: vi.fn().mockResolvedValue({ approvalId: 'approval-1', approved: true }) }, browser: { create: vi.fn().mockResolvedValue(session), close: vi.fn().mockResolvedValue(undefined), onState, navigate, setViewBounds, createTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() } } });
+    const hide = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { approvals: { request: vi.fn().mockResolvedValue({ approvalId: 'approval-1', approved: true }) }, browser: { create: vi.fn().mockResolvedValue(session), close: vi.fn().mockResolvedValue(undefined), hide, onState, navigate, setViewBounds, createTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() } } });
     render(<BrowserPanel onClose={vi.fn()} />);
     expect(await screen.findByRole('tab', { name: /New tab/u })).toBeVisible();
     await waitFor(() => expect(setViewBounds).toHaveBeenCalled());
@@ -27,13 +28,28 @@ describe('BrowserPanel', () => {
     expect(document.querySelector('.browser-view-host')).toBeInTheDocument();
   });
 
+  it('hides the native browser view when the panel is closed', async () => {
+    const onState = vi.fn(() => vi.fn());
+    const hide = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+    Object.defineProperty(window, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { approvals: { request: vi.fn() }, browser: { create: vi.fn().mockResolvedValue(session), close: vi.fn().mockResolvedValue(undefined), hide, onState, setViewBounds: vi.fn().mockResolvedValue(undefined), navigate: vi.fn(), createTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() } } });
+
+    render(<BrowserPanel onClose={onClose} />);
+    await screen.findByRole('tab', { name: /New tab/u });
+    fireEvent.click(screen.getByRole('button', { name: 'Close browser' }));
+
+    expect(hide).toHaveBeenCalledWith('browser-1');
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it('does not close an agent-owned session when StrictMode disposes a stale effect', async () => {
     const onState = vi.fn(() => vi.fn());
     const list = vi.fn().mockResolvedValue([session]);
     const close = vi.fn().mockResolvedValue(undefined);
     const setViewBounds = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(window, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
-    Object.defineProperty(window, 'lotagate', { configurable: true, value: { approvals: { request: vi.fn().mockResolvedValue({ approvalId: 'approval-1', approved: true }) }, browser: { list, close, onState, setViewBounds, create: vi.fn(), navigate: vi.fn(), createTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() } } });
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { approvals: { request: vi.fn().mockResolvedValue({ approvalId: 'approval-1', approved: true }) }, browser: { list, close, hide: vi.fn().mockResolvedValue(undefined), onState, setViewBounds, create: vi.fn(), navigate: vi.fn(), createTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() } } });
 
     render(<StrictMode><BrowserPanel sessionId="browser-1" onClose={vi.fn()} /></StrictMode>);
 

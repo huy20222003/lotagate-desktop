@@ -44,6 +44,19 @@ describe('BrowserService layout lifecycle', () => {
     expect(() => service.setViewBounds(snapshot.id, snapshot.activeTabId, { x: 0, y: 0, width: 100, height: 100 }, true)).not.toThrow();
   });
 
+  it('hides every native tab view without closing the agent browser session', async () => {
+    const service = new BrowserService();
+    const snapshot = await service.create();
+    const view = mocks.views.at(-1)!;
+
+    service.hide(snapshot.id);
+
+    expect(view.setVisible).toHaveBeenLastCalledWith(false);
+    expect(view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 0, height: 0 });
+    expect(service.get(snapshot.id).id).toBe(snapshot.id);
+    await service.close(snapshot.id);
+  });
+
   it('returns a bounded element inspection for the agent', async () => {
     const service = new BrowserService();
     const snapshot = await service.create();

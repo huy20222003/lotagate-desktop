@@ -128,6 +128,15 @@ export class BrowserService {
     this.sessions.delete(sessionId);
   }
 
+  hide(sessionId: string): void {
+    const entry = this.sessions.get(sessionId);
+    if (entry === undefined) return;
+    for (const tab of entry.tabs.values()) {
+      tab.view.setVisible(false);
+      tab.view.setBounds(EMPTY_BOUNDS);
+    }
+  }
+
   async createTab(sessionId: string): Promise<BrowserTabSnapshot> {
     const entry = this.require(sessionId);
     const tab = await this.createTabEntry(entry);

@@ -128,8 +128,11 @@ node scripts/build-installers.mjs --arch arm64
 
 The Windows MSI uses the standard install wizard and the product license
 agreement from `resources/installer/eula.rtf`. Building the MSI requires WiX
-Toolset 3 (`candle.exe` and `light.exe`) on the Windows build host. The MSI
-uses a stable upgrade code so later versions can upgrade the same installation.
+Toolset 3 (`candle.exe` and `light.exe`) on the Windows build host. If WiX is
+not available on `PATH`, the build script downloads the official WiX 3.14.1
+binaries, verifies their SHA-256, and caches them under `.tools/wix`; an
+existing installation can be selected with `LOTAGATE_WIX_HOME`. The MSI uses a
+stable upgrade code so later versions can upgrade the same installation.
 The ZIP maker uses a small in-repository compatibility override at
 `vendor/cross-zip` to replace the deprecated recursive `fs.rmdir` call with
 `fs.rm` while preserving the Electron Forge maker API.

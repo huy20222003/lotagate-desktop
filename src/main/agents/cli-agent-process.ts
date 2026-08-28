@@ -117,17 +117,22 @@ export class CliAgentProcess {
   private ensureStarted(): void {
     if (this.child !== undefined) return;
     this.stopping = false;
-    const child = spawn(this.options.executable, [...(this.options.executableArgs ?? []), 'agent', 'desktop'], {
-      cwd: this.options.cwd,
-      env: { ...process.env, ...this.options.environment },
-      shell: false,
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(this.options.executable, [...(this.options.executableArgs ?? []), 'agent', 'desktop'], {
+        cwd: this.options.cwd,
+        env: { ...process.env, ...this.options.environment },
+        shell: false,
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      throw new CliAgentProcessError(`The CLI agent process failed to start: ${describeProcessError(error)}.`, error);
+    }
     this.child = child;
     child.stdout.on('data', (chunk: Buffer | string) => this.consumeOutput(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
     child.stderr.on('data', (chunk: Buffer | string) => this.handler.onDiagnostic?.({ kind: 'stderr', message: `CLI diagnostic output received (${Buffer.byteLength(chunk)} bytes).` }));
-    child.on('error', (error) => this.failProcess(new CliAgentProcessError('The CLI agent process failed to start.', error)));
+    child.on('error', (error) => this.failProcess(new CliAgentProcessError(`The CLI agent process failed to start: ${describeProcessError(error)}.`, error)));
     child.on('close', (code, signal) => this.failProcess(new CliAgentProcessError(`The CLI agent process exited (${code ?? 'unknown'}${signal === null ? '' : `, ${signal}`}).`)));
   }
 
@@ -228,3 +233,9 @@ function deniedHostResponse(request: DesktopHostRequest, message: string): Deskt
 async function writeLine(child: ChildProcessWithoutNullStreams, value: unknown): Promise<void> { if (child.stdin.write(`${JSON.stringify(value)}\n`)) return; await once(child.stdin, 'drain'); }
 function delay(milliseconds: number): Promise<void> { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 type PendingRequest = { method: string; resolve: (value: unknown) => void; reject: (error: CliAgentProcessError) => void };
+
+function describeProcessError(error: unknown): string {
+  if (!(error instanceof Error)) return 'unknown process error';
+  const code = 'code' in error && typeof error.code === 'string' ? ` (${error.code})` : '';
+  return `${error.message}${code}`;
+}

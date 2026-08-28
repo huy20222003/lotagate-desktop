@@ -239,6 +239,7 @@ export interface DesktopBrowserApi {
   create(): Promise<BrowserSessionSnapshot>;
   open(url: string, approved: boolean): Promise<{ id: string; url: string }>;
   close(sessionId: string): Promise<void>;
+  hide(sessionId: string): Promise<void>;
   createTab(sessionId: string): Promise<BrowserTabSnapshot>;
   closeTab(sessionId: string, tabId: string): Promise<void>;
   selectTab(sessionId: string, tabId: string): Promise<BrowserSessionSnapshot>;

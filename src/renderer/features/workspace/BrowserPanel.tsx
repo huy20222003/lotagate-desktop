@@ -33,11 +33,15 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
       activeSessionId = snapshot.id;
       if (sessionId === undefined) ownedSessionId = snapshot.id;
       if (!disposed) setBrowserSession(snapshot);
-      else if (sessionId === undefined) void window.lotagate.browser.close(snapshot.id).catch(() => undefined);
+      else {
+        void window.lotagate.browser.hide(snapshot.id).catch(() => undefined);
+        if (sessionId === undefined) void window.lotagate.browser.close(snapshot.id).catch(() => undefined);
+      }
     }).catch(reason => { if (!disposed) setError(toBrowserError(reason, 'Unable to start browser.')); });
     return () => {
       disposed = true;
       removeStateListener();
+      if (activeSessionId) void window.lotagate.browser.hide(activeSessionId).catch(() => undefined);
       if (ownedSessionId) void window.lotagate.browser.close(ownedSessionId).catch(() => undefined);
     };
   }, [sessionId]);
@@ -97,13 +101,17 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
       await window.lotagate.tasks.createImageArtifact(taskId, `browser-screenshot-${Date.now()}.png`, bytes);
     });
   }, [activeTab, browserSession, runAction, taskId]);
+  const closePanel = useCallback(() => {
+    if (browserSession) void window.lotagate.browser.hide(browserSession.id).catch(() => undefined);
+    onClose();
+  }, [browserSession, onClose]);
 
   return <aside className={`browser-panel${resizing ? ' is-resizing' : ''}`} style={{ width: `${panelWidth}px` }} aria-label="Browser">
     <div className="browser-resize-handle" role="separator" aria-label="Resize browser panel" aria-orientation="vertical" tabIndex={0} onPointerDown={startResize} onKeyDown={handleResizeKeyDown} />
     <header className="browser-panel-header">
       <div className="browser-panel-heading"><span>AGENT BROWSER</span><strong>Browser</strong></div>
       <Scrollbar axis="horizontal" className="browser-tabs-scrollbar"><div className="browser-tabs" role="tablist" aria-label="Browser tabs">{browserSession?.tabs.map(tab => <div className="browser-tab-shell" key={tab.id}><button type="button" role="tab" aria-selected={tab.id === browserSession.activeTabId} className={`browser-tab${tab.id === browserSession.activeTabId ? ' is-active' : ''}`} onClick={() => selectTab(tab)}><Icon icon={Globe2} size={13} /><span title={tab.title}>{tab.title}</span></button>{browserSession.tabs.length > 1 ? <IconButton icon={X} iconSize={12} className="browser-tab-close" label={`Close ${tab.title}`} onClick={() => closeTab(tab)} /> : null}</div>)}</div></Scrollbar>
-      <div className="browser-panel-actions"><IconButton icon={Camera} iconSize={15} label="Capture screenshot" disabled={!activeTab || activeTab.url === 'about:blank' || busy} onClick={captureScreenshot} /><IconButton icon={Plus} iconSize={15} label="New browser tab" onClick={createTab} /><IconButton icon={X} iconSize={16} label="Close browser" onClick={onClose} /></div>
+      <div className="browser-panel-actions"><IconButton icon={Camera} iconSize={15} label="Capture screenshot" disabled={!activeTab || activeTab.url === 'about:blank' || busy} onClick={captureScreenshot} /><IconButton icon={Plus} iconSize={15} label="New browser tab" onClick={createTab} /><IconButton icon={X} iconSize={16} label="Close browser" onClick={closePanel} /></div>
     </header>
     <form className="browser-toolbar" onSubmit={navigate}><div className="browser-nav-actions"><IconButton icon={ArrowLeft} iconSize={15} label="Go back" disabled={!activeTab?.canGoBack || busy} onClick={() => history('back')} /><IconButton icon={ArrowRight} iconSize={15} label="Go forward" disabled={!activeTab?.canGoForward || busy} onClick={() => history('forward')} /><IconButton icon={RefreshCw} iconSize={14} label="Reload page" disabled={!activeTab || busy} onClick={reload} /></div><input className="browser-address" value={address} onChange={event => setAddress(event.target.value)} placeholder="Enter an HTTP(S) address" aria-label="Browser address" disabled={!activeTab || busy} /></form>
     <div className="browser-panel-content">{error ? <p className="browser-error" role="alert">{error}</p> : null}<div ref={hostRef} className="browser-view-host" aria-label={activeTab?.title ?? 'Browser page'}>{!activeTab || activeTab.url === 'about:blank' ? <div className="browser-empty"><Icon icon={Globe2} size={28} /><strong>Open a page</strong><span>Enter an HTTP(S) address above.</span></div> : null}</div></div>

@@ -7,7 +7,7 @@ export async function loadAttachmentPreviews(taskId: string, attachmentIds: read
   return Promise.all(artifacts.map(async artifact => {
     const preview = await window.lotagate.tasks.previewArtifact(taskId, artifact.id).catch(() => undefined);
     const dataUrl = preview?.dataUrl;
-    return { id: artifact.id, name: artifact.name, kind: artifact.kind, size: artifact.size, ...(dataUrl ? { dataUrl } : {}) };
+    return { id: artifact.id, name: artifact.name, kind: artifact.kind, size: artifact.size, path: artifact.path, ...(dataUrl ? { dataUrl } : {}) };
   }));
 }
 
@@ -51,8 +51,14 @@ export function readMediaPaths(value: unknown, fallbackText = ''): string[] {
 export function mergeActivities(current: readonly Activity[], incoming: readonly Activity[]): Activity[] {
   const byId = new Map(current.map(activity => [activity.id, activity]));
   for (const activity of incoming) byId.set(activity.id, activity);
+  const persistedAssistantKeys = new Set(incoming.filter(activity => activity.kind === 'assistant' && !isStreamingActivity(activity)).map(activity => assistantActivityKey(activity)));
+  for (const [id, activity] of byId) if (isStreamingActivity(activity) && persistedAssistantKeys.has(assistantActivityKey(activity))) byId.delete(id);
   return [...byId.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
 }
+
+function isStreamingActivity(activity: Activity): boolean { return activity.kind === 'assistant' && activity.id.startsWith('streaming:'); }
+function assistantActivityKey(activity: Activity): string { return `${activity.taskId}:${readTurnId(activity) ?? 'active'}`; }
+function readTurnId(activity: Activity): string | undefined { const value = activity.metadata['turnId']; return typeof value === 'string' && value.length > 0 ? value : undefined; }
 
 export async function discardQueuedAttachments(taskId: string | undefined, messages: readonly QueuedMessage[], activities: readonly Activity[], protectedAttachmentIds: readonly string[]): Promise<void> {
   if (taskId === undefined) return;

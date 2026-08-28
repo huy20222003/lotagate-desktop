@@ -1,6 +1,7 @@
 import type { AnchorHTMLAttributes } from 'react';
+import { MessageExternalLink } from './message-markup.js';
 
-export function SafeLink({ href, children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) {
+export function SafeLink({ href, children }: AnchorHTMLAttributes<HTMLAnchorElement>) {
   const safe = href !== undefined && /^https?:\/\//iu.test(href);
-  return safe ? <a {...props} href={href} target="_blank" rel="noreferrer">{children}</a> : <span>{children}</span>;
+  return safe ? <MessageExternalLink href={href} children={children} /> : <span>{children}</span>;
 }

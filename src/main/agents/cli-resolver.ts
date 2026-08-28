@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, sep } from 'node:path';
+import { basename, dirname, join, sep } from 'node:path';
 
 const CLI_PACKAGE_JSON = '@lotagate/cli/package.json';
 const CLI_EXECUTABLE = join('bin', 'lotagate.exe');
@@ -46,12 +46,16 @@ export function resolveCliExecutable(): string {
 }
 
 function resolveNodeExecutable(): string {
-  const npmNodeExecutable = process.env['npm_node_execpath']?.trim();
-  if (npmNodeExecutable !== undefined && npmNodeExecutable !== '') return npmNodeExecutable;
-  const nodeExecutable = process.env['NODE']?.trim();
-  if (nodeExecutable !== undefined && nodeExecutable !== '') return nodeExecutable;
-  if (process.versions.electron !== undefined) throw new CliResolutionError('A linked CLI requires starting Desktop through `npm run dev` so its Node.js runtime can be resolved.');
+  const configuredExecutables = [process.env['npm_node_execpath'], process.env['NODE']].flatMap(value => typeof value === 'string' && value.trim() !== '' ? [value.trim()] : []);
+  const configuredNode = configuredExecutables.find(isNodeExecutable);
+  if (configuredNode !== undefined) return configuredNode;
+  if (process.versions.electron !== undefined) return process.platform === 'win32' ? 'node.exe' : 'node';
   return process.execPath;
+}
+
+function isNodeExecutable(value: string): boolean {
+  const executableName = basename(value).toLocaleLowerCase();
+  return (executableName === 'node' || executableName === 'node.exe') && !executableName.includes('electron');
 }
 
 function resolveAsarUnpacked(path: string): string | undefined {

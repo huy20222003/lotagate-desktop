@@ -158,6 +158,7 @@ const bridge: DesktopBridge = {
     create: () => ipcRenderer.invoke('browser.create'),
     open: (url, approved) => ipcRenderer.invoke('browser.open', url, approved),
     close: sessionId => ipcRenderer.invoke('browser.close', sessionId),
+    hide: sessionId => ipcRenderer.invoke('browser.hide', sessionId),
     createTab: sessionId => ipcRenderer.invoke('browser.createTab', sessionId),
     closeTab: (sessionId, tabId) => ipcRenderer.invoke('browser.closeTab', sessionId, tabId),
     selectTab: (sessionId, tabId) => ipcRenderer.invoke('browser.selectTab', sessionId, tabId),

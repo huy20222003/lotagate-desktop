@@ -269,6 +269,7 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('browser.create', async event => { assertTrustedRenderer(event); return browser.create(); });
   handle('browser.open', async (event, url: unknown, approved: unknown) => { assertTrustedRenderer(event); return browser.open(z.string().url().parse(url), z.boolean().parse(approved)); });
   handle('browser.close', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.close(idSchema.parse(id)); });
+  handle('browser.hide', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.hide(idSchema.parse(id)); });
   handle('browser.createTab', async (event, sessionId: unknown) => { assertTrustedRenderer(event); return browser.createTab(idSchema.parse(sessionId)); });
   handle('browser.closeTab', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.closeTab(idSchema.parse(sessionId), idSchema.parse(tabId)); });
   handle('browser.selectTab', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.selectTab(idSchema.parse(sessionId), idSchema.parse(tabId)); });

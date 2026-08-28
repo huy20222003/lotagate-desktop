@@ -63,6 +63,8 @@ export function useWorkspaceController() {
   const activityPageCursorRef = useRef<string | null>(null);
   const loadingOlderActivitiesRef = useRef(false);
   const activeTurnRef = useRef<{ taskId: string; cwd: string; turnId: string } | undefined>();
+  const workspaceRef = useRef<Workspace | undefined>();
+  const tasksRef = useRef<Task[]>([]);
   const messageQueueServiceRef = useRef(new MessageQueueService());
   const queuedMessages = useMessageQueue(messageQueueServiceRef.current);
   const sendPromptRef = useRef<(prompt: string, options?: PromptSendOptions) => Promise<void>>();
@@ -70,6 +72,7 @@ export function useWorkspaceController() {
   const steeringQueueIdRef = useRef<string | undefined>();
   const suppressQueueRef = useRef(false);
   useEffect(() => { draftTaskRef.current = task; }, [task]);
+  useEffect(() => { workspaceRef.current = workspace; tasksRef.current = tasks; }, [tasks, workspace]);
   useEffect(() => { void window.lotagate.settings.get().then(settings => { setApprovalMode(settings.approvalMode); }).catch(() => undefined); }, []);
   useEffect(() => {
     const unsubscribe = window.lotagate.approvals.onRequest(request => {
@@ -238,18 +241,21 @@ export function useWorkspaceController() {
   }, [workspace?.id]);
 
   useEffect(() => window.lotagate.agent.onEvent(envelope => {
-    if (workspace === undefined || envelope.cwd !== workspace.rootPath) return;
+    const currentWorkspace = workspaceRef.current;
+    const currentTasks = tasksRef.current;
+    const currentTask = draftTaskRef.current;
+    if (currentWorkspace === undefined || envelope.cwd !== currentWorkspace.rootPath) return;
     const data = envelope.event.data;
     const terminal = envelope.event.event === 'turn.completed' || envelope.event.event === 'turn.failed' || envelope.event.event === 'turn.cancelled';
     const eventSessionId = typeof data['sessionId'] === 'string' ? data['sessionId'] : undefined;
     const turnId = typeof data['turnId'] === 'string' ? data['turnId'] : undefined;
-    const currentTaskId = task?.id ?? draftTaskRef.current?.id;
+    const currentTaskId = currentTask?.id;
     const allowUnscopedFallback = allowsUnscopedTaskFallback(envelope.event.event, eventSessionId, turnId);
-    const eventTask = tasks.find(item => eventSessionId !== undefined && item.sessionId === eventSessionId) ?? (task?.sessionId === eventSessionId ? task : undefined) ?? (draftTaskRef.current?.sessionId === eventSessionId ? draftTaskRef.current : undefined) ?? (allowUnscopedFallback ? task : undefined) ?? (allowUnscopedFallback && tasks.length === 1 ? tasks[0] : undefined);
+    const eventTask = currentTasks.find(item => eventSessionId !== undefined && item.sessionId === eventSessionId) ?? (currentTask?.sessionId === eventSessionId ? currentTask : undefined) ?? (allowUnscopedFallback ? currentTask : undefined) ?? (allowUnscopedFallback && currentTasks.length === 1 ? currentTasks[0] : undefined);
     if (eventTask !== undefined && eventTask.id === currentTaskId) {
       if (turnId && envelope.event.event === 'turn.started') setTurnTimings(current => ({ ...current, [turnId]: { startedAt: Date.now() } }));
       if (turnId && terminal) setTurnTimings(current => ({ ...current, [turnId]: { startedAt: current[turnId]?.startedAt ?? Date.now(), endedAt: Date.now() } }));
-      if (turnId && envelope.event.event === 'turn.started') activeTurnRef.current = { taskId: eventTask.id, cwd: workspace.rootPath, turnId };
+      if (turnId && envelope.event.event === 'turn.started') activeTurnRef.current = { taskId: eventTask.id, cwd: currentWorkspace.rootPath, turnId };
       const currentTurn = turnId === undefined || activeTurnRef.current?.turnId === turnId;
       if (terminal && currentTurn) activeTurnRef.current = undefined;
       const status = agentStatusForEvent(envelope.event.event, data);
@@ -291,8 +297,8 @@ export function useWorkspaceController() {
       if (envelope.event.event.startsWith('plan.')) setPlan(current => applyPlanEvent(current, envelope.event.event, data));
     }
     if (eventTask !== undefined && eventTask.id === currentTaskId) scheduleActivityRefresh(eventTask.id);
-    if (eventTask !== undefined) scheduleTaskReload(workspace.id);
-  }), [approvalMode, scheduleActivityRefresh, scheduleTaskReload, workspace, task, tasks]);
+    if (eventTask !== undefined) scheduleTaskReload(currentWorkspace.id);
+  }), [scheduleActivityRefresh, scheduleTaskReload]);
 
   const selectWorkspace = useCallback((next: Workspace) => {
     void discardQueuedAttachments(task?.id, messageQueueServiceRef.current.snapshot(), activities, task?.draftAttachmentIds ?? []);

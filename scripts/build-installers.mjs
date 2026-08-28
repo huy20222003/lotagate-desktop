@@ -1,5 +1,6 @@
-import { access, readdir } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
@@ -7,6 +8,10 @@ import { spawn, spawnSync } from 'node:child_process';
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outputRoot = resolve(desktopRoot, 'out', 'make');
 const minimumNodeMajor = 22;
+const wixVersion = '3.14.1';
+const wixDownloadUrl = 'https://github.com/wixtoolset/wix3/releases/download/wix314rtm/wix314-binaries.zip';
+const wixArchiveSha256 = '13f067f38969faf163d93a804b48ea0576790a202c8f10291f2000f0e356e934';
+const localWixRoot = resolve(desktopRoot, '.tools', 'wix', `v${wixVersion}`);
 
 const platformPlans = {
   win32: {
@@ -73,7 +78,7 @@ if (!(await hasForgeBinary())) {
   );
 }
 
-assertNativePrerequisites(plan);
+await assertNativePrerequisites(plan);
 
 if (!options.skipValidation) {
   await runNpm(['run', 'typecheck'], 'Typechecking Desktop');
@@ -156,7 +161,9 @@ async function hasForgeBinary() {
   }
 }
 
-function assertNativePrerequisites(plan) {
+async function assertNativePrerequisites(plan) {
+  if (process.platform === 'win32') await prepareWindowsWix();
+
   const missing = plan.prerequisites.filter(([command]) => !commandExists(command));
   if (missing.length > 0) {
     fail(
@@ -172,6 +179,77 @@ function assertNativePrerequisites(plan) {
       fail(`The configured macOS installer identity was not found: ${identity}.`);
     }
   }
+}
+
+async function prepareWindowsWix() {
+  if (commandExists('candle.exe') && commandExists('light.exe')) return;
+
+  const configuredWixRoot = process.env['LOTAGATE_WIX_HOME']?.trim();
+  const candidateRoot = configuredWixRoot ? resolve(configuredWixRoot) : localWixRoot;
+  const candlePath = resolve(candidateRoot, 'candle.exe');
+  const lightPath = resolve(candidateRoot, 'light.exe');
+
+  if (!(await fileExists(candlePath)) || !(await fileExists(lightPath))) {
+    if (configuredWixRoot) {
+      fail(`LOTAGATE_WIX_HOME does not contain candle.exe and light.exe: ${candidateRoot}.`);
+    }
+    await downloadAndExtractWix(candidateRoot);
+  }
+
+  process.env.Path = `${candidateRoot};${process.env.Path ?? ''}`;
+}
+
+async function downloadAndExtractWix(destination) {
+  const archivePath = resolve(destination, `wix-${wixVersion}-binaries.zip`);
+  await mkdir(destination, { recursive: true });
+
+  console.log(`\n==> Preparing WiX Toolset ${wixVersion}`);
+  console.log(`Downloading official WiX binaries to ${destination}`);
+  await runPowerShell(
+    `$ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -UseBasicParsing -Uri ${quotePowerShell(wixDownloadUrl)} -OutFile ${quotePowerShell(archivePath)} -ErrorAction Stop`,
+    'Downloading WiX binaries',
+  );
+
+  const archiveHash = createHash('sha256').update(await readFile(archivePath)).digest('hex');
+  if (archiveHash !== wixArchiveSha256) {
+    fail(`WiX archive SHA-256 mismatch. Expected ${wixArchiveSha256}, received ${archiveHash}.`);
+  }
+
+  await runPowerShell(
+    `Expand-Archive -LiteralPath ${quotePowerShell(archivePath)} -DestinationPath ${quotePowerShell(destination)} -Force`,
+    'Extracting WiX binaries',
+  );
+}
+
+async function fileExists(filePath) {
+  try {
+    await access(filePath, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function quotePowerShell(value) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function runPowerShell(command, label) {
+  return new Promise((resolvePromise, reject) => {
+    console.log(`==> ${label}`);
+    const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], {
+      cwd: desktopRoot,
+      env: process.env,
+      shell: false,
+      stdio: 'inherit',
+      windowsHide: true,
+    });
+    child.once('error', reject);
+    child.once('exit', code => {
+      if (code === 0) resolvePromise();
+      else reject(new Error(`${label} failed with exit code ${String(code)}.`));
+    });
+  });
 }
 
 function commandExists(command) {

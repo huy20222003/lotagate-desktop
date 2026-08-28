@@ -5,5 +5,6 @@ export interface AttachmentPreview {
   name: string;
   kind: Artifact['kind'];
   size: number;
+  path?: string;
   dataUrl?: string;
 }
