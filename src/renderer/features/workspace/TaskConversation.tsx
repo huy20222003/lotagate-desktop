@@ -11,16 +11,28 @@ import { ElapsedTime, type TurnTiming } from './ElapsedTime.js';
 import { findActiveTurnTiming, activityTurnId, messageTiming } from './conversation-timing.js';
 import { TypingIndicator } from './TypingIndicator.js';
 
+const EMPTY_ATTACHMENTS: AttachmentPreview[] = [];
+const EMPTY_ARTIFACTS: Artifact[] = [];
+const EMPTY_ACTIVITIES: Activity[] = [];
+
+interface TurnActivityDetails {
+  all: Activity[];
+  progress: Activity[];
+  tools: Activity[];
+}
+
 export function TaskConversation({ task, activities, activityAttachments, activityArtifacts, fileChangesByTurn, onOpenFileChanges, onOpenImage, statusText, contextCompactionStatus, thinking, thinkingStartedAt, turnTimings, trust, onTrust }: { task?: Task | undefined; activities: Activity[]; activityAttachments: Record<string, AttachmentPreview[]>; activityArtifacts: Record<string, Artifact[]>; fileChangesByTurn: FileChangeSummariesByTurn; onOpenFileChanges: (summary: FileChangeSummary) => void; onOpenImage: (attachment: AttachmentPreview) => void; statusText?: string | undefined; contextCompactionStatus?: 'compacting' | 'compacted' | 'failed' | undefined; thinking: boolean; thinkingStartedAt?: number | undefined; turnTimings: Record<string, TurnTiming>; trust?: TrustRequest | undefined; onTrust: (trusted: boolean) => Promise<void> }) {
-  const transcript = mergeChatActivities(activities);
-  const activitiesByTurn = useMemo(() => {
-    const grouped = new Map<string, Activity[]>();
+  const transcript = useMemo(() => mergeChatActivities(activities), [activities]);
+  const activityDetailsByTurn = useMemo(() => {
+    const grouped = new Map<string, TurnActivityDetails>();
     for (const activity of activities) {
       const turnId = activityTurnId(activity);
       if (turnId === undefined) continue;
-      const current = grouped.get(turnId);
-      if (current === undefined) grouped.set(turnId, [activity]);
-      else current.push(activity);
+      const current = grouped.get(turnId) ?? { all: [], progress: [], tools: [] };
+      current.all.push(activity);
+      if (isAssistantProgressActivity(activity)) current.progress.push(activity);
+      if (activity.kind === 'tool') current.tools.push(activity);
+      grouped.set(turnId, current);
     }
     return grouped;
   }, [activities]);
@@ -30,9 +42,9 @@ export function TaskConversation({ task, activities, activityAttachments, activi
   const activeTurnId = Object.entries(turnTimings)
     .filter(([, timing]) => timing.endedAt === undefined)
     .sort(([, left], [, right]) => right.startedAt - left.startedAt)[0]?.[0];
-  const liveTurnActivities = activeTurnId === undefined ? [] : activitiesByTurn.get(activeTurnId) ?? [];
-  const liveProgressActivities = liveTurnActivities.filter(isAssistantProgressActivity);
-  const liveToolActivities = liveTurnActivities.filter(activity => activity.kind === 'tool');
+  const liveTurnDetails = activeTurnId === undefined ? undefined : activityDetailsByTurn.get(activeTurnId);
+  const liveProgressActivities = liveTurnDetails?.progress ?? EMPTY_ACTIVITIES;
+  const liveToolActivities = liveTurnDetails?.tools ?? EMPTY_ACTIVITIES;
   const hasLiveWorkDetails = liveProgressActivities.length > 0 || liveToolActivities.length > 0;
   const hasActiveAssistant = transcript.some(activity => {
     if (activity.kind !== 'assistant') return false;
@@ -42,12 +54,12 @@ export function TaskConversation({ task, activities, activityAttachments, activi
   const renderedTurnIds = new Set<string>();
   const messages = transcript.map(activity => {
     const turnId = activityTurnId(activity);
-    const turnActivities = turnId === undefined ? [] : activitiesByTurn.get(turnId) ?? [];
-    const progressActivities = turnActivities.filter(isAssistantProgressActivity);
-    const toolActivities = turnActivities.filter(candidate => candidate.kind === 'tool');
+    const turnDetails = turnId === undefined ? undefined : activityDetailsByTurn.get(turnId);
+    const progressActivities = turnDetails?.progress ?? EMPTY_ACTIVITIES;
+    const toolActivities = turnDetails?.tools ?? EMPTY_ACTIVITIES;
     const fileChangeSummary = !thinking && activity.kind === 'assistant' && turnId !== undefined ? fileChangesByTurn[turnId] : undefined;
     if (fileChangeSummary !== undefined && turnId !== undefined) renderedTurnIds.add(turnId);
-    return <ChatMessage key={activity.id} activity={activity} attachments={activityAttachments[activity.id] ?? []} artifacts={activityArtifacts[activity.id] ?? []} workspaceCwd={task.cwd} onOpenFileChanges={onOpenFileChanges} onOpenImage={onOpenImage} progressActivities={progressActivities} toolActivities={toolActivities} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...messageTiming(activity, turnTimings)} />;
+    return <ChatMessage key={activity.id} activity={activity} attachments={activityAttachments[activity.id] ?? EMPTY_ATTACHMENTS} artifacts={activityArtifacts[activity.id] ?? EMPTY_ARTIFACTS} workspaceCwd={task.cwd} onOpenFileChanges={onOpenFileChanges} onOpenImage={onOpenImage} progressActivities={progressActivities} toolActivities={toolActivities} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...messageTiming(activity, turnTimings)} />;
   });
   const unlinkedChanges = !thinking ? Object.entries(fileChangesByTurn).filter(([turnId, summary]) => !renderedTurnIds.has(turnId) && summary.files.length > 0) : [];
   const showLiveWorkedFor = thinking && workingTiming !== undefined && (!hasActiveAssistant || hasLiveWorkDetails);

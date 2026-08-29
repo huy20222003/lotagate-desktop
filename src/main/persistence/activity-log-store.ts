@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
@@ -92,30 +93,37 @@ export class ActivityLogStore {
   }
 
   async appendAssistantDelta(taskId: string, text: string, metadata: Record<string, unknown>): Promise<Activity | undefined> {
-    let updated: Activity | undefined;
+    const [updated] = await this.appendAssistantDeltas(taskId, [{ text, metadata }]);
+    return updated;
+  }
+
+  async appendAssistantDeltas(taskId: string, deltas: readonly { text: string; metadata: Record<string, unknown> }[]): Promise<Activity[]> {
+    const updated: Activity[] = [];
     await this.enqueue(async () => {
+      if (deltas.length === 0) return;
       await this.ensureLoaded();
       await this.compactIfNeeded();
-      const turnId = metadata['turnId'];
-      const actualIndex = findAssistantIndex(this.activitiesCache!, taskId, turnId, metadata['segmentId']);
-      if (actualIndex < 0) return;
-      const previous = activitySchema.parse(this.activitiesCache![actualIndex]);
-      updated = activitySchema.parse({ ...previous, text: `${previous.text}${text}`, metadata: { ...previous.metadata, ...metadata } });
-      const record: ActivityLogRecord = {
-        version: ACTIVITY_LOG_VERSION,
-        type: 'assistant.delta',
-        sequence: this.sequence + 1,
-        taskId,
-        ...(turnId === undefined ? {} : { turnId }),
-        text,
-        metadata,
-      };
-      await this.appendRecord(record);
       const next = [...this.activitiesCache!];
-      next[actualIndex] = updated;
+      const records: ActivityLogRecord[] = [];
+      for (const delta of deltas) {
+        const turnId = delta.metadata['turnId'];
+        const actualIndex = findAssistantIndex(next, taskId, turnId, delta.metadata['segmentId']);
+        const previous = actualIndex < 0 ? undefined : activitySchema.parse(next[actualIndex]);
+        const nextActivity = previous === undefined
+          ? activitySchema.parse({ id: `streaming:${randomUUID()}`, taskId, kind: 'assistant', text: delta.text, metadata: delta.metadata, createdAt: new Date().toISOString() })
+          : activitySchema.parse({ ...previous, text: `${previous.text}${delta.text}`, metadata: { ...previous.metadata, ...delta.metadata } });
+        if (actualIndex < 0) next.push(nextActivity);
+        else next[actualIndex] = nextActivity;
+        const record: ActivityLogRecord = previous === undefined
+          ? { version: ACTIVITY_LOG_VERSION, type: 'append', sequence: this.sequence + records.length + 1, activity: nextActivity }
+          : { version: ACTIVITY_LOG_VERSION, type: 'assistant.delta', sequence: this.sequence + records.length + 1, taskId, ...(turnId === undefined ? {} : { turnId }), text: delta.text, metadata: delta.metadata };
+        records.push(record);
+        updated.push(nextActivity);
+      }
+      await this.appendRecords(records);
       this.activitiesCache = next;
-      this.sequence = record.sequence;
-      this.recordOperation(record);
+      this.sequence = records[records.length - 1]?.sequence ?? this.sequence;
+      for (const record of records) this.recordOperation(record);
     });
     return updated;
   }
@@ -232,10 +240,15 @@ export class ActivityLogStore {
   }
 
   private async appendRecord(record: ActivityLogRecord): Promise<void> {
+    await this.appendRecords([record]);
+  }
+
+  private async appendRecords(records: readonly ActivityLogRecord[]): Promise<void> {
+    if (records.length === 0) return;
     await mkdir(dirname(this.filePath), { recursive: true });
     const handle = await open(this.filePath, 'a');
     try {
-      await handle.write(`${JSON.stringify(record)}\n`, null, 'utf8');
+      await handle.write(`${records.map(record => JSON.stringify(record)).join('\n')}\n`, null, 'utf8');
       await handle.sync();
     } finally {
       await handle.close();

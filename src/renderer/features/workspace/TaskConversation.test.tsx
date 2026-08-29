@@ -38,7 +38,9 @@ describe('TaskConversation live state', () => {
       onTrust={async () => undefined}
     />);
 
-    expect(screen.getByText('I will inspect the workspace first.')).toBeVisible();
+    const progress = screen.getByText('I will inspect the workspace first.');
+    expect(progress).toBeInTheDocument();
+    expect(progress.closest('details')).not.toHaveAttribute('open');
     expect(screen.queryByText('I’ll inspect the workspace with Read file.')).not.toBeInTheDocument();
   });
 });

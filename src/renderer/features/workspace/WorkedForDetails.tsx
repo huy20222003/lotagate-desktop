@@ -1,4 +1,5 @@
 import type { Activity } from '../../../contracts/ipc/v1/workspace.js';
+import { formatToolDisplayName } from '../../../shared/tool-display.js';
 import { AgentMarkdown } from './markdown-renderer.js';
 import { isAssistantProgressActivity } from './conversation-activities.js';
 
@@ -9,7 +10,7 @@ interface ToolStep {
 }
 
 export function WorkedForDetails({ statusText, progressActivities, toolActivities }: { statusText?: string | undefined; progressActivities: readonly Activity[]; toolActivities: readonly Activity[] }) {
-  const toolSteps = groupToolActivities(toolActivities).filter(step => step.state !== 'completed');
+  const toolSteps = groupToolActivities(toolActivities);
   if (statusText === undefined && progressActivities.length === 0 && toolSteps.length === 0) return null;
   return <div className="worked-details">
     {statusText ? <div className="worked-status">{statusText}</div> : null}
@@ -27,7 +28,7 @@ function groupToolActivities(activities: readonly Activity[]): ToolStep[] {
     const completed = activity.metadata['status'] === 'completed' || activity.metadata['status'] === 'failed' || activity.text.endsWith(' completed.') || failed;
     const state = failed ? 'failed' : completed ? 'completed' : previous?.state ?? 'running';
     const fallbackName = activity.text.replace(/^Running /u, '').replace(/ (?:completed|failed)\.$/u, '').trim();
-    const displayName = readString(activity.metadata['displayName']) ?? readString(activity.metadata['toolName']) ?? fallbackName;
+    const displayName = formatToolDisplayName(readString(activity.metadata['toolName']) ?? fallbackName, readString(activity.metadata['displayName']));
     steps.set(actionId, { actionId, displayName, state });
   }
   return [...steps.values()];

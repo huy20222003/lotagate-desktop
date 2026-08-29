@@ -3,28 +3,90 @@ import type { DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js'
 import { formatToolDisplayName } from '../../shared/tool-display.js';
 import type { TaskStore } from './task-store.js';
 
+const ASSISTANT_DELTA_BATCH_WINDOW_MS = 32;
+const ASSISTANT_DELTA_BATCH_SIZE = 32;
+
+interface PendingAssistantDeltaBatch {
+  cwd: string;
+  events: DesktopEvent[];
+}
+
 export class TaskEventProjector {
   private readonly queues = new Map<string, Promise<void>>();
   private readonly activeTasks = new Map<string, string>();
+  private readonly pendingAssistantDeltas = new Map<string, PendingAssistantDeltaBatch>();
+  private readonly deltaTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  constructor(private readonly tasks: TaskStore) {}
+  constructor(private readonly tasks: TaskStore, private readonly onError: (error: unknown, cwd: string) => void = () => undefined) {}
 
   async apply(cwd: string, event: DesktopEvent): Promise<void> {
+    if (event.event === 'assistant.delta') {
+      await this.bufferAssistantDelta(cwd, event);
+      return;
+    }
+    await this.flushAssistantDeltas(cwd);
+    await this.enqueue(cwd, () => this.applyNow(cwd, event));
+  }
+
+  async flush(): Promise<void> {
+    const cwds = new Set([...this.pendingAssistantDeltas.values()].map(batch => batch.cwd));
+    for (const cwd of cwds) await this.flushAssistantDeltas(cwd);
+    await Promise.all([...this.queues.values()].map(queue => queue.catch(() => undefined)));
+  }
+
+  private async bufferAssistantDelta(cwd: string, event: DesktopEvent): Promise<void> {
+    const key = `${cwd}\u0000${String(event.data['sessionId'] ?? '')}\u0000${String(event.data['turnId'] ?? '')}\u0000${String(event.data['segmentId'] ?? '')}`;
+    const batch = this.pendingAssistantDeltas.get(key) ?? { cwd, events: [] };
+    batch.events.push(event);
+    this.pendingAssistantDeltas.set(key, batch);
+    if (batch.events.length >= ASSISTANT_DELTA_BATCH_SIZE) {
+      await this.flushAssistantDeltaBatch(key);
+      return;
+    }
+    if (this.deltaTimers.has(key)) return;
+    this.deltaTimers.set(key, setTimeout(() => {
+      this.deltaTimers.delete(key);
+      void this.flushAssistantDeltaBatch(key).catch(error => this.onError(error, cwd));
+    }, ASSISTANT_DELTA_BATCH_WINDOW_MS));
+  }
+
+  private async flushAssistantDeltas(cwd: string): Promise<void> {
+    const keys = [...this.pendingAssistantDeltas.entries()].filter(([, batch]) => batch.cwd === cwd).map(([key]) => key);
+    for (const key of keys) await this.flushAssistantDeltaBatch(key);
+  }
+
+  private async flushAssistantDeltaBatch(key: string): Promise<void> {
+    const timer = this.deltaTimers.get(key);
+    if (timer !== undefined) { clearTimeout(timer); this.deltaTimers.delete(key); }
+    const batch = this.pendingAssistantDeltas.get(key);
+    if (batch === undefined || batch.events.length === 0) return;
+    this.pendingAssistantDeltas.delete(key);
+    await this.enqueue(batch.cwd, () => this.applyAssistantDeltaBatch(batch.cwd, batch.events));
+  }
+
+  private async enqueue(cwd: string, operation: () => Promise<void>): Promise<void> {
     const previous = this.queues.get(cwd) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(() => this.applyNow(cwd, event));
+    const next = previous.catch(() => undefined).then(operation);
     this.queues.set(cwd, next);
     try { await next; } finally { if (this.queues.get(cwd) === next) this.queues.delete(cwd); }
   }
 
+  private async applyAssistantDeltaBatch(cwd: string, events: readonly DesktopEvent[]): Promise<void> {
+    const first = events[0];
+    if (first === undefined) return;
+    const task = await this.selectTask(cwd, first);
+    if (task === undefined) return;
+    const deltas = events.flatMap(event => {
+      const text = eventText(event.event, event.data);
+      if (text === undefined) return [];
+      return [{ text, metadata: { ...redactMetadata(event.data), assistantPhase: 'progress' } }];
+    });
+    await this.tasks.appendAssistantDeltas(task.id, deltas);
+  }
+
   private async applyNow(cwd: string, event: DesktopEvent): Promise<void> {
-    const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
-    const sessionTask = sessionId === undefined ? undefined : await this.tasks.findBySession(sessionId);
-    const activeTaskId = this.activeTasks.get(cwd);
-    const activeTask = activeTaskId === undefined ? undefined : await this.tasks.require(activeTaskId).then(value => value.archived || value.cwd !== cwd ? undefined : value).catch(() => undefined);
-    const taskCandidate = sessionTask?.cwd === cwd ? sessionTask : sessionTask === undefined ? (sessionId === undefined ? activeTask : undefined) : undefined;
-    const selectedTask = taskCandidate ?? (event.event === 'turn.started' ? await this.tasks.findByCwd(cwd) : undefined);
-    if (selectedTask === undefined || selectedTask.archived || selectedTask.cwd !== cwd) return;
-    const task = selectedTask;
+    const task = await this.selectTask(cwd, event);
+    if (task === undefined) return;
     const data = event.data;
     const timing = turnTimingMarker(event.event, data);
     if (timing !== undefined) await this.tasks.appendEvent(task.id, 'context', 'Desktop turn timing marker.', { turnId: data['turnId'], [DESKTOP_TURN_TIMING_METADATA_KEY]: timing });
@@ -46,6 +108,17 @@ export class TaskEventProjector {
     if (event.event === 'turn.completed') { await this.tasks.setStatus(task.id, 'completed'); await this.tasks.update(task.id, { turnId: undefined, interruptedReason: undefined }); this.clearActiveTask(cwd, task.id); }
     if (event.event === 'turn.failed') { await this.tasks.setStatus(task.id, 'failed'); await this.tasks.update(task.id, { turnId: undefined, interruptedReason: typeof data['error'] === 'string' ? redactString(data['error']) : 'The CLI reported a failed turn.' }); this.clearActiveTask(cwd, task.id); }
     if (event.event === 'turn.cancelled') { await this.tasks.setStatus(task.id, 'cancelled'); await this.tasks.update(task.id, { turnId: undefined }); this.clearActiveTask(cwd, task.id); }
+  }
+
+  private async selectTask(cwd: string, event: DesktopEvent): Promise<Awaited<ReturnType<TaskStore['require']>> | undefined> {
+    const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
+    const sessionTask = sessionId === undefined ? undefined : await this.tasks.findBySession(sessionId);
+    const activeTaskId = this.activeTasks.get(cwd);
+    const activeTask = activeTaskId === undefined ? undefined : await this.tasks.require(activeTaskId).then(value => value.archived || value.cwd !== cwd ? undefined : value).catch(() => undefined);
+    const taskCandidate = sessionTask?.cwd === cwd ? sessionTask : sessionTask === undefined ? (sessionId === undefined ? activeTask : undefined) : undefined;
+    const selectedTask = taskCandidate ?? (event.event === 'turn.started' ? await this.tasks.findByCwd(cwd) : undefined);
+    if (selectedTask === undefined || selectedTask.archived || selectedTask.cwd !== cwd) return undefined;
+    return selectedTask;
   }
 
   private clearActiveTask(cwd: string, taskId: string): void { if (this.activeTasks.get(cwd) === taskId) this.activeTasks.delete(cwd); }

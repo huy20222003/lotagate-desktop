@@ -29,6 +29,24 @@ describe('ActivityLogStore', () => {
     expect((await reloaded.read())[0]?.text).toBe('seed hello world');
   });
 
+  it('writes a batch of assistant deltas with one journal flush while retaining every record', async () => {
+    const directory = await createTemporaryDirectory();
+    const path = join(directory, 'activities.jsonl');
+    const store = new ActivityLogStore(path);
+    await store.append(activity('assistant-1', 'seed'));
+
+    await store.appendAssistantDeltas('task-1', [
+      { text: ' hello', metadata: { turnId: 'turn-1', sequence: 1 } },
+      { text: ' world', metadata: { turnId: 'turn-1', sequence: 2 } },
+    ]);
+
+    expect((await store.read())[0]?.text).toBe('seed hello world');
+    const records = (await readFile(path, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { type: string });
+    expect(records.map(record => record.type)).toEqual(['append', 'assistant.delta', 'assistant.delta']);
+    const reloaded = new ActivityLogStore(path);
+    expect((await reloaded.read())[0]?.text).toBe('seed hello world');
+  });
+
   it('persists and replays assistant segment completion metadata', async () => {
     const directory = await createTemporaryDirectory();
     const path = join(directory, 'activities.jsonl');

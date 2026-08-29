@@ -28,9 +28,11 @@ export function appendAssistantDelta(activities: readonly Activity[], input: Ass
   if (input.content.length === 0) return [...activities];
   const index = findAssistantIndex(activities, input.taskId, input.turnId, input.segmentId);
   if (index >= 0) {
-    return activities.map((activity, activityIndex) => activityIndex === index
-      ? { ...activity, text: `${activity.text}${input.content}`, metadata: { ...activity.metadata, ...(input.turnId === undefined ? {} : { turnId: input.turnId }), ...(input.segmentId === undefined ? {} : { segmentId: input.segmentId, assistantPhase: 'progress' }), ...(input.iteration === undefined ? {} : { iteration: input.iteration }) } }
-      : activity);
+    const activity = activities[index];
+    if (activity === undefined) return [...activities];
+    const next = [...activities];
+    next[index] = { ...activity, text: `${activity.text}${input.content}`, metadata: { ...activity.metadata, ...(input.turnId === undefined ? {} : { turnId: input.turnId }), ...(input.segmentId === undefined ? {} : { segmentId: input.segmentId, assistantPhase: 'progress' }), ...(input.iteration === undefined ? {} : { iteration: input.iteration }) } };
+    return next;
   }
   return [...activities, {
     id: `streaming:${input.taskId}:${input.segmentId ?? input.turnId ?? 'active'}`,
@@ -48,7 +50,9 @@ export function reconcilePendingAssistantStreams(activities: readonly Activity[]
     if (index < 0) return appendAssistantDelta(current, { taskId: stream.taskId, ...(stream.turnId === undefined ? {} : { turnId: stream.turnId }), ...(stream.segmentId === undefined ? {} : { segmentId: stream.segmentId }), content: stream.text, createdAt: stream.createdAt });
     const activity = current[index];
     if (activity === undefined || activity.text.length >= stream.text.length) return current;
-    return current.map((item, itemIndex) => itemIndex === index ? { ...item, text: stream.text } : item);
+    const next = [...current];
+    next[index] = { ...activity, text: stream.text };
+    return next;
   }, [...activities]);
 }
 
@@ -64,7 +68,11 @@ export function assistantStreamKey(taskId: string, turnId?: string, segmentId?: 
 export function markAssistantSegmentPhase(activities: readonly Activity[], input: AssistantSegmentPhaseInput): Activity[] {
   const index = findAssistantIndex(activities, input.taskId, input.turnId, input.segmentId);
   if (index < 0) return [...activities];
-  return activities.map((activity, activityIndex) => activityIndex === index ? { ...activity, metadata: { ...activity.metadata, assistantPhase: input.phase } } : activity);
+  const activity = activities[index];
+  if (activity === undefined) return [...activities];
+  const next = [...activities];
+  next[index] = { ...activity, metadata: { ...activity.metadata, assistantPhase: input.phase } };
+  return next;
 }
 
 function findAssistantIndex(activities: readonly Activity[], taskId: string, turnId?: string, segmentId?: string): number {

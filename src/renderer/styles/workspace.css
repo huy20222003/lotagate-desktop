@@ -168,6 +168,12 @@
 .worked-status, .worked-progress, .worked-tool { color: var(--color-text-secondary); font-size: 14px; line-height: 1.5; }
 .worked-progress .agent-markdown { color: inherit; font-size: inherit; line-height: inherit; }
 .worked-progress .agent-markdown p { margin: 0; }
+.worked-tool { display: inline-flex; align-items: baseline; gap: 6px; }
+.worked-tool::before { width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: currentColor; content: ''; }
+.worked-tool-running { color: var(--color-text-typing); }
+.worked-tool-running::before { animation: typing-dot-appear 1.05s ease-in-out infinite; }
+.worked-tool-failed { color: var(--color-danger); }
+.worked-tool-completed { color: var(--color-text-secondary); }
 .worked-tool .typing-label { display: inline; }
 .conversation-controls { position: absolute; right: 0; bottom: calc(100% + 10px); left: 0; z-index: 2; display: flex; width: fit-content; max-width: calc(100% - 96px); flex-direction: column; align-items: center; gap: 8px; margin: 0 auto; background: transparent; pointer-events: none; }
 .conversation-controls > * { pointer-events: auto; }

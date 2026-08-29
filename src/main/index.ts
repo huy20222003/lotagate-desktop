@@ -47,6 +47,7 @@ let agentManager: AgentManager | undefined;
 let browserService: BrowserService | undefined;
 let automationService: AutomationService | undefined;
 let approvalCoordinator: ApprovalCoordinator | undefined;
+let taskProjector: TaskEventProjector | undefined;
 let automationDispatchHandler: (() => Promise<void>) | undefined;
 let pendingAutomationDispatch = false;
 let shuttingDown = false;
@@ -88,7 +89,7 @@ app.whenReady().then(async () => {
   approvalCoordinator = approvals;
   approvals.onRequest(request => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('approval.requested', request); });
   approvals.onResolved(resolution => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('approval.resolved', resolution); });
-  const taskProjector = new TaskEventProjector(tasks);
+  taskProjector = new TaskEventProjector(tasks, (error, cwd) => logger.error('task.event.persist.failed', { cwd, message: error instanceof Error ? error.message : 'Unable to persist agent event.' }));
   const browser = new BrowserService(snapshot => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('browser.state', snapshot);
   }, async () => (await settings.get()).browser);
@@ -133,7 +134,7 @@ app.whenReady().then(async () => {
           void approvals.request({ ...commonInput, source: 'agent', surface: 'composer' }, approved => agents.approvalRespond(cwd, { approvalId, approved })).catch(error => logger.warn('approval.registration.failed', { cwd, approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
         }
       }
-      void taskProjector.apply(cwd, event).catch(error => logger.error('task.event.persist.failed', { cwd, event: event.event, message: error instanceof Error ? error.message : 'Unable to persist agent event.' }));
+      void taskProjector?.apply(cwd, event).catch(error => logger.error('task.event.persist.failed', { cwd, event: event.event, message: error instanceof Error ? error.message : 'Unable to persist agent event.' }));
       if (event.event !== 'approval.requested') for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
     },
     onDiagnostic: (cwd, diagnostic) => { logger.warn('agent.diagnostic', { cwd, kind: diagnostic.kind, message: diagnostic.message }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic }); },
@@ -225,7 +226,7 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   shuttingDown = true;
   automationService?.stop();
-  void Promise.all([agentManager?.shutdownAll(), browserService?.closeAll(), approvalCoordinator?.cancelAll()]).finally(async () => { await logger.close(); app.quit(); });
+  void Promise.all([taskProjector?.flush(), agentManager?.shutdownAll(), browserService?.closeAll(), approvalCoordinator?.cancelAll()]).finally(async () => { await logger.close(); app.quit(); });
 });
 
 function extractSessionId(value: unknown): string | undefined {

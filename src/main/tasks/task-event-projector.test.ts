@@ -20,6 +20,7 @@ function createProjector(task: Task) {
     update: vi.fn(async (_taskId: string, patch: Partial<Task>) => ({ ...task, ...patch })),
     appendEvent: vi.fn(async () => task),
     appendAssistantDelta: vi.fn(async () => task),
+    appendAssistantDeltas: vi.fn(async () => [task]),
     completeAssistantSegment: vi.fn(async () => task),
   } as unknown as TaskStore;
   return { projector: new TaskEventProjector(tasks), tasks };
@@ -66,6 +67,20 @@ describe('TaskEventProjector turn lifecycle', () => {
     await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'turn.started', data: { sessionId: 'session-1', turnId: 'turn-1' } });
     await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'command.output', data: { content: 'command output' } });
     expect(tasks.appendEvent).not.toHaveBeenCalledWith('task-1', 'command', 'command output', expect.any(Object));
+  });
+
+  it('batches assistant deltas and flushes them before the next lifecycle event', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'assistant.delta', data: { sessionId: 'session-1', turnId: 'turn-1', segmentId: 'run-1:1', content: 'Hello ' } });
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'assistant.delta', data: { sessionId: 'session-1', turnId: 'turn-1', segmentId: 'run-1:1', content: 'world' } });
+    expect(tasks.appendAssistantDeltas).not.toHaveBeenCalled();
+
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'assistant.segment.completed', data: { sessionId: 'session-1', turnId: 'turn-1', segmentId: 'run-1:1', phase: 'final' } });
+    expect(tasks.appendAssistantDeltas).toHaveBeenCalledTimes(1);
+    expect(tasks.appendAssistantDeltas).toHaveBeenCalledWith('task-1', [
+      expect.objectContaining({ text: 'Hello ' }),
+      expect.objectContaining({ text: 'world' }),
+    ]);
   });
 
   it('does not fall back to the latest cwd task for an event from an unknown session', async () => {

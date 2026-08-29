@@ -20,6 +20,8 @@ import { allowsUnscopedTaskFallback } from './agent-event-routing.js';
 import { persistDesktopCommandResult } from './desktop-command-result-persistence.js';
 import { cancelWorkspaceTask } from './cancel-workspace-task.js';
 import { useDeferredStatePublisher } from './deferred-state-publisher.js';
+import { useActivityRefreshScheduler } from './use-activity-refresh-scheduler.js';
+import { useDraftPersistence } from './use-draft-persistence.js';
 
 type ContextCompactionPhase = 'compacting' | 'compacted' | 'failed';
 
@@ -58,7 +60,6 @@ export function useWorkspaceController() {
   const taskReloadTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const initialTasksLoadedRef = useRef(false);
   const activityRequestRef = useRef(0);
-  const activityRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const pendingAssistantStreamsRef = useRef(new Map<string, PendingAssistantStream>());
   const activitiesRef = useRef<Activity[]>([]);
   const activityPageCursorRef = useRef<string | null>(null);
@@ -74,6 +75,7 @@ export function useWorkspaceController() {
   const suppressQueueRef = useRef(false);
   useEffect(() => { draftTaskRef.current = task; }, [task]);
   useEffect(() => { workspaceRef.current = workspace; tasksRef.current = tasks; }, [tasks, workspace]);
+  const reportControllerError = useCallback((reason: unknown) => setError(toMessage(reason)), []);
   useEffect(() => { void window.lotagate.settings.get().then(settings => { setApprovalMode(settings.approvalMode); }).catch(() => undefined); }, []);
   useEffect(() => {
     const unsubscribe = window.lotagate.approvals.onRequest(request => {
@@ -183,13 +185,7 @@ export function useWorkspaceController() {
     }
   }, [publishActivities]);
 
-  const scheduleActivityRefresh = useCallback((taskId: string) => {
-    if (activityRefreshTimerRef.current !== undefined) return;
-    activityRefreshTimerRef.current = setTimeout(() => {
-      activityRefreshTimerRef.current = undefined;
-      void loadActivities(taskId, false).catch(reason => setError(toMessage(reason)));
-    }, 75);
-  }, [loadActivities]);
+  const scheduleActivityRefresh = useActivityRefreshScheduler(loadActivities, reportControllerError, task?.id);
 
   const loadOlderActivities = useCallback(async (): Promise<boolean> => {
     const taskId = task?.id;
@@ -234,7 +230,6 @@ export function useWorkspaceController() {
     void loadAttachmentPreviews(task.id, task.draftAttachmentIds).then(next => { if (mounted) setAttachments(next); }).catch(() => { if (mounted) setAttachments([]); });
     return () => {
       mounted = false;
-      if (activityRefreshTimerRef.current !== undefined) { clearTimeout(activityRefreshTimerRef.current); activityRefreshTimerRef.current = undefined; }
     };
   }, [loadActivities, publishActivities, task?.id]);
 
@@ -307,8 +302,8 @@ export function useWorkspaceController() {
       if (envelope.event.event === 'plan.failed' || envelope.event.event === 'turn.failed' || envelope.event.event === 'turn.cancelled') setPlan(undefined);
       else if (envelope.event.event.startsWith('plan.')) setPlan(current => applyPlanEvent(current, envelope.event.event, data));
     }
-    if (eventTask !== undefined && eventTask.id === currentTaskId) scheduleActivityRefresh(eventTask.id);
-    if (eventTask !== undefined) scheduleTaskReload(currentWorkspace.id);
+    if (eventTask !== undefined && eventTask.id === currentTaskId && envelope.event.event !== 'assistant.delta') scheduleActivityRefresh(eventTask.id);
+    if (eventTask !== undefined && (terminal || envelope.event.event === 'turn.started')) scheduleTaskReload(currentWorkspace.id);
   }), [publishActivities, scheduleActivityRefresh, scheduleTaskReload]);
 
   const selectWorkspace = useCallback((next: Workspace) => {
@@ -378,13 +373,31 @@ export function useWorkspaceController() {
     setTasks(current => [created, ...current]); setTask(created); return created;
   }, [workspace]);
 
+  const ensureDraftTask = useCallback(async (): Promise<Task | undefined> => {
+    if (task) { draftTaskRef.current = task; return task; }
+    if (draftTaskRef.current) return draftTaskRef.current;
+    if (workspace === undefined) return undefined;
+    if (draftTaskPromiseRef.current) return draftTaskPromiseRef.current;
+    const promise = window.lotagate.tasks.create({ workspaceId: workspace.id, title: 'New chat' }).then(created => {
+      draftTaskRef.current = created;
+      setTasks(current => current.some(item => item.id === created.id) ? current : [created, ...current]);
+      setTask(created);
+      return created;
+    }).finally(() => { draftTaskPromiseRef.current = undefined; });
+    draftTaskPromiseRef.current = promise;
+    return promise;
+  }, [task, workspace]);
+  const { updateDraft, flushDraft } = useDraftPersistence({ taskRef: draftTaskRef, ensureDraftTask, onError: reportControllerError });
+
   const startPrompt = useCallback(async (prompt: string, attachmentIdsOverride?: readonly string[], options?: PromptSendOptions): Promise<boolean> => {
     if (!prompt.trim() || workspace === undefined) return false;
     setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setPlan(undefined); setSubagents([]);
     let failedTaskId: string | undefined;
     try {
-      const isNewTask = task === undefined;
-      let activeTask = task ?? await createTask(prompt);
+      await flushDraft();
+      const existingTask = task ?? draftTaskRef.current;
+      const isNewTask = existingTask === undefined;
+      let activeTask = existingTask ?? await createTask(prompt);
       failedTaskId = activeTask.id;
       draftTaskRef.current = activeTask;
       const attachmentIds = [...(attachmentIdsOverride ?? activeTask.draftAttachmentIds)];
@@ -431,7 +444,7 @@ export function useWorkspaceController() {
       return false;
     }
     finally { setBusy(false); }
-  }, [createTask, loadActivities, reloadTasks, selectedModel, task, workspace]);
+  }, [createTask, flushDraft, loadActivities, reloadTasks, selectedModel, task, workspace]);
   const enqueuePrompt = useCallback(async (prompt: string, options?: PromptSendOptions) => {
     const activeTask = draftTaskRef.current ?? task;
     if (!activeTask) return;
@@ -515,21 +528,6 @@ export function useWorkspaceController() {
     setApproval(undefined);
   }, [approval, workspace]);
   const respondTrust = useCallback(async (trusted: boolean) => { if (!trust || workspace === undefined) return; await window.lotagate.agent.trustRespond(workspace.rootPath, { trustRequestId: trust.trustRequestId, trusted }); if (trusted) { const updated = await window.lotagate.workspaces.trust(workspace.id, true); setWorkspace(updated); setWorkspaces(current => current.map(item => item.id === updated.id ? updated : item)); } setTrust(undefined); }, [trust, workspace]);
-  const ensureDraftTask = useCallback(async (): Promise<Task | undefined> => {
-    if (task) { draftTaskRef.current = task; return task; }
-    if (draftTaskRef.current) return draftTaskRef.current;
-    if (workspace === undefined) return undefined;
-    if (draftTaskPromiseRef.current) return draftTaskPromiseRef.current;
-    const promise = window.lotagate.tasks.create({ workspaceId: workspace.id, title: 'New chat' }).then(created => {
-      draftTaskRef.current = created;
-      setTasks(current => current.some(item => item.id === created.id) ? current : [created, ...current]);
-      setTask(created);
-      return created;
-    }).finally(() => { draftTaskPromiseRef.current = undefined; });
-    draftTaskPromiseRef.current = promise;
-    return promise;
-  }, [task, workspace]);
-  const updateDraft = useCallback(async (draft: string) => { const activeTask = await ensureDraftTask(); if (!activeTask) return; const next = await window.lotagate.tasks.update(activeTask.id, { draft }); draftTaskRef.current = next; setTask(next); }, [ensureDraftTask]);
   const appendDraftAttachment = useCallback(async (artifact: Artifact) => {
     const activeTask = draftTaskRef.current ?? task;
     if (!activeTask || activeTask.draftAttachmentIds.includes(artifact.id)) return;

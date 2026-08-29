@@ -18,14 +18,14 @@ describe('WorkedForDetails', () => {
     expect(screen.getByText('I’ll inspect the workspace with List files.')).toBeVisible();
   });
 
-  it('does not repeat a completed tool below its completed status', () => {
+  it('keeps a completed tool in Worked For after the live status changes', () => {
     render(<WorkedForDetails statusText="shell.exec · completed" progressActivities={[]} toolActivities={[
       toolActivity('tool-start', 'Running shell.exec.', { actionId: 'action-1', toolName: 'shell.exec', displayName: 'shell.exec' }),
       toolActivity('tool-complete', 'shell.exec completed.', { actionId: 'action-1', toolName: 'shell.exec', displayName: 'shell.exec', status: 'completed' }),
     ]} />);
 
     expect(screen.getByText('shell.exec · completed')).toBeInTheDocument();
-    expect(screen.queryByText('Ran shell.exec')).not.toBeInTheDocument();
+    expect(screen.getByText('Ran command')).toBeInTheDocument();
   });
 
   it('uses the same tool name for the running label', () => {
@@ -33,6 +33,14 @@ describe('WorkedForDetails', () => {
       toolActivity('tool-start', 'Running filesystem.list.', { actionId: 'action-2', toolName: 'filesystem.list', displayName: 'filesystem.list' }),
     ]} />);
 
-    expect(screen.getByText('Run filesystem.list')).toBeInTheDocument();
+    expect(screen.getByText('Run List files')).toBeInTheDocument();
+  });
+
+  it('uses the canonical formatter for MCP tools', () => {
+    render(<WorkedForDetails progressActivities={[]} toolActivities={[
+      toolActivity('mcp-start', 'Running mcp__tavily__tavily_search.', { actionId: 'action-3', toolName: 'mcp__tavily__tavily_search', displayName: 'mcp__tavily__tavily_search' }),
+    ]} />);
+
+    expect(screen.getByText('Run Tavily Search')).toBeInTheDocument();
   });
 });

@@ -11,4 +11,11 @@ describe('workspace controller activity merging', () => {
 
     expect(mergeActivities([streaming], [persisted])).toEqual([persisted]);
   });
+
+  it('removes the live placeholder when persistence uses its own streaming id', () => {
+    const streaming = activity('streaming:task-1:turn-1', 'The response');
+    const persisted = activity('streaming:persisted-id', 'The response');
+
+    expect(mergeActivities([streaming], [persisted])).toEqual([persisted]);
+  });
 });

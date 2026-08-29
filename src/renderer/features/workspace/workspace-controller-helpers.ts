@@ -51,12 +51,16 @@ export function readMediaPaths(value: unknown, fallbackText = ''): string[] {
 export function mergeActivities(current: readonly Activity[], incoming: readonly Activity[]): Activity[] {
   const byId = new Map(current.map(activity => [activity.id, activity]));
   for (const activity of incoming) byId.set(activity.id, activity);
-  const persistedAssistantKeys = new Set(incoming.filter(activity => activity.kind === 'assistant' && !isStreamingActivity(activity)).map(activity => assistantActivityKey(activity)));
-  for (const [id, activity] of byId) if (isStreamingActivity(activity) && persistedAssistantKeys.has(assistantActivityKey(activity))) byId.delete(id);
+  const persistedAssistantKeys = new Set(incoming.filter(activity => activity.kind === 'assistant').map(activity => assistantActivityKey(activity)));
+  for (const [id, activity] of byId) if (isLiveStreamingActivity(activity) && persistedAssistantKeys.has(assistantActivityKey(activity))) byId.delete(id);
   return [...byId.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
 }
 
-function isStreamingActivity(activity: Activity): boolean { return activity.kind === 'assistant' && activity.id.startsWith('streaming:'); }
+function isLiveStreamingActivity(activity: Activity): boolean {
+  if (activity.kind !== 'assistant') return false;
+  const segment = readString(activity.metadata['segmentId']) ?? readTurnId(activity) ?? 'active';
+  return activity.id === `streaming:${activity.taskId}:${segment}`;
+}
 function assistantActivityKey(activity: Activity): string { return `${activity.taskId}:${readString(activity.metadata['segmentId']) ?? readTurnId(activity) ?? 'active'}`; }
 function readTurnId(activity: Activity): string | undefined { const value = activity.metadata['turnId']; return typeof value === 'string' && value.length > 0 ? value : undefined; }
 function readString(value: unknown): string | undefined { return typeof value === 'string' && value.length > 0 ? value : undefined; }

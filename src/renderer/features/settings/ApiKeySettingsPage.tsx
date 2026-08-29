@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, Field, Modal, TextInput, useToast } from '../../components/ui.js';
 import { toUserErrorMessage } from '../../utils/errors.js';
-import { AUTH_STATUS_ACTION, readApiKeyStatus, removeApiKey, saveApiKey } from './api-key-command-client.js';
+import { readApiKeyStatus, removeApiKey, saveApiKey } from './api-key-command-client.js';
 
 export function ApiKeySettingsPage({ cwd }: { cwd?: string }) {
   const [apiKey, setApiKey] = useState('');
