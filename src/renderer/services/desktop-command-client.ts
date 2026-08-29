@@ -4,6 +4,9 @@ export interface DesktopCommandInvocation {
   actionId: string;
   positionals: string[];
   options: Record<string, string | boolean>;
+  secrets?: {
+    apiKey?: string;
+  };
 }
 
 export interface DesktopCommandDescriptor {

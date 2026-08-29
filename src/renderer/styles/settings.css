@@ -87,6 +87,9 @@
 .settings-form-actions { display: flex; justify-content: flex-end; border-top: 1px solid var(--color-border-subtle); padding-top: 14px; }
 .settings-form-actions .button { min-width: 120px; }
 .settings-warning strong { color: var(--color-text-secondary); font-weight: 600; }
+.api-key-settings-page { display: grid; gap: 20px; width: min(720px, 100%); margin: 55px auto; }
+.api-key-settings-page .settings-form-card { gap: 20px; }
+.settings-form-error { margin: 0; color: var(--color-danger); font-size: 12px; line-height: 1.45; }
 @media (max-width: 760px) { .settings-card-grid { grid-template-columns: 1fr; } .settings-form-card-wide { grid-column: auto; } .settings-feature-intro { display: grid; } .settings-status { justify-self: start; } }
 .settings-empty { max-width: 720px; margin: 70px auto; }
 .workspace-trust-path { overflow-wrap: anywhere; margin: -4px 18px 18px; border: 1px solid var(--color-border); border-radius: 6px; padding: 9px 10px; color: var(--color-text-tertiary); font-size: 12px; }

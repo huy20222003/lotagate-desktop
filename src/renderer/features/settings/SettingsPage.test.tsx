@@ -15,7 +15,7 @@ describe('SettingsPage', () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
   it.each([
-    ['profile', 'Profile'], ['billing', 'Billing'], ['appearance', 'Appearance'], ['keyboard-shortcuts', 'Keyboard shortcuts'],
+    ['profile', 'Profile'], ['api-key', 'API key'], ['billing', 'Billing'], ['appearance', 'Appearance'], ['keyboard-shortcuts', 'Keyboard shortcuts'],
     ['automation', 'Automations'], ['browser', 'Browser'], ['sandbox', 'Sandbox'], ['hook', 'Hooks'], ['skill', 'Skills'], ['plugin', 'Plugins'], ['mcp', 'MCP'],
   ] as Array<[SettingsSection, string]> )('routes the %s settings section', async (section, title) => {
     installBridge();
