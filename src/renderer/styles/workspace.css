@@ -92,7 +92,6 @@
 .workspace-skeleton-line { width: 130px; }
 .session-skeleton-line { width: 170px; margin-left: 33px; }
 .danger-menu { color: var(--color-danger) !important; }
-.connected-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--color-success); }
 .conversation { position: relative; display: flex; height: 100vh; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; }
 .conversation-body { position: relative; display: flex; min-height: 0; flex: 1; }
 .conversation-header { display: flex; height: 64px; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--color-border); padding: 0 24px; }
@@ -422,7 +421,7 @@
 .prompt-input { resize: none; }
 .sidebar-empty { padding: 8px; color: var(--color-text-tertiary); font-size: 12px; }
 .toast-region { position: fixed; top: 18px; right: 18px; z-index: 20; display: grid; width: min(360px, calc(100vw - 36px)); gap: 8px; }
-.toast { display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 10px; border: 1px solid var(--color-border); border-radius: 8px; padding: 11px 10px 11px 12px; background: var(--color-surface-elevated); box-shadow: 0 15px 35px var(--shadow-card); color: var(--color-text); font-size: 12px; }
+.toast { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; border: 1px solid var(--color-border); border-radius: 8px; padding: 11px 10px 11px 12px; background: var(--color-surface-elevated); box-shadow: 0 15px 35px var(--shadow-card); color: var(--color-text); font-size: 12px; }
 .toast strong { display: block; font-size: 12px; font-weight: 600; }
 .toast p { margin: 4px 0 0; color: var(--color-text-soft); line-height: 1.4; }
 .toast-success > svg { color: var(--color-success); }

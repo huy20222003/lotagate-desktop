@@ -25,6 +25,8 @@ import { TerminalPanel } from './TerminalPanel.js';
 import { SourcesDrawer } from './SourcesDrawer.js';
 import { BrowserPanel } from './BrowserPanel.js';
 import { useResizableSidePanel } from './use-resizable-panel.js';
+import { ApiKeyPromptModal } from '../settings/ApiKeyPromptModal.js';
+import { readApiKeyStatus } from '../settings/api-key-command-client.js';
 
 export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLoggedOut: () => void }) {
   const controller = useWorkspaceController();
@@ -57,7 +59,8 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   const hasRenderedActivities = useRef(false);
   const followLatestRef = useRef(true);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
+  const [apiKeyPromptOpen, setApiKeyPromptOpen] = useState(false);
+  const apiKeyCheckCwdRef = useRef<string>();
   const openWorkspacePicker = useCallback(async () => {
     try {
       const rootPath = await window.lotagate.workspaces.pickFolder();
@@ -154,6 +157,16 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
     };
   }, [controller.task?.id, settingsOpen]);
   useEffect(() => {
+    const cwd = controller.workspace?.rootPath;
+    if (!cwd || apiKeyCheckCwdRef.current === cwd) return;
+    apiKeyCheckCwdRef.current = cwd;
+    let cancelled = false;
+    void readApiKeyStatus(cwd).then(authenticated => {
+      if (!cancelled && !authenticated) setApiKeyPromptOpen(true);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [controller.workspace?.rootPath]);
+  useEffect(() => {
     if (settingsOpen) return;
     const viewport = threadViewportRef.current;
     if (!viewport) return;
@@ -202,7 +215,11 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
     };
     window.requestAnimationFrame(syncAfterScroll);
   }, []);
-  async function confirmLogout() { setLoggingOut(true); try { await window.lotagate.auth.logout(); onLoggedOut(); } finally { setLoggingOut(false); setLogoutOpen(false); } }
+  async function confirmLogout() {
+    onLoggedOut();
+    try { await window.lotagate.auth.logout(); } catch { /* Local logout is already complete; the server error is intentionally hidden. */ }
+    success('Signed out');
+  }
   const accountName = user.fullName ?? user.username ?? user.email;
   const avatarProps = user.avatarUrl ? { name: accountName, src: user.avatarUrl } : { name: accountName };
   const openChanges = useCallback((summary: FileChangeSummary) => { setChangesSummary(summary); setSourcesOpen(false); setBrowserOpen(false); setGitOpen(false); setChangesOpen(true); }, []);
@@ -230,12 +247,13 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
          {!isWelcomeState && gitOpen && controller.workspace ? <GitPanel cwd={controller.workspace.rootPath} onClose={() => setGitOpen(false)} /> : null}
       </div>
     </main>
-    {logoutOpen ? <Modal title="Sign out of LotaGate" onClose={() => setLogoutOpen(false)}><p className="modal-copy">Your server session will be cleared. Local task records remain available.</p><div className="modal-actions"><Button variant="secondary" onClick={() => setLogoutOpen(false)}>Cancel</Button><Button variant="danger" onClick={confirmLogout} disabled={loggingOut}>{loggingOut ? 'Signing out…' : 'Sign out'}</Button></div></Modal> : null}
+    {logoutOpen ? <Modal title="Sign out of LotaGate" onClose={() => setLogoutOpen(false)}><p className="modal-copy">Your server session will be cleared. Local task records remain available.</p><div className="modal-actions"><Button variant="secondary" onClick={() => setLogoutOpen(false)}>Cancel</Button><Button variant="danger" onClick={confirmLogout}>Sign out</Button></div></Modal> : null}
     {renameTarget ? <Modal title="Edit workspace" onClose={() => setRenameTarget(undefined)}><div className="modal-form"><Field label="Display name" required error={workspaceNameError}><TextInput value={workspaceName} onChange={event => setWorkspaceName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void saveWorkspaceName(); }} autoFocus /></Field></div><div className="modal-actions"><Button variant="secondary" onClick={() => setRenameTarget(undefined)}>Cancel</Button><Button variant="primary" onClick={() => void saveWorkspaceName()} disabled={workspaceActionBusy || workspaceNameError !== undefined}>{workspaceActionBusy ? 'Saving…' : 'Save'}</Button></div></Modal> : null}
     {renameSessionTarget ? <Modal title="Rename session" onClose={() => setRenameSessionTarget(undefined)}><div className="modal-form"><Field label="Session name" required error={sessionNameError}><TextInput value={sessionName} onChange={event => setSessionName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void saveSessionName(); }} autoFocus /></Field></div><div className="modal-actions"><Button variant="secondary" onClick={() => setRenameSessionTarget(undefined)}>Cancel</Button><Button variant="primary" onClick={() => void saveSessionName()} disabled={workspaceActionBusy || sessionNameError !== undefined}>{workspaceActionBusy ? 'Saving…' : 'Save'}</Button></div></Modal> : null}
     {removeTarget ? <Modal title="Remove workspace" onClose={() => setRemoveTarget(undefined)}><p className="modal-copy">Are you want to remove <strong>{removeTarget.name}</strong> workspace?</p><div className="modal-actions"><Button variant="secondary" onClick={() => setRemoveTarget(undefined)}>Cancel</Button><Button variant="danger" onClick={() => void confirmRemove()} disabled={workspaceActionBusy}>{workspaceActionBusy ? 'Removing…' : 'Remove workspace'}</Button></div></Modal> : null}
     {archiveTarget ? <Modal title="Archive session" onClose={() => setArchiveTarget(undefined)}><p className="modal-copy">Are you want to archive session <strong>{archiveTarget.title}</strong></p><div className="modal-actions"><Button variant="secondary" onClick={() => setArchiveTarget(undefined)}>Cancel</Button><Button variant="danger" onClick={() => void confirmArchive()} disabled={workspaceActionBusy}>{workspaceActionBusy ? 'Archiving…' : 'Archive session'}</Button></div></Modal> : null}
     {pendingWorkspacePath ? <Modal title="Trust workspace" onClose={() => setPendingWorkspacePath(undefined)}><p className="modal-copy">Allow LotaGate to use tools in this workspace?</p><p className="workspace-trust-path">{pendingWorkspacePath}</p><div className="modal-actions"><Button variant="secondary" onClick={() => setPendingWorkspacePath(undefined)}>Cancel</Button><Button variant="primary" onClick={() => void confirmAddWorkspace()} disabled={workspaceActionBusy}>{workspaceActionBusy ? 'Adding…' : 'Trust and add'}</Button></div></Modal> : null}
+    {apiKeyPromptOpen && controller.workspace ? <ApiKeyPromptModal cwd={controller.workspace.rootPath} onClose={() => setApiKeyPromptOpen(false)} onSaved={() => setApiKeyPromptOpen(false)} /> : null}
     {lightboxImage?.dataUrl ? <ImageLightbox src={lightboxImage.dataUrl} alt={lightboxImage.name} downloadName={lightboxImage.name} onClose={() => setLightboxImage(undefined)} /> : null}
   </div>;
 }

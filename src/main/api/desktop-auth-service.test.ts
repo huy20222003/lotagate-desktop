@@ -64,4 +64,15 @@ describe('DesktopAuthService.logout', () => {
     await expect(service.logout()).rejects.toThrow('Unavailable');
     expect(transport.clearSession).toHaveBeenCalledOnce();
   });
+
+  it('treats an expired access token as an already completed logout', async () => {
+    const transport = {
+      request: vi.fn().mockRejectedValue(new DesktopApiError(401, 'Invalid or expired access token.')),
+      clearSession: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ApiTransport;
+    const service = new DesktopAuthService(transport);
+
+    await expect(service.logout()).resolves.toBeUndefined();
+    expect(transport.clearSession).toHaveBeenCalledOnce();
+  });
 });

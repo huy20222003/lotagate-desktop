@@ -48,6 +48,11 @@ export class DesktopAuthService {
     try {
       await this.stopAgents?.();
       await this.transport.request(API_PATHS.logout, 'POST');
+    } catch (error) {
+      // Logout is idempotent from the Desktop user's perspective. If the
+      // access token is already expired or invalid, the server session is no
+      // longer usable and local logout should still complete successfully.
+      if (!(error instanceof DesktopApiError) || error.status !== 401) throw error;
     } finally {
       await this.transport.clearSession();
     }

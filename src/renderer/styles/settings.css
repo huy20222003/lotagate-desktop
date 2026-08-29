@@ -84,7 +84,7 @@
 .settings-directory-control .text-input { min-width: 0; flex: 1; }
 .settings-directory-control .button { flex: 0 0 auto; min-height: 38px; }
 .settings-warning { border: 1px solid var(--color-border); border-radius: 7px; padding: 10px 12px; color: var(--color-text-tertiary); font-size: 11px; line-height: 1.5; }
-.settings-form-actions { display: flex; justify-content: flex-end; border-top: 1px solid var(--color-border-subtle); padding-top: 14px; }
+.settings-form-actions { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--color-border-subtle); padding-top: 14px; }
 .settings-form-actions .button { min-width: 120px; }
 .settings-warning strong { color: var(--color-text-secondary); font-weight: 600; }
 .api-key-settings-page { display: grid; gap: 20px; width: min(720px, 100%); margin: 55px auto; }

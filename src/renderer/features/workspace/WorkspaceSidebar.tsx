@@ -1,5 +1,5 @@
 import { useEffect, useRef, type KeyboardEventHandler, type PointerEventHandler } from 'react';
-import { Blocks, ChevronDown, CirclePlus, Clock3, Folder, PanelLeftClose, PanelLeftOpen, Pencil, Settings, ShieldCheck, X } from 'lucide-react';
+import { Blocks, ChevronDown, CirclePlus, Clock3, Folder, PanelLeftClose, PanelLeftOpen, Pencil, Settings, X } from 'lucide-react';
 import type { Task, Workspace } from '../../../contracts/ipc/v1/workspace.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
 import { Avatar, Button, Icon, IconButton, Skeleton } from '../../components/ui.js';
@@ -39,7 +39,7 @@ export function WorkspaceSidebar({ accountName, avatarProps, workspaces, activeW
     </Scrollbar>
     <div ref={accountRef} className="account-area">
       {loading ? <div className="account-loading"><Skeleton className="sidebar-avatar-skeleton" /><Skeleton className="sidebar-account-skeleton" /></div> : <button className="account-button" onClick={onAccount} aria-expanded={accountOpen}><Avatar {...avatarProps} /><span className="account-copy"><strong>{accountName}</strong></span><Icon icon={ChevronDown} size={14} className={`account-chevron ${accountOpen ? 'open' : ''}`} /></button>}
-      {accountOpen ? <div className="account-menu"><button onClick={onSettings}><Icon icon={Settings} size={14} /> Settings</button><button><Icon icon={ShieldCheck} size={14} /> Connection status <span className="connected-dot" /></button><button className="danger-menu" onClick={onLogout}><Icon icon={X} size={14} /> Sign out</button></div> : null}
+      {accountOpen ? <div className="account-menu"><button onClick={onSettings}><Icon icon={Settings} size={14} /> Settings</button><button className="danger-menu" onClick={onLogout}><Icon icon={X} size={14} /> Sign out</button></div> : null}
     </div>
   </aside>;
 }

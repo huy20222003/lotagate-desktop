@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../components/ui.js';
 import { ApiKeySettingsPage } from './ApiKeySettingsPage.js';
@@ -30,6 +30,7 @@ describe('ApiKeySettingsPage', () => {
     render(<ToastProvider><ApiKeySettingsPage cwd="C:\workspace" /></ToastProvider>);
 
     await waitFor(() => expect(screen.getByText('Not configured')).toBeVisible());
+    expect(screen.getByText('Not configured')).toHaveClass('badge-warning');
     fireEvent.change(screen.getByPlaceholderText('Paste your API key'), { target: { value: 'sk-desktop-secret-1234' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -40,6 +41,10 @@ describe('ApiKeySettingsPage', () => {
       secrets: { apiKey: 'sk-desktop-secret-1234' },
     })));
     await waitFor(() => expect(screen.getByText('Configured')).toBeVisible());
+    expect(screen.getByText('Configured')).toHaveClass('badge-success');
+    const actions = within(document.querySelector('.settings-form-actions')!);
+    expect(actions.getAllByRole('button').map(button => button.textContent)).toEqual(['Remove']);
+    expect(screen.queryByPlaceholderText('Paste your API key')).not.toBeInTheDocument();
   });
 
   it('confirms before removing the default API key', async () => {
