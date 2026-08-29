@@ -76,6 +76,10 @@ export class TaskStore {
     });
   }
 
+  async completeAssistantSegment(taskId: string, segmentId: string, phase: 'progress' | 'final'): Promise<Activity | undefined> {
+    return this.withExclusive(() => this.activityStore.completeAssistantSegment(taskId, segmentId, phase));
+  }
+
   private async appendActivityInternal(taskId: string, kind: Activity['kind'], text: string, metadata: Record<string, unknown>): Promise<Activity> {
     const activity = activitySchema.parse({ id: randomUUID(), taskId, kind, text, metadata, createdAt: new Date().toISOString() });
     await this.activityStore.append(activity);

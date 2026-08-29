@@ -28,8 +28,10 @@
 .file-change-item > header strong, .file-change-path { min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--color-text-secondary); font-family: var(--font-code, ui-monospace, SFMono-Regular, Consolas, monospace); font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .file-change-path { border: 0; padding: 0; background: transparent; }
 .file-change-path:hover { color: var(--color-text-link-hover); text-decoration: underline; }
-.file-change-item > header span { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 3px; color: var(--color-success); font-size: 11px; }
-.file-change-item > header span svg:last-of-type { margin-left: 5px; color: var(--color-danger); }
+.file-change-counts { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; font-size: 11px; }
+.file-change-counts > span { display: inline-flex; align-items: center; gap: 3px; }
+.file-change-counts .change-additions { color: var(--color-success); }
+.file-change-counts .change-deletions { color: var(--color-danger); }
 .file-change-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 1px; }
 .file-change-actions .agent-copy-button { margin: 0; }
 .file-change-item pre { margin: 0; padding: 7px 0; background: var(--color-canvas); color: var(--color-text-secondary); font: 11px/1.55 var(--font-code, ui-monospace, SFMono-Regular, Consolas, monospace); }
@@ -37,8 +39,8 @@
 .unified-diff-scroll .scrollbar-viewport { height: auto; max-height: inherit; overflow: auto; }
 .diff-line { display: grid; grid-template-columns: 42px minmax(0, 1fr); padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .diff-line-number { color: var(--color-scrollbar-strong); text-align: right; user-select: none; }
-.diff-addition { background: var(--color-success-fill); box-shadow: inset 3px 0 var(--color-success); color: var(--color-text-code-success); }
-.diff-deletion { background: var(--color-danger-fill); box-shadow: inset 3px 0 var(--color-danger); color: var(--color-text-danger-soft); }
+.diff-addition { background: color-mix(in srgb, var(--color-success) 56%, var(--color-canvas)); box-shadow: inset 3px 0 var(--color-success); color: var(--color-text-code-success); }
+.diff-deletion { background: color-mix(in srgb, var(--color-danger) 56%, var(--color-canvas)); box-shadow: inset 3px 0 var(--color-danger); color: var(--color-text-danger-soft); }
 .diff-truncated { display: block; padding: 5px 10px; color: var(--color-text-tertiary); }
 
 .source-panel { min-width: 360px; }

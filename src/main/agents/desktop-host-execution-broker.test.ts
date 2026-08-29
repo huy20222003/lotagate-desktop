@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -23,6 +23,16 @@ describe('DesktopHostExecutionBroker', () => {
       expect(read).toMatchObject({ ok: true, result: 'hello' });
       const outside = await broker.handle(root, request('filesystem', 'filesystem.read', { path: '../outside.txt' }));
       expect(outside).toMatchObject({ ok: false, error: { code: 'HOST_EXECUTION_FAILED' } });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('lists the workspace root when the filesystem list path is omitted', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-host-list-default-'));
+    try {
+      await writeFile(join(root, 'README.md'), 'workspace file', 'utf8');
+      const broker = new DesktopHostExecutionBroker();
+      const result = await broker.handle(root, request('filesystem', 'filesystem.list', {}));
+      expect(result).toMatchObject({ ok: true, result: [{ name: 'README.md', kind: 'file' }] });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

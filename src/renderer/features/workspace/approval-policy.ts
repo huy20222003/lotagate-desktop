@@ -5,8 +5,8 @@ import { isReadOnlyCommand } from '../../../contracts/command-policy.js';
 export type { ApprovalMode } from '../../../contracts/ipc/v1/settings.js';
 
 export function shouldAutoApproveDesktop(request: Pick<DesktopApprovalRequest, 'detail' | 'displayName' | 'fallbackReason' | 'kind' | 'risk' | 'toolName'>, mode: ApprovalMode): boolean {
-  if (request.fallbackReason !== undefined || request.risk === 'elevated') return false;
   if (mode === 'auto') return true;
+  if (request.fallbackReason !== undefined || request.risk === 'elevated') return false;
   return isReadOnlyApproval(request);
 }
 

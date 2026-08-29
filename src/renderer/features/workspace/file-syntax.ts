@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { createHighlighter, createJavaScriptRegexEngine, type BundledLanguage, type SpecialLanguage, type ThemedToken } from 'shiki';
 
 export type CodeTheme = 'dark-plus' | 'light-plus';
@@ -25,4 +26,15 @@ export function languageForPath(path: string): BundledLanguage | SpecialLanguage
 export async function highlightFileContent(content: string, path: string, theme: CodeTheme): Promise<ThemedToken[][]> {
   const highlighter = await highlighterPromise;
   return highlighter.codeToTokens(content, { lang: languageForPath(path), theme, tokenizeMaxLineLength: 2_000 }).tokens;
+}
+
+export function tokenStyle(token: ThemedToken, includeBackground = true): CSSProperties {
+  const style: CSSProperties = {};
+  if (token.color !== undefined) style.color = token.color;
+  if (includeBackground && token.bgColor !== undefined) style.backgroundColor = token.bgColor;
+  const fontStyle = Number(token.fontStyle ?? 0);
+  if ((fontStyle & 1) !== 0) style.fontStyle = 'italic';
+  if ((fontStyle & 2) !== 0) style.fontWeight = 700;
+  if ((fontStyle & 4) !== 0) style.textDecoration = 'underline';
+  return style;
 }

@@ -1,5 +1,5 @@
 import { Bot, ChevronRight, ListChecks, LoaderCircle } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PlanSnapshot, SubagentSnapshot } from '../../../contracts/ipc/v1/workspace.js';
 import { OrchestrationDrawer } from './OrchestrationDrawer.js';
 import { PlanDetails } from './PlanDetails.js';
@@ -7,10 +7,13 @@ import { SubagentDetails } from './SubagentDetails.js';
 import { Tooltip } from '../../components/ui.js';
 
 export function OrchestrationPanel({ plan, subagents }: { plan?: PlanSnapshot | undefined; subagents: SubagentSnapshot[] }) {
-  const visiblePlan = plan !== undefined && plan.status !== 'completed' ? plan : undefined;
+  const visiblePlan = plan?.status === 'started' ? plan : undefined;
   const activeSubagents = subagents.filter(subagent => subagent.status === 'queued' || subagent.status === 'running');
   const [drawer, setDrawer] = useState<'plan' | string | undefined>();
   const selectedSubagent = drawer !== undefined && drawer !== 'plan' ? activeSubagents.find(subagent => subagent.id === drawer) : undefined;
+  useEffect(() => {
+    if ((drawer === 'plan' && visiblePlan === undefined) || (drawer !== undefined && drawer !== 'plan' && selectedSubagent === undefined)) setDrawer(undefined);
+  }, [drawer, selectedSubagent, visiblePlan]);
   if (visiblePlan === undefined && activeSubagents.length === 0) return null;
   const queued = activeSubagents.filter(subagent => subagent.status === 'queued');
   const createdLabel = activeSubagents.map(subagent => subagent.displayName).join(', ');

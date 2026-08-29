@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ThemedToken } from 'shiki';
 import type { Artifact } from '../../../contracts/ipc/v1/workspace.js';
 import { useTheme } from '../../theme/theme.js';
-import { highlightFileContent } from './file-syntax.js';
-import { tokenStyle } from './FileContentTab.js';
+import { highlightFileContent, tokenStyle } from './file-syntax.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
 
 export function ArtifactContentViewer({ artifact, content }: { artifact: Artifact; content: string }) {

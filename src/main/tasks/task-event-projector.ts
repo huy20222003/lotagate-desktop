@@ -28,9 +28,12 @@ export class TaskEventProjector {
     const data = event.data;
     const timing = turnTimingMarker(event.event, data);
     if (timing !== undefined) await this.tasks.appendEvent(task.id, 'context', 'Desktop turn timing marker.', { turnId: data['turnId'], [DESKTOP_TURN_TIMING_METADATA_KEY]: timing });
+    if (event.event === 'assistant.segment.completed' && typeof data['segmentId'] === 'string' && (data['phase'] === 'progress' || data['phase'] === 'final')) {
+      await this.tasks.completeAssistantSegment(task.id, data['segmentId'], data['phase']);
+    }
     const text = eventText(event.event, data);
     if (text !== undefined) {
-      const metadata = redactMetadata(data);
+      const metadata = event.event === 'assistant.delta' ? { ...redactMetadata(data), assistantPhase: 'progress' } : redactMetadata(data);
       if (event.event === 'assistant.delta') await this.tasks.appendAssistantDelta(task.id, text, metadata);
       else await this.tasks.appendEvent(task.id, activityKind(event.event), text, metadata);
     }
@@ -52,10 +55,10 @@ function eventText(event: string, data: Record<string, unknown>): string | undef
   if (event === 'assistant.delta') return typeof data['content'] === 'string' ? data['content'] : undefined;
   if (event === 'approval.requested') return `Approval requested for ${formatToolDisplayName(data['toolName'], data['displayName'])}.`;
   if (event === 'trust.requested') return `Project trust requested for ${String(data['path'] ?? 'workspace')}.`;
-  // Tool progress belongs to the live status region. Persisting it as a
-  // transcript activity makes completed/failed messages reappear at the end
-  // of an otherwise completed assistant response.
-  if (event === 'tool.started' || event === 'tool.completed') return undefined;
+  if (event === 'tool.started') return `Running ${formatToolDisplayName(data['toolName'], data['displayName'])}.`;
+  if (event === 'tool.completed') return data['isError'] === true
+    ? `${formatToolDisplayName(data['toolName'], data['displayName'])} failed.`
+    : `${formatToolDisplayName(data['toolName'], data['displayName'])} completed.`;
   if (event === 'file.changed') return 'Workspace files changed.';
   // Command output is a transport detail. The command runner creates the
   // final assistant activity after completion; persisting each output event

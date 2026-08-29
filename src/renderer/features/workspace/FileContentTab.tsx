@@ -1,14 +1,13 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, FolderOpen, LoaderCircle } from 'lucide-react';
 import type { WorkspaceFileSuggestion } from '../../../contracts/ipc/v1/workspace.js';
 import { Icon } from '../../components/ui.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
 import { FolderPopover } from './FolderPopover.js';
-import { highlightFileContent } from './file-syntax.js';
+import { highlightFileContent, tokenStyle } from './file-syntax.js';
 import type { OpenFileState } from './file-change-view.js';
 import { fileName, immediateFolderItems, relativeWorkspacePath } from './file-change-view.js';
 import { useTheme } from '../../theme/theme.js';
-import type { ThemedToken } from 'shiki';
 
 export function FileContentTab({ cwd, path, file, onOpenPath }: { cwd: string; path: string; file?: OpenFileState | undefined; onOpenPath: (path: string) => void }) {
   const [openFolder, setOpenFolder] = useState<string | undefined>();
@@ -35,15 +34,4 @@ export function FileContentTab({ cwd, path, file, onOpenPath }: { cwd: string; p
   if (file?.status === 'error') return <div className="file-content-state file-content-error"><strong>Unable to open file</strong><span>{file.error}</span></div>;
   const lines = (file?.content ?? '').replaceAll('\r\n', '\n').split('\n');
   return <div className="file-content-view"><div ref={folderRef} className="file-content-breadcrumb-wrap"><Scrollbar axis="horizontal" className="file-content-breadcrumb-scrollbar"><nav className="file-content-breadcrumb" aria-label="File path">{breadcrumb.map((item, index) => <span className="file-content-breadcrumb-item" key={item.path || item.label}>{index > 0 ? <ChevronRight size={13} aria-hidden="true" /> : null}{index < breadcrumb.length - 1 ? <button type="button" className="file-content-breadcrumb-button" aria-expanded={openFolder === item.path} onClick={() => setOpenFolder(current => current === item.path ? undefined : item.path)}>{index === 0 ? <FolderOpen size={14} /> : null}<span>{item.label}</span></button> : <span className="file-content-breadcrumb-current">{item.label}</span>}</span>)}</nav></Scrollbar>{openFolder !== undefined ? <FolderPopover items={folderItems} loading={folderLoading} onOpenFolder={setOpenFolder} onOpenFile={pathValue => { setOpenFolder(undefined); onOpenPath(pathValue); }} /> : null}</div><Scrollbar className="file-content-scroll"><pre className="file-content">{lines.map((line, index) => <code className="file-content-line" key={`${path}:${index}`}><span className="file-content-line-number">{index + 1}</span><span>{highlightedLines?.[index]?.map((token, tokenIndex) => <span key={`${path}:${index}:${tokenIndex}`} style={tokenStyle(token)}>{token.content}</span>) ?? (line || ' ')}</span></code>)}</pre></Scrollbar></div>;
-}
-
-export function tokenStyle(token: ThemedToken): CSSProperties {
-  const style: CSSProperties = {};
-  if (token.color !== undefined) style.color = token.color;
-  if (token.bgColor !== undefined) style.backgroundColor = token.bgColor;
-  const fontStyle = Number(token.fontStyle ?? 0);
-  if ((fontStyle & 1) !== 0) style.fontStyle = 'italic';
-  if ((fontStyle & 2) !== 0) style.fontWeight = 700;
-  if ((fontStyle & 4) !== 0) style.textDecoration = 'underline';
-  return style;
 }

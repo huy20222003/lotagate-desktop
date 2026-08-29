@@ -29,6 +29,19 @@ describe('ActivityLogStore', () => {
     expect((await reloaded.read())[0]?.text).toBe('seed hello world');
   });
 
+  it('persists and replays assistant segment completion metadata', async () => {
+    const directory = await createTemporaryDirectory();
+    const path = join(directory, 'activities.jsonl');
+    const store = new ActivityLogStore(path);
+    await store.append({ ...activity('assistant-1', 'Final'), metadata: { turnId: 'turn-1', segmentId: 'run-1:1', assistantPhase: 'progress' } });
+
+    await store.completeAssistantSegment('task-1', 'run-1:1', 'final');
+
+    expect((await store.read())[0]?.metadata['assistantPhase']).toBe('final');
+    const reloaded = new ActivityLogStore(path);
+    expect((await reloaded.read())[0]?.metadata['assistantPhase']).toBe('final');
+  });
+
   it('serializes concurrent appends without losing records', async () => {
     const directory = await createTemporaryDirectory();
     const store = new ActivityLogStore(join(directory, 'activities.jsonl'));

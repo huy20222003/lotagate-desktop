@@ -11,6 +11,10 @@ describe('approval policy', () => {
     expect(shouldAutoApproveDesktop(request({ detail: { command: 'Remove-Item output.txt' } }), 'auto')).toBe(true);
   });
 
+  it('automatically approves a sandbox fallback in approve-for-me mode', () => {
+    expect(shouldAutoApproveDesktop(request({ risk: 'elevated', executionBoundary: 'sandbox', fallbackReason: 'The sandbox is unavailable.' }), 'auto')).toBe(true);
+  });
+
   it('allows read-only commands without prompting in ask mode', () => {
     expect(shouldAutoApproveDesktop(request(), 'ask')).toBe(true);
   });

@@ -20,6 +20,7 @@ function createProjector(task: Task) {
     update: vi.fn(async (_taskId: string, patch: Partial<Task>) => ({ ...task, ...patch })),
     appendEvent: vi.fn(async () => task),
     appendAssistantDelta: vi.fn(async () => task),
+    completeAssistantSegment: vi.fn(async () => task),
   } as unknown as TaskStore;
   return { projector: new TaskEventProjector(tasks), tasks };
 }
@@ -47,10 +48,17 @@ describe('TaskEventProjector turn lifecycle', () => {
     expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Agent context was compacted.', expect.objectContaining({ sessionId: 'session-1', turnId: 'turn-1' }));
   });
 
-  it('does not persist transient tool progress in the conversation transcript', async () => {
+  it('persists tool progress outside the conversation transcript', async () => {
     const { projector, tasks } = createProjector(createTask());
     await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'tool.completed', data: { sessionId: 'session-1', toolName: 'browser.newTab', displayName: 'browser.newTab', isError: true } });
-    expect(tasks.appendEvent).not.toHaveBeenCalled();
+    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'tool', 'Open new tab failed.', expect.objectContaining({ sessionId: 'session-1', toolName: 'browser.newTab', isError: true }));
+  });
+
+  it('finalizes a persisted assistant segment without adding transcript text', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'assistant.segment.completed', data: { sessionId: 'session-1', turnId: 'turn-1', segmentId: 'run-1:1', phase: 'final' } });
+    expect(tasks.completeAssistantSegment).toHaveBeenCalledWith('task-1', 'run-1:1', 'final');
+    expect(tasks.appendEvent).not.toHaveBeenCalledWith('task-1', 'assistant', expect.anything(), expect.anything());
   });
 
   it('does not persist command output in the conversation transcript', async () => {

@@ -14,16 +14,29 @@ export function mergeChatActivities(activities: Activity[]): Activity[] {
   const transcript: Activity[] = [];
   for (const activity of activities) {
     if (activity.kind !== 'user' && activity.kind !== 'assistant' && activity.kind !== 'error') continue;
+    if (isAssistantProgressActivity(activity)) continue;
     if (isTransientSystemActivity(activity)) continue;
     const previous = transcript[transcript.length - 1];
     const currentTurnId = readTurnId(activity);
     const previousTurnId = previous === undefined ? undefined : readTurnId(previous);
-    if (currentTurnId !== undefined && currentTurnId === previousTurnId && (activity.kind === 'assistant' || activity.kind === 'error') && previous?.kind === 'assistant') {
+    const currentSegmentId = readSegmentId(activity);
+    const previousSegmentId = previous === undefined ? undefined : readSegmentId(previous);
+    const sameSegment = activity.kind === 'error' || currentSegmentId === previousSegmentId;
+    if (currentTurnId !== undefined && currentTurnId === previousTurnId && sameSegment && (activity.kind === 'assistant' || activity.kind === 'error') && previous?.kind === 'assistant') {
       const separator = activity.kind === 'error' ? `\n\n${activity.text}` : activity.text;
       transcript[transcript.length - 1] = { ...previous, text: `${previous.text}${separator}`, metadata: { ...previous.metadata, ...activity.metadata } };
     } else transcript.push(activity);
   }
   return transcript;
+}
+
+export function isAssistantProgressActivity(activity: Activity): boolean {
+  return activity.kind === 'assistant' && activity.metadata['assistantPhase'] === 'progress';
+}
+
+export function readSegmentId(activity: Activity): string | undefined {
+  const value = activity.metadata['segmentId'];
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function isTransientSystemActivity(activity: Activity): boolean {

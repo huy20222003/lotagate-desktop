@@ -57,8 +57,9 @@ export function mergeActivities(current: readonly Activity[], incoming: readonly
 }
 
 function isStreamingActivity(activity: Activity): boolean { return activity.kind === 'assistant' && activity.id.startsWith('streaming:'); }
-function assistantActivityKey(activity: Activity): string { return `${activity.taskId}:${readTurnId(activity) ?? 'active'}`; }
+function assistantActivityKey(activity: Activity): string { return `${activity.taskId}:${readString(activity.metadata['segmentId']) ?? readTurnId(activity) ?? 'active'}`; }
 function readTurnId(activity: Activity): string | undefined { const value = activity.metadata['turnId']; return typeof value === 'string' && value.length > 0 ? value : undefined; }
+function readString(value: unknown): string | undefined { return typeof value === 'string' && value.length > 0 ? value : undefined; }
 
 export async function discardQueuedAttachments(taskId: string | undefined, messages: readonly QueuedMessage[], activities: readonly Activity[], protectedAttachmentIds: readonly string[]): Promise<void> {
   if (taskId === undefined) return;

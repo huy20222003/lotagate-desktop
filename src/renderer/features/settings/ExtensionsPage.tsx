@@ -24,7 +24,10 @@ export function ExtensionsPage({ kind, cwd, trusted = false }: { kind: Extension
   const contextKey = `${cwd ?? ''}:${kind}:${trusted ? 'trusted' : 'untrusted'}`;
   const contextKeyRef = useRef(contextKey);
   contextKeyRef.current = contextKey;
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const reload = useCallback(async () => {
     const requestId = ++requestRef.current;
     const requestContext = contextKey;

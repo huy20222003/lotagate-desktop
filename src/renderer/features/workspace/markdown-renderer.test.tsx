@@ -21,6 +21,16 @@ describe('agent markdown renderer', () => {
     expect(screen.getByText('First item').closest('.agent-markdown')).toBeInTheDocument();
   });
 
+  it('keeps a fenced code block embedded in a Markdown file response together', () => {
+    const content = ['Nội dung của file test.md như sau:', '', '```markdown', 'hello', '', '```javascript', 'function total(arr) {', '  return arr.reduce((acc, value) => acc + value, 0);', '}', '```', ''].join('\n');
+    render(<AgentMarkdown content={content} />);
+
+    expect(screen.getByText('markdown')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Copy code' })).toHaveLength(1);
+    expect(screen.queryByText('Plain text')).not.toBeInTheDocument();
+    expect(screen.getByText(/```javascript/u)).toBeInTheDocument();
+  });
+
   it('renders known media paths as clickable file links', () => {
     const path = 'D:\\workspace\\images\\generated.png';
     render(<AgentMarkdown content={`Generated image saved:\n  ${path}`} filePaths={[path]} />);

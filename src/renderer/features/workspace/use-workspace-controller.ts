@@ -14,11 +14,12 @@ import { extractWorkspaceModels, type WorkspaceModelOption } from './model-catal
 import { toUserErrorMessage as toMessage } from '../../utils/errors.js';
 import { agentStatusForEvent, commandStatusForAction } from './agent-status.js';
 import { turnTimingsFromActivities } from './turn-timings.js';
-import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, reconcilePendingAssistantStreams, type PendingAssistantStream } from './streaming-activity.js';
+import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, markAssistantSegmentPhase, reconcilePendingAssistantStreams, type PendingAssistantStream } from './streaming-activity.js';
 import { discardQueuedAttachments, extractSessionId, extractTurnId, loadActivityArtifactPreviews, loadActivityAttachmentPreviews, loadAttachmentPreviews, mergeActivities } from './workspace-controller-helpers.js';
 import { allowsUnscopedTaskFallback } from './agent-event-routing.js';
 import { persistDesktopCommandResult } from './desktop-command-result-persistence.js';
 import { cancelWorkspaceTask } from './cancel-workspace-task.js';
+import { useDeferredStatePublisher } from './deferred-state-publisher.js';
 
 type ContextCompactionPhase = 'compacting' | 'compacted' | 'failed';
 
@@ -93,6 +94,7 @@ export function useWorkspaceController() {
   const showContextCompactionStatus = useCallback((phase: ContextCompactionPhase | undefined) => {
     setContextCompactionStatus(phase);
   }, []);
+  const publishActivities = useDeferredStatePublisher(setActivities);
 
   const reloadTasks = useCallback(async (workspaceId: string) => {
     const requestId = ++taskReloadRequestRef.current;
@@ -166,7 +168,7 @@ export function useWorkspaceController() {
     if (requestId === activityRequestRef.current) {
       const summaries = fileChangeSummariesFromActivities(next);
       activitiesRef.current = next;
-      setActivities(next);
+      publishActivities(next);
       if (reset || activityPageCursorRef.current === null || activitiesRef.current.length === 0) {
         activityPageCursorRef.current = page.nextCursor;
         setHasOlderActivities(page.hasMore);
@@ -179,7 +181,7 @@ export function useWorkspaceController() {
       if (liveTurnId === undefined) setFileChanges(EMPTY_FILE_CHANGE_SUMMARY);
       else setFileChanges(current => summaries[liveTurnId] === undefined ? current : mergeFileChangeSummaries({ [liveTurnId]: current }, summaries)[liveTurnId] ?? current);
     }
-  }, []);
+  }, [publishActivities]);
 
   const scheduleActivityRefresh = useCallback((taskId: string) => {
     if (activityRefreshTimerRef.current !== undefined) return;
@@ -207,7 +209,7 @@ export function useWorkspaceController() {
       if (requestId !== activityRequestRef.current || draftTaskRef.current?.id !== taskId) return false;
       const summaries = fileChangeSummariesFromActivities(next);
       activitiesRef.current = next;
-      setActivities(next);
+      publishActivities(next);
       setTurnTimings(turnTimingsFromActivities(next));
       setActivityAttachments(nextActivityAttachments);
       setActivityArtifacts(nextActivityArtifacts);
@@ -219,12 +221,12 @@ export function useWorkspaceController() {
       loadingOlderActivitiesRef.current = false;
       setLoadingOlderActivities(false);
     }
-  }, [hasOlderActivities, task?.id]);
+  }, [hasOlderActivities, publishActivities, task?.id]);
 
   useEffect(() => {
     let mounted = true;
     activityRequestRef.current += 1;
-    if (!task) { activitiesRef.current = []; activityPageCursorRef.current = null; pendingAssistantStreamsRef.current.clear(); setActivities([]); setHasOlderActivities(false); setLoadingOlderActivities(false); setTurnTimings({}); setActivityAttachments({}); setActivityArtifacts({}); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); return; }
+    if (!task) { activitiesRef.current = []; activityPageCursorRef.current = null; pendingAssistantStreamsRef.current.clear(); publishActivities([]); setHasOlderActivities(false); setLoadingOlderActivities(false); setTurnTimings({}); setActivityAttachments({}); setActivityArtifacts({}); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); return; }
     activityPageCursorRef.current = null;
     setHasOlderActivities(false);
     setActivitiesLoading(true);
@@ -234,7 +236,7 @@ export function useWorkspaceController() {
       mounted = false;
       if (activityRefreshTimerRef.current !== undefined) { clearTimeout(activityRefreshTimerRef.current); activityRefreshTimerRef.current = undefined; }
     };
-  }, [loadActivities, task?.id]);
+  }, [loadActivities, publishActivities, task?.id]);
 
   useEffect(() => () => {
     if (taskReloadTimerRef.current !== undefined) { clearTimeout(taskReloadTimerRef.current); taskReloadTimerRef.current = undefined; }
@@ -283,22 +285,31 @@ export function useWorkspaceController() {
         if (turnId !== undefined) setFileChangesByTurn(current => mergeFileChangeForTurn(current, turnId, data['change']));
       }
       if (envelope.event.event === 'assistant.delta' && typeof data['content'] === 'string' && data['content'].length > 0) {
-        const input = { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), content: data['content'], createdAt: new Date().toISOString() };
+        const segmentId = typeof data['segmentId'] === 'string' ? data['segmentId'] : undefined;
+        const iteration = typeof data['iteration'] === 'number' ? data['iteration'] : undefined;
+        const input = { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), ...(segmentId === undefined ? {} : { segmentId }), ...(iteration === undefined ? {} : { iteration }), content: data['content'], createdAt: new Date().toISOString() };
         const nextActivities = appendAssistantDelta(activitiesRef.current, input);
-        const streamed = nextActivities.find(activity => activity.id === `streaming:${eventTask.id}:${turnId ?? 'active'}`)
-          ?? [...nextActivities].reverse().find(activity => activity.taskId === eventTask.id && activity.kind === 'assistant' && activity.metadata['turnId'] === turnId);
-        if (streamed !== undefined) pendingAssistantStreamsRef.current.set(assistantStreamKey(eventTask.id, turnId), { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), text: streamed.text, createdAt: streamed.createdAt });
+        const streamed = segmentId === undefined
+          ? [...nextActivities].reverse().find(activity => activity.taskId === eventTask.id && activity.kind === 'assistant' && activity.metadata['turnId'] === turnId)
+          : [...nextActivities].reverse().find(activity => activity.taskId === eventTask.id && activity.kind === 'assistant' && activity.metadata['segmentId'] === segmentId);
+        if (streamed !== undefined) pendingAssistantStreamsRef.current.set(assistantStreamKey(eventTask.id, turnId, segmentId), { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), ...(segmentId === undefined ? {} : { segmentId }), text: streamed.text, createdAt: streamed.createdAt });
         activitiesRef.current = nextActivities;
-        setActivities(nextActivities);
+        publishActivities(nextActivities, true);
+      }
+      if (envelope.event.event === 'assistant.segment.completed' && typeof data['segmentId'] === 'string' && (data['phase'] === 'progress' || data['phase'] === 'final')) {
+        const nextActivities = markAssistantSegmentPhase(activitiesRef.current, { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), segmentId: data['segmentId'], phase: data['phase'] });
+        activitiesRef.current = nextActivities;
+        publishActivities(nextActivities);
       }
       if (envelope.event.event === 'context.compacting') showContextCompactionStatus('compacting');
       if (envelope.event.event === 'context.compacted') showContextCompactionStatus('compacted');
       if (envelope.event.event.startsWith('subagent.')) setSubagents(current => applySubagentEvent(current, envelope.event.event, data));
-      if (envelope.event.event.startsWith('plan.')) setPlan(current => applyPlanEvent(current, envelope.event.event, data));
+      if (envelope.event.event === 'plan.failed' || envelope.event.event === 'turn.failed' || envelope.event.event === 'turn.cancelled') setPlan(undefined);
+      else if (envelope.event.event.startsWith('plan.')) setPlan(current => applyPlanEvent(current, envelope.event.event, data));
     }
     if (eventTask !== undefined && eventTask.id === currentTaskId) scheduleActivityRefresh(eventTask.id);
     if (eventTask !== undefined) scheduleTaskReload(currentWorkspace.id);
-  }), [scheduleActivityRefresh, scheduleTaskReload]);
+  }), [publishActivities, scheduleActivityRefresh, scheduleTaskReload]);
 
   const selectWorkspace = useCallback((next: Workspace) => {
     void discardQueuedAttachments(task?.id, messageQueueServiceRef.current.snapshot(), activities, task?.draftAttachmentIds ?? []);
@@ -315,7 +326,6 @@ export function useWorkspaceController() {
     setTask(next);
     setApproval(undefined); messageQueueServiceRef.current.clear(); steeringQueueIdRef.current = undefined;
     setTrust(undefined); setAgentStatus(undefined); showContextCompactionStatus(undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES);
-    if (next.sessionId) void window.lotagate.agent.sessionResume(next.cwd, next.sessionId).catch(reason => setError(toMessage(reason)));
   }, [activities, showContextCompactionStatus, task, workspaces]);
   const newTask = useCallback(async (targetWorkspace?: Workspace) => {
     const target = targetWorkspace ?? workspace;
@@ -359,8 +369,8 @@ export function useWorkspaceController() {
     setTasks(current => current.filter(item => item.workspaceId !== workspaceId));
     setWorkspace(current => current?.id === workspaceId ? undefined : current);
     setTask(current => current?.workspaceId === workspaceId ? undefined : current);
-    activitiesRef.current = []; activityPageCursorRef.current = null; pendingAssistantStreamsRef.current.clear(); setActivities([]); setHasOlderActivities(false); setLoadingOlderActivities(false); setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); showContextCompactionStatus(undefined); setThinking(false); setThinkingStartedAt(undefined);
-  }, [showContextCompactionStatus]);
+    activitiesRef.current = []; activityPageCursorRef.current = null; pendingAssistantStreamsRef.current.clear(); publishActivities([]); setHasOlderActivities(false); setLoadingOlderActivities(false); setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); showContextCompactionStatus(undefined); setThinking(false); setThinkingStartedAt(undefined);
+  }, [publishActivities, showContextCompactionStatus]);
   const createTask = useCallback(async (prompt: string) => {
     if (workspace === undefined) throw new Error('Select a workspace first.');
     const title = sessionSlugFromPrompt(prompt);

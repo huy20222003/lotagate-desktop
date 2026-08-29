@@ -1,21 +1,39 @@
-import type { Activity, Artifact, FileChangeSummary, PlanSnapshot, Task, TrustRequest } from '../../../contracts/ipc/v1/workspace.js';
+import { useMemo } from 'react';
+import type { Activity, Artifact, FileChangeSummary, Task, TrustRequest } from '../../../contracts/ipc/v1/workspace.js';
 import { EmptyState } from '../../components/ui.js';
 import type { AttachmentPreview } from './attachment-types.js';
 import type { FileChangeSummariesByTurn } from './file-changes.js';
-import { mergeChatActivities } from './conversation-activities.js';
+import { isAssistantProgressActivity, mergeChatActivities } from './conversation-activities.js';
 import { FileChangeCard, TrustCard } from './WorkspaceOverlays.js';
 import { ChatMessage } from './ChatMessage.js';
 import { ContextCompactionIndicator } from './ContextCompactionIndicator.js';
 import { ElapsedTime, type TurnTiming } from './ElapsedTime.js';
 import { findActiveTurnTiming, activityTurnId, messageTiming } from './conversation-timing.js';
 import { TypingIndicator } from './TypingIndicator.js';
-import { PlanProgressIndicator } from './PlanProgressIndicator.js';
 
-export function TaskConversation({ task, activities, activityAttachments, activityArtifacts, fileChangesByTurn, onOpenFileChanges, onOpenImage, statusText, contextCompactionStatus, plan, thinking, thinkingStartedAt, turnTimings, trust, onTrust }: { task?: Task | undefined; activities: Activity[]; activityAttachments: Record<string, AttachmentPreview[]>; activityArtifacts: Record<string, Artifact[]>; fileChangesByTurn: FileChangeSummariesByTurn; onOpenFileChanges: (summary: FileChangeSummary) => void; onOpenImage: (attachment: AttachmentPreview) => void; statusText?: string | undefined; contextCompactionStatus?: 'compacting' | 'compacted' | 'failed' | undefined; plan?: PlanSnapshot | undefined; thinking: boolean; thinkingStartedAt?: number | undefined; turnTimings: Record<string, TurnTiming>; trust?: TrustRequest | undefined; onTrust: (trusted: boolean) => Promise<void> }) {
-  if (!task) return <EmptyState title="Create your first agent task" detail="Choose a workspace, then enter a prompt below." />;
+export function TaskConversation({ task, activities, activityAttachments, activityArtifacts, fileChangesByTurn, onOpenFileChanges, onOpenImage, statusText, contextCompactionStatus, thinking, thinkingStartedAt, turnTimings, trust, onTrust }: { task?: Task | undefined; activities: Activity[]; activityAttachments: Record<string, AttachmentPreview[]>; activityArtifacts: Record<string, Artifact[]>; fileChangesByTurn: FileChangeSummariesByTurn; onOpenFileChanges: (summary: FileChangeSummary) => void; onOpenImage: (attachment: AttachmentPreview) => void; statusText?: string | undefined; contextCompactionStatus?: 'compacting' | 'compacted' | 'failed' | undefined; thinking: boolean; thinkingStartedAt?: number | undefined; turnTimings: Record<string, TurnTiming>; trust?: TrustRequest | undefined; onTrust: (trusted: boolean) => Promise<void> }) {
   const transcript = mergeChatActivities(activities);
+  const activitiesByTurn = useMemo(() => {
+    const grouped = new Map<string, Activity[]>();
+    for (const activity of activities) {
+      const turnId = activityTurnId(activity);
+      if (turnId === undefined) continue;
+      const current = grouped.get(turnId);
+      if (current === undefined) grouped.set(turnId, [activity]);
+      else current.push(activity);
+    }
+    return grouped;
+  }, [activities]);
+  if (!task) return <EmptyState title="Create your first agent task" detail="Choose a workspace, then enter a prompt below." />;
   const activeTiming = findActiveTurnTiming(turnTimings);
   const workingTiming = activeTiming ?? (thinkingStartedAt === undefined ? undefined : { startedAt: thinkingStartedAt });
+  const activeTurnId = Object.entries(turnTimings)
+    .filter(([, timing]) => timing.endedAt === undefined)
+    .sort(([, left], [, right]) => right.startedAt - left.startedAt)[0]?.[0];
+  const liveTurnActivities = activeTurnId === undefined ? [] : activitiesByTurn.get(activeTurnId) ?? [];
+  const liveProgressActivities = liveTurnActivities.filter(isAssistantProgressActivity);
+  const liveToolActivities = liveTurnActivities.filter(activity => activity.kind === 'tool');
+  const hasLiveWorkDetails = liveProgressActivities.length > 0 || liveToolActivities.length > 0;
   const hasActiveAssistant = transcript.some(activity => {
     if (activity.kind !== 'assistant') return false;
     const timing = messageTiming(activity, turnTimings).timing;
@@ -24,10 +42,16 @@ export function TaskConversation({ task, activities, activityAttachments, activi
   const renderedTurnIds = new Set<string>();
   const messages = transcript.map(activity => {
     const turnId = activityTurnId(activity);
+    const turnActivities = turnId === undefined ? [] : activitiesByTurn.get(turnId) ?? [];
+    const progressActivities = turnActivities.filter(isAssistantProgressActivity);
+    const toolActivities = turnActivities.filter(candidate => candidate.kind === 'tool');
     const fileChangeSummary = !thinking && activity.kind === 'assistant' && turnId !== undefined ? fileChangesByTurn[turnId] : undefined;
     if (fileChangeSummary !== undefined && turnId !== undefined) renderedTurnIds.add(turnId);
-    return <ChatMessage key={activity.id} activity={activity} attachments={activityAttachments[activity.id] ?? []} artifacts={activityArtifacts[activity.id] ?? []} workspaceCwd={task.cwd} onOpenFileChanges={onOpenFileChanges} onOpenImage={onOpenImage} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...messageTiming(activity, turnTimings)} />;
+    return <ChatMessage key={activity.id} activity={activity} attachments={activityAttachments[activity.id] ?? []} artifacts={activityArtifacts[activity.id] ?? []} workspaceCwd={task.cwd} onOpenFileChanges={onOpenFileChanges} onOpenImage={onOpenImage} progressActivities={progressActivities} toolActivities={toolActivities} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...messageTiming(activity, turnTimings)} />;
   });
   const unlinkedChanges = !thinking ? Object.entries(fileChangesByTurn).filter(([turnId, summary]) => !renderedTurnIds.has(turnId) && summary.files.length > 0) : [];
-  return <><div className="activity-list">{messages}{unlinkedChanges.map(([turnId, summary]) => <FileChangeCard key={`changes:${turnId}`} summary={summary} onOpenFileChanges={onOpenFileChanges} />)}</div><div className={`conversation-live-status${thinking ? ' is-thinking' : ''}`}>{thinking && !hasActiveAssistant && workingTiming ? <ElapsedTime timing={workingTiming} fallback={task.createdAt} /> : null}{plan ? <PlanProgressIndicator plan={plan} /> : null}{contextCompactionStatus ? <ContextCompactionIndicator phase={contextCompactionStatus} /> : null}{statusText ? <TypingIndicator label={statusText} /> : thinking ? <TypingIndicator /> : null}{trust ? <TrustCard request={trust} onDecision={onTrust} /> : null}</div></>;
+  const showLiveWorkedFor = thinking && workingTiming !== undefined && (!hasActiveAssistant || hasLiveWorkDetails);
+  const showTypingIndicator = thinking && !hasLiveWorkDetails;
+  const liveStatusText = liveProgressActivities.length === 0 ? statusText : undefined;
+  return <><div className="activity-list">{messages}{unlinkedChanges.map(([turnId, summary]) => <FileChangeCard key={`changes:${turnId}`} summary={summary} onOpenFileChanges={onOpenFileChanges} />)}</div><div className={`conversation-live-status${thinking ? ' is-thinking' : ''}`}>{showLiveWorkedFor ? <ElapsedTime timing={workingTiming} fallback={task.createdAt} statusText={hasLiveWorkDetails ? liveStatusText : undefined} progressActivities={liveProgressActivities} toolActivities={liveToolActivities} /> : null}{contextCompactionStatus ? <ContextCompactionIndicator phase={contextCompactionStatus} /> : null}{showTypingIndicator ? statusText ? <TypingIndicator label={statusText} /> : <TypingIndicator /> : null}{trust ? <TrustCard request={trust} onDecision={onTrust} /> : null}</div></>;
 }

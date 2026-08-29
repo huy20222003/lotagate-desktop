@@ -94,8 +94,7 @@ describe('Composer overlays', () => {
     fireEvent.click(input);
     const first = await screen.findByRole('option', { name: /index\.ts/u });
     expect(first.querySelector('.file-icon-typescript')).toBeInTheDocument();
-    expect(first.querySelector('.mention-suggestion-copy strong')).toHaveTextContent('index.ts');
-    expect(first.querySelector('.mention-suggestion-copy small')).toHaveTextContent('src/');
+    expect(first.querySelector('.mention-suggestion-copy strong')).toHaveTextContent('src/index.ts');
     const second = screen.getByRole('option', { name: 'README.md' });
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     expect(second).toHaveAttribute('aria-selected', 'true');

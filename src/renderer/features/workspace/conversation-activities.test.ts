@@ -42,4 +42,14 @@ describe('mergeChatActivities', () => {
       expect.objectContaining({ kind: 'assistant', text: 'Generated image saved.' }),
     ]);
   });
+
+  it('keeps progress narration out of the final conversation transcript', () => {
+    const result = mergeChatActivities([
+      activity('user', 'Inspect the route'),
+      { ...activity('assistant', 'I will inspect the route first.', 'turn-1'), metadata: { turnId: 'turn-1', segmentId: 'run-1:1', assistantPhase: 'progress' } },
+      { ...activity('assistant', 'The route is correct.', 'turn-1'), metadata: { turnId: 'turn-1', segmentId: 'run-1:2', assistantPhase: 'final' } },
+    ]);
+
+    expect(result.map(item => item.text)).toEqual(['Inspect the route', 'The route is correct.']);
+  });
 });

@@ -26,12 +26,21 @@ describe('streaming activity projection', () => {
     expect(assistantStreamKey('task-1', 'turn-1')).not.toBe(assistantStreamKey('task-1', 'turn-2'));
   });
 
+  it('keeps assistant segments from the same turn independent', () => {
+    const first = appendAssistantDelta([], { taskId: 'task-1', turnId: 'turn-1', segmentId: 'run-1:1', content: 'Before tool.', createdAt });
+    const next = appendAssistantDelta(first, { taskId: 'task-1', turnId: 'turn-1', segmentId: 'run-1:2', content: 'Final.', createdAt });
+
+    expect(next).toHaveLength(2);
+    expect(next[0]?.id).not.toBe(next[1]?.id);
+    expect(assistantStreamKey('task-1', 'turn-1', 'run-1:1')).not.toBe(assistantStreamKey('task-1', 'turn-1', 'run-1:2'));
+  });
+
   it('overlays a stream while persistence is catching up, then allows reconciliation', () => {
-    const stream: PendingAssistantStream = { taskId: 'task-1', turnId: 'turn-1', text: 'Hello world', createdAt };
-    const stale = [activity('assistant-1', 'Hello', 'turn-1')];
+    const stream: PendingAssistantStream = { taskId: 'task-1', turnId: 'turn-1', segmentId: 'run-1:1', text: 'Hello world', createdAt };
+    const stale = [{ ...activity('assistant-1', 'Hello', 'turn-1'), metadata: { turnId: 'turn-1', segmentId: 'run-1:1' } }];
     const overlay = reconcilePendingAssistantStreams(stale, [stream]);
 
     expect(overlay[0]?.text).toBe('Hello world');
-    expect(isAssistantStreamPersisted([activity('assistant-1', 'Hello world', 'turn-1')], stream)).toBe(true);
+    expect(isAssistantStreamPersisted([{ ...activity('assistant-1', 'Hello world', 'turn-1'), metadata: { turnId: 'turn-1', segmentId: 'run-1:1' } }], stream)).toBe(true);
   });
 });

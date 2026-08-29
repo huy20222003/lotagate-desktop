@@ -3,13 +3,18 @@ import type { Activity } from '../../../contracts/ipc/v1/workspace.js';
 import { formatTextClamp } from '../../utils/text.js';
 
 const TIMELINE_MARKER_MIN_GAP = 14;
-const TIMELINE_MARKER_MAX_GAP = 28;
+const TIMELINE_MARKER_MAX_GAP = 18;
 const TIMELINE_TRACK_PADDING = 14;
+
+function initialTimelineHeight(): number {
+  if (typeof window === 'undefined') return 0;
+  return Math.max(220, Math.min(window.innerHeight * 0.72, 720));
+}
 
 export function ConversationTimeline({ activities, onSelect, viewportRef }: { activities: Activity[]; onSelect: (activityId: string) => void; viewportRef: RefObject<HTMLDivElement | null> }) {
   const userMessages = useMemo(() => activities.filter(activity => activity.kind === 'user'), [activities]);
   const [activeActivityId, setActiveActivityId] = useState<string | undefined>(userMessages[0]?.id);
-  const [timelineHeight, setTimelineHeight] = useState(0);
+  const [timelineHeight, setTimelineHeight] = useState(initialTimelineHeight);
   const [scrollState, setScrollState] = useState({ canScrollUp: false, canScrollDown: false });
   const timelineViewportRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; startY: number; startScrollTop: number } | undefined>(undefined);
@@ -47,7 +52,9 @@ export function ConversationTimeline({ activities, onSelect, viewportRef }: { ac
   useLayoutEffect(() => {
     const timelineViewport = timelineViewportRef.current;
     if (!timelineViewport) return;
-    const updateHeight = () => setTimelineHeight(timelineViewport.clientHeight);
+    const updateHeight = () => {
+      if (timelineViewport.clientHeight > 0) setTimelineHeight(timelineViewport.clientHeight);
+    };
     updateHeight();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(updateHeight);

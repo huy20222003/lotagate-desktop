@@ -24,6 +24,15 @@ const activityDeltaRecordSchema = z.object({
   metadata: z.record(z.string(), z.unknown()),
 });
 
+const activitySegmentCompletedRecordSchema = z.object({
+  version: z.literal(ACTIVITY_LOG_VERSION),
+  type: z.literal('assistant.segment.completed'),
+  sequence: z.number().int().nonnegative(),
+  taskId: z.string().min(1),
+  segmentId: z.string().min(1),
+  phase: z.enum(['progress', 'final']),
+});
+
 const activitySnapshotRecordSchema = z.object({
   version: z.literal(ACTIVITY_LOG_VERSION),
   type: z.literal('snapshot'),
@@ -34,6 +43,7 @@ const activitySnapshotRecordSchema = z.object({
 const activityLogRecordSchema = z.discriminatedUnion('type', [
   activityAppendRecordSchema,
   activityDeltaRecordSchema,
+  activitySegmentCompletedRecordSchema,
   activitySnapshotRecordSchema,
 ]);
 
@@ -87,7 +97,7 @@ export class ActivityLogStore {
       await this.ensureLoaded();
       await this.compactIfNeeded();
       const turnId = metadata['turnId'];
-      const actualIndex = findAssistantIndex(this.activitiesCache!, taskId, turnId);
+      const actualIndex = findAssistantIndex(this.activitiesCache!, taskId, turnId, metadata['segmentId']);
       if (actualIndex < 0) return;
       const previous = activitySchema.parse(this.activitiesCache![actualIndex]);
       updated = activitySchema.parse({ ...previous, text: `${previous.text}${text}`, metadata: { ...previous.metadata, ...metadata } });
@@ -100,6 +110,27 @@ export class ActivityLogStore {
         text,
         metadata,
       };
+      await this.appendRecord(record);
+      const next = [...this.activitiesCache!];
+      next[actualIndex] = updated;
+      this.activitiesCache = next;
+      this.sequence = record.sequence;
+      this.recordOperation(record);
+    });
+    return updated;
+  }
+
+  async completeAssistantSegment(taskId: string, segmentId: string, phase: 'progress' | 'final'): Promise<Activity | undefined> {
+    let updated: Activity | undefined;
+    await this.enqueue(async () => {
+      await this.ensureLoaded();
+      await this.compactIfNeeded();
+      const actualIndex = this.activitiesCache!.findIndex(activity => activity.taskId === taskId && activity.kind === 'assistant' && activity.metadata['segmentId'] === segmentId);
+      if (actualIndex < 0) return;
+      const previous = activitySchema.parse(this.activitiesCache![actualIndex]);
+      if (previous.metadata['assistantPhase'] === phase) { updated = previous; return; }
+      updated = activitySchema.parse({ ...previous, metadata: { ...previous.metadata, assistantPhase: phase } });
+      const record: ActivityLogRecord = { version: ACTIVITY_LOG_VERSION, type: 'assistant.segment.completed', sequence: this.sequence + 1, taskId, segmentId, phase };
       await this.appendRecord(record);
       const next = [...this.activitiesCache!];
       next[actualIndex] = updated;
@@ -176,8 +207,12 @@ export class ActivityLogStore {
         activities = [...activities, record.activity];
         bytesSinceSnapshot += Buffer.byteLength(`${line}\n`, 'utf8');
         operationsSinceSnapshot += 1;
-      } else {
+      } else if (record.type === 'assistant.delta') {
         activities = applyAssistantDelta(activities, record.taskId, record.turnId, record.text, record.metadata);
+        bytesSinceSnapshot += Buffer.byteLength(`${line}\n`, 'utf8');
+        operationsSinceSnapshot += 1;
+      } else {
+        activities = applyAssistantSegmentCompleted(activities, record.taskId, record.segmentId, record.phase);
         bytesSinceSnapshot += Buffer.byteLength(`${line}\n`, 'utf8');
         operationsSinceSnapshot += 1;
       }
@@ -234,21 +269,32 @@ export class ActivityLogStore {
   }
 }
 
-function findAssistantIndex(activities: Activity[], taskId: string, turnId: unknown): number {
+function findAssistantIndex(activities: Activity[], taskId: string, turnId: unknown, segmentId?: unknown): number {
   for (let index = activities.length - 1; index >= 0; index -= 1) {
     const activity = activities[index]!;
-    if (activity.taskId === taskId && activity.kind === 'assistant' && activity.metadata['turnId'] === turnId) return index;
+    if (activity.taskId !== taskId || activity.kind !== 'assistant') continue;
+    if (segmentId !== undefined && activity.metadata['segmentId'] === segmentId) return index;
+    if (segmentId === undefined && activity.metadata['turnId'] === turnId) return index;
   }
   return -1;
 }
 
 function applyAssistantDelta(activities: Activity[], taskId: string, turnId: unknown, text: string, metadata: Record<string, unknown>): Activity[] {
-  const actualIndex = findAssistantIndex(activities, taskId, turnId);
+  const actualIndex = findAssistantIndex(activities, taskId, turnId, metadata['segmentId']);
   if (actualIndex < 0) throw new Error('Activity log delta has no matching assistant activity.');
   const previous = activitySchema.parse(activities[actualIndex]);
   const updated = activitySchema.parse({ ...previous, text: `${previous.text}${text}`, metadata: { ...previous.metadata, ...metadata } });
   const next = [...activities];
   next[actualIndex] = updated;
+  return next;
+}
+
+function applyAssistantSegmentCompleted(activities: Activity[], taskId: string, segmentId: string, phase: 'progress' | 'final'): Activity[] {
+  const actualIndex = activities.findIndex(activity => activity.taskId === taskId && activity.kind === 'assistant' && activity.metadata['segmentId'] === segmentId);
+  if (actualIndex < 0) throw new Error('Activity log segment completion has no matching assistant activity.');
+  const previous = activitySchema.parse(activities[actualIndex]);
+  const next = [...activities];
+  next[actualIndex] = activitySchema.parse({ ...previous, metadata: { ...previous.metadata, assistantPhase: phase } });
   return next;
 }
 

@@ -47,4 +47,10 @@ describe('message markup', () => {
 
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
+
+  it('does not treat a dotted Windows folder as a file reference', () => {
+    render(<MessageMarkup content="Đường dẫn workspace là C:\\workspace\\.codex. Thư mục hiện tại gồm:" workspaceCwd="C:\\workspace" />);
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
 });

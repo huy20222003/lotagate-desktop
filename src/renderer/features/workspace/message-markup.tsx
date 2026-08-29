@@ -91,7 +91,7 @@ function mergeFileReferences(references: readonly MessageFileReference[], extrac
 
 function extractAbsoluteFilePaths(content: string): string[] {
   const matches = content.matchAll(/(?:[A-Za-z]:[\\/]|\\\\|\/(?!\/))[^<>`\r\n]*?\.[A-Za-z0-9][A-Za-z0-9_-]{0,15}(?=$|[\s),.;:!?])/gu);
-  return [...matches].map(match => match[0]!.trim()).filter(path => !/^https?:/iu.test(path));
+  return [...matches].map(match => match[0]!.trim()).filter(path => !/^https?:/iu.test(path) && isAbsoluteFilePath(path));
 }
 
 function extractMentionedFileReferences(content: string, workspaceCwd?: string): MessageFileReference[] {
@@ -140,6 +140,10 @@ function isCommonWebDomain(value: string): boolean {
   return extension !== undefined && ['com', 'org', 'net', 'io', 'ai', 'app', 'dev', 'co', 'me', 'tv', 'edu', 'gov', 'uk', 'de', 'fr', 'jp', 'ly', 'fm', 'gg', 'xyz', 'info', 'biz', 'site', 'tech'].includes(extension);
 }
 function isAbsolutePath(path: string): boolean { return /^(?:[A-Za-z]:[\\/]|\\\\|\/)/u.test(path); }
+function isAbsoluteFilePath(path: string): boolean {
+  const baseName = fileName(path);
+  return !baseName.startsWith('.') && isLikelyFileName(baseName);
+}
 function trimUrlPunctuation(value: string): string { return value.replace(/[.,;:!?]+$/u, '').replace(/[)]$/u, character => value.includes('(') ? character : ''); }
 function faviconUrl(href: string): string { const url = new URL(href); return new URL('/favicon.ico', url.origin).toString(); }
 function faviconProxyUrl(href: string): string { const url = new URL(href); return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url.origin)}&sz=32`; }

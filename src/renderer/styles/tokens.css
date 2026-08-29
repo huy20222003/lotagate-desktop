@@ -58,8 +58,6 @@
   --color-overlay-image-control: rgb(16 21 28 / 82%);
   --color-focus-ring: rgb(91 167 216 / 18%);
   --color-selection: rgb(91 167 216 / 35%);
-  --color-success-fill: rgb(55 145 82 / 18%);
-  --color-danger-fill: rgb(198 75 85 / 18%);
   --color-diff-empty: rgb(83 97 116 / 8%);
   --color-accent-glow: rgb(117 183 231 / 55%);
   --shadow-subtle: rgb(0 0 0 / 24%);
@@ -141,8 +139,6 @@
   --color-overlay-image-control: rgb(255 255 255 / 84%);
   --color-focus-ring: rgb(52 127 174 / 20%);
   --color-selection: rgb(52 127 174 / 25%);
-  --color-success-fill: rgb(44 122 63 / 15%);
-  --color-danger-fill: rgb(179 61 74 / 15%);
   --color-diff-empty: rgb(101 117 134 / 10%);
   --color-accent-glow: rgb(52 127 174 / 35%);
   --shadow-subtle: rgb(20 30 40 / 14%);

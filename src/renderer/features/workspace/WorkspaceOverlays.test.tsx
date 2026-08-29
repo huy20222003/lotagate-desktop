@@ -32,6 +32,12 @@ describe('InlineApproval', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
+  it('formats a generic CLI approval summary with the canonical Desktop tool label', () => {
+    render(<InlineApproval request={{ ...request, toolName: 'filesystem.read', displayName: 'Read file', kind: 'filesystem', detail: { summary: 'This filesystem.read operation may change workspace or external state.' } }} onDecision={vi.fn(async () => undefined)} />);
+    expect(screen.getByText('This Read file operation may change workspace or external state.')).toBeVisible();
+    expect(screen.queryByText('This filesystem.read operation may change workspace or external state.')).not.toBeInTheDocument();
+  });
+
   it('sends the selected decision and prevents duplicate submissions', async () => {
     let resolveDecision: (() => void) | undefined;
     const onDecision = vi.fn(() => new Promise<void>(resolve => { resolveDecision = resolve; }));
@@ -87,12 +93,19 @@ describe('FileChangesDrawer', () => {
     const readFile = vi.fn().mockResolvedValue('const completeFile = true;\nsecond line;');
     const fileSuggestions = vi.fn().mockResolvedValue([{ path: 'README.md', kind: 'file' as const }]);
     Object.defineProperty(window, 'lotagate', { configurable: true, value: { git: { readFile }, workspaces: { fileSuggestions } } });
-    const contextLines = Array.from({ length: 8 }, (_, index) => ({ kind: 'context' as const, text: `context-${index + 1}`, oldLine: index + 1, newLine: index + 1 }));
-    render(<FileChangesDrawer cwd="/workspace" summary={{ additions: 1, deletions: 0, files: [{ path: 'src/file.ts', additions: 1, deletions: 0, truncated: false, lines: [...contextLines, { kind: 'addition', text: 'new line', newLine: 9 }] }] }} onClose={() => undefined} />);
+    const contextLines = Array.from({ length: 9 }, (_, index) => ({ kind: 'context' as const, text: `context-${index + 1}`, oldLine: index + 1, newLine: index + 1 }));
+    render(<FileChangesDrawer cwd="/workspace" summary={{ additions: 1, deletions: 1, files: [{ path: 'src/file.ts', additions: 1, deletions: 1, truncated: false, lines: [...contextLines, { kind: 'deletion', text: 'old line', oldLine: 10 }, { kind: 'addition', text: 'new line', newLine: 10 }] }] }} onClose={() => undefined} />);
+    const openFileButton = screen.getByRole('button', { name: 'Open src/file.ts in a tab' });
+    expect(openFileButton.querySelector('.file-icon')).not.toBeInTheDocument();
+    expect(document.querySelector('.file-change-counts .change-additions')).toHaveTextContent('1');
+    expect(document.querySelector('.file-change-counts .change-deletions')).toHaveTextContent('1');
     expect(document.querySelector('.file-change-item > header > .file-change-toggle')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '2 unmodified lines' })).toBeVisible();
+    const contextToggle = screen.getByRole('button', { name: '3 unmodified lines' });
+    expect(contextToggle).toBeVisible();
     expect(screen.queryByText('context-5')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open src/file.ts in a tab' }));
+    expect(Boolean(contextToggle.compareDocumentPosition(screen.getByText('context-7')) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    await waitFor(() => expect(document.querySelector('.diff-line span[style*="color"]')).toBeInTheDocument());
+    fireEvent.click(openFileButton);
     expect(await screen.findByRole('tab', { name: 'file.ts' })).toBeVisible();
     expect(readFile).toHaveBeenCalledWith('/workspace', 'src/file.ts');
     await waitFor(() => expect(document.querySelector('.file-content')).toHaveTextContent('const completeFile = true;'));

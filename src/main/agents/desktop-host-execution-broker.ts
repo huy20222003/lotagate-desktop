@@ -67,7 +67,7 @@ export class DesktopHostExecutionBroker {
   }
 
   private async filesystem(root: string, action: string, params: Record<string, unknown>): Promise<unknown> {
-    const pathValue = requiredString(params, 'path');
+    const pathValue = action === 'filesystem.list' ? optionalWorkspacePath(params['path']) : requiredString(params, 'path');
     const target = action === 'filesystem.write' ? await this.resolveWritePath(root, pathValue) : await this.resolveExistingPath(root, pathValue);
     if (action === 'filesystem.read') {
       const info = await stat(target);
@@ -79,12 +79,10 @@ export class DesktopHostExecutionBroker {
       if (!info.isDirectory()) throw new Error('The requested path is not a directory.');
       const entries: Array<{ name: string; kind: 'file' | 'directory' }> = [];
       const directory = await opendir(target);
-      try {
-        for await (const entry of directory) {
-          entries.push({ name: entry.name, kind: entry.isDirectory() ? 'directory' : 'file' });
-          if (entries.length >= 2_000) break;
-        }
-      } finally { await directory.close(); }
+      for await (const entry of directory) {
+        entries.push({ name: entry.name, kind: entry.isDirectory() ? 'directory' : 'file' });
+        if (entries.length >= 2_000) break;
+      }
       return entries;
     }
     if (action === 'filesystem.exists') return true;
@@ -167,6 +165,7 @@ function runProcess(command: string, args: string[], cwd: string, timeoutMs: num
 }
 
 function requiredString(params: Record<string, unknown>, key: string): string { const value = params[key]; if (typeof value !== 'string' || value.trim().length === 0 || value.length > 4_096) throw new Error(`Host execution parameter "${key}" is invalid.`); return value; }
+function optionalWorkspacePath(value: unknown): string { return typeof value === 'string' && value.trim().length > 0 && value.length <= 4_096 ? value : '.'; }
 function isFilesystemOutcome(value: unknown): value is { result: unknown; fileChange: FileChangeDiff } { return typeof value === 'object' && value !== null && 'result' in value && 'fileChange' in value; }
 function createBoundedFileChange(filePath: string, before: string, after: string, kind: 'created' | 'modified'): FileChangeDiff {
   const oldLines = before.length === 0 ? [] : before.split(/\r?\n/u);
