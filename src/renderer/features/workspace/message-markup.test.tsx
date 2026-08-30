@@ -43,7 +43,7 @@ describe('message markup', () => {
   });
 
   it('does not treat numeric amounts as file references', () => {
-    render(<MessageMarkup content="Giá 300.000 đồng và 4.608 USD." workspaceCwd="D:\\workspace" />);
+    render(<MessageMarkup content="Giá 145.700.000 - 146.800.000 đồng/lượng và 4.454 - 4.600 USD/ounce." workspaceCwd="D:\\workspace" />);
 
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });

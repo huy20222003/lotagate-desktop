@@ -178,7 +178,8 @@ export class CliAgentProcess {
         else pending.reject(new CliAgentProcessError(response.error?.message ?? 'The CLI rejected the request.'));
         return;
       }
-      this.handler.onEvent(parseDesktopEvent(value));
+      const event = parseDesktopEvent(value);
+      this.handler.onEvent(event);
     } catch {
       this.handler.onDiagnostic?.({ kind: 'protocol', message: 'CLI returned an invalid Desktop protocol message.' });
     }

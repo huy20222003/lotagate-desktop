@@ -289,7 +289,7 @@ export function useWorkspaceController() {
           : [...nextActivities].reverse().find(activity => activity.taskId === eventTask.id && activity.kind === 'assistant' && activity.metadata['segmentId'] === segmentId);
         if (streamed !== undefined) pendingAssistantStreamsRef.current.set(assistantStreamKey(eventTask.id, turnId, segmentId), { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), ...(segmentId === undefined ? {} : { segmentId }), text: streamed.text, createdAt: streamed.createdAt });
         activitiesRef.current = nextActivities;
-        publishActivities(nextActivities, true);
+        publishActivities(nextActivities);
       }
       if (envelope.event.event === 'assistant.segment.completed' && typeof data['segmentId'] === 'string' && (data['phase'] === 'progress' || data['phase'] === 'final')) {
         const nextActivities = markAssistantSegmentPhase(activitiesRef.current, { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), segmentId: data['segmentId'], phase: data['phase'] });

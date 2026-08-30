@@ -1,8 +1,8 @@
-import { app, type IpcMainInvokeEvent } from 'electron';
+import { app, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { resolve, sep } from 'node:path';
 
-export function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
+export function assertTrustedRenderer(event: IpcMainEvent | IpcMainInvokeEvent): void {
   const url = event.senderFrame?.url ?? '';
   if (event.senderFrame !== event.sender.mainFrame) throw new Error('Only the top-level renderer may invoke desktop IPC.');
   try {

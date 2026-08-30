@@ -77,11 +77,17 @@ export class AgentManager {
   private getOrCreate(cwd: string): CliAgentProcess {
     const existing = this.processes.get(cwd);
     if (existing !== undefined) return existing;
+    const decorateEvent = (event: DesktopEvent): DesktopEvent => {
+      const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
+      const taskId = sessionId === undefined ? undefined : this.sessionTasks.get(`${cwd}:${sessionId}`);
+      return taskId === undefined
+        ? event
+        : { ...event, data: { ...event.data, ...(event.data['taskId'] !== undefined ? {} : { taskId }) } };
+    };
     const eventHandler: CliAgentEventHandler = {
       onEvent: event => {
+        const decorated = decorateEvent(event);
         const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
-        const taskId = sessionId === undefined ? undefined : this.sessionTasks.get(`${cwd}:${sessionId}`);
-        const decorated = taskId === undefined || event.data['taskId'] !== undefined ? event : { ...event, data: { ...event.data, taskId } };
         if (event.event === 'turn.completed' || event.event === 'turn.failed' || event.event === 'turn.cancelled') {
           if (sessionId !== undefined) this.sessionTasks.delete(`${cwd}:${sessionId}`);
         }

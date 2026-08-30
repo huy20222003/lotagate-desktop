@@ -127,6 +127,7 @@ function isLikelyFileName(value: string): boolean {
   if (!isFileName(value)) return false;
   const baseName = value.split(/[\\/]/u).pop() ?? value;
   if (baseName.startsWith('.')) return true;
+  if (/^\d+(?:\.\d+)+$/u.test(baseName)) return false;
   const extensionIndex = baseName.lastIndexOf('.');
   const stem = baseName.slice(0, extensionIndex);
   const extension = baseName.slice(extensionIndex + 1);

@@ -135,7 +135,9 @@ app.whenReady().then(async () => {
         }
       }
       void taskProjector?.apply(cwd, event).catch(error => logger.error('task.event.persist.failed', { cwd, event: event.event, message: error instanceof Error ? error.message : 'Unable to persist agent event.' }));
-      if (event.event !== 'approval.requested') for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
+      if (event.event !== 'approval.requested') {
+        for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
+      }
     },
     onDiagnostic: (cwd, diagnostic) => { logger.warn('agent.diagnostic', { cwd, kind: diagnostic.kind, message: diagnostic.message }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic }); },
     onHostRequest: async (cwd, request) => request.tool === 'browser'

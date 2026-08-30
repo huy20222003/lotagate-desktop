@@ -20,7 +20,8 @@ interface ChatMessageProps {
 
 export const ChatMessage = memo(function ChatMessage({ activity, attachments, artifacts, timing, fileChangeSummary, progressActivities, toolActivities, workspaceCwd, onOpenFileChanges, onOpenImage }: ChatMessageProps) {
   if (activity.kind === 'user') return <UserMessage activity={activity} attachments={attachments} workspaceCwd={workspaceCwd} onOpenImage={onOpenImage} />;
-  return <AgentMessage activity={activity} artifacts={artifacts} workspaceCwd={workspaceCwd} onOpenFileChanges={onOpenFileChanges} {...(timing === undefined ? {} : { timing })} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...(progressActivities === undefined ? {} : { progressActivities })} {...(toolActivities === undefined ? {} : { toolActivities })} />;
+  const streaming = timing?.endedAt === undefined && timing !== undefined;
+  return <AgentMessage activity={activity} artifacts={artifacts} workspaceCwd={workspaceCwd} onOpenFileChanges={onOpenFileChanges} streaming={streaming} {...(timing === undefined ? {} : { timing })} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...(progressActivities === undefined ? {} : { progressActivities })} {...(toolActivities === undefined ? {} : { toolActivities })} />;
 }, areChatMessagePropsEqual);
 
 function areChatMessagePropsEqual(previous: ChatMessageProps, next: ChatMessageProps): boolean {
