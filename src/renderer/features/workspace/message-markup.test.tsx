@@ -48,6 +48,12 @@ describe('message markup', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
+  it('does not treat signed or comma-formatted numbers as file references', () => {
+    render(<MessageMarkup content="Giá -145.700.000, +1.234,56, -1,234.56 và -0.5." workspaceCwd="D:\\workspace" />);
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('does not treat a dotted Windows folder as a file reference', () => {
     render(<MessageMarkup content="Đường dẫn workspace là C:\\workspace\\.codex. Thư mục hiện tại gồm:" workspaceCwd="C:\\workspace" />);
 

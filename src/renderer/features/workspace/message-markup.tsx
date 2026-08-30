@@ -127,12 +127,16 @@ function isLikelyFileName(value: string): boolean {
   if (!isFileName(value)) return false;
   const baseName = value.split(/[\\/]/u).pop() ?? value;
   if (baseName.startsWith('.')) return true;
-  if (/^\d+(?:\.\d+)+$/u.test(baseName)) return false;
+  if (isNumericToken(baseName)) return false;
   const extensionIndex = baseName.lastIndexOf('.');
   const stem = baseName.slice(0, extensionIndex);
   const extension = baseName.slice(extensionIndex + 1);
   if (/^\d+$/u.test(stem) && /^\d+$/u.test(extension)) return false;
   return !isCommonWebDomain(value);
+}
+
+function isNumericToken(value: string): boolean {
+  return /^[+-]?(?:\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)$/u.test(value);
 }
 
 function isCommonWebDomain(value: string): boolean {
