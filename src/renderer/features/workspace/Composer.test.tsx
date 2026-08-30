@@ -101,4 +101,40 @@ describe('Composer overlays', () => {
     fireEvent.keyDown(input, { key: 'ArrowUp' });
     expect(first).toHaveAttribute('aria-selected', 'true');
   });
+
+  it('clears the submitted prompt before the send lifecycle finishes', () => {
+    let resolveSend: (() => void) | undefined;
+    const onSend = vi.fn(() => new Promise<void>(resolve => { resolveSend = resolve; }));
+    render(<Composer
+      disabled={false}
+      thinking={false}
+      task={taskWithDraft('hello')}
+      attachments={[]}
+      queuedMessages={[]}
+      models={[]}
+      selectedModel=""
+      onModel={vi.fn()}
+      busy={false}
+      onSend={onSend}
+      onRunCommand={vi.fn().mockResolvedValue(false)}
+      onCancel={vi.fn().mockResolvedValue(undefined)}
+      onDraft={vi.fn().mockResolvedValue(undefined)}
+      onAttach={vi.fn().mockResolvedValue(undefined)}
+      onAttachImage={vi.fn().mockResolvedValue(undefined)}
+      onRemoveAttachment={vi.fn().mockResolvedValue(undefined)}
+      onSteerQueued={vi.fn().mockResolvedValue(undefined)}
+      onRemoveQueued={vi.fn().mockResolvedValue(undefined)}
+      onEditQueued={vi.fn().mockResolvedValue(undefined)}
+      onOpenImage={vi.fn()}
+      approvalMode="auto"
+      onApprovalMode={vi.fn()}
+      onApproval={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('');
+    expect(onSend).toHaveBeenCalledWith('hello', undefined);
+    resolveSend?.();
+  });
 });

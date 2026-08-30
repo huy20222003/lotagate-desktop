@@ -14,7 +14,7 @@ describe('TaskConversation live state', () => {
   afterEach(() => cleanup());
 
   it('keeps the Thinking indicator while work has started but no live action exists yet', () => {
-    render(<TaskConversation task={task} activities={[]} activityAttachments={{}} activityArtifacts={{}} fileChangesByTurn={{}} onOpenFileChanges={() => undefined} onOpenImage={() => undefined} thinking thinkingStartedAt={Date.now()} turnTimings={{}} onTrust={async () => undefined} />);
+    render(<TaskConversation task={task} activities={[]} activityAttachments={{}} activityArtifacts={{}} fileChangesByTurn={{}} onOpenFileChanges={() => undefined} onOpenImage={() => undefined} thinking finalResponseReceived={false} thinkingStartedAt={Date.now()} turnTimings={{}} onTrust={async () => undefined} />);
 
     expect(screen.getByLabelText('Thinking...')).toBeInTheDocument();
   });
@@ -34,6 +34,7 @@ describe('TaskConversation live state', () => {
       onOpenImage={() => undefined}
       statusText="I’ll inspect the workspace with Read file."
       thinking
+      finalResponseReceived={false}
       turnTimings={{ 'turn-1': { startedAt: Date.now() } }}
       onTrust={async () => undefined}
     />);
@@ -42,5 +43,11 @@ describe('TaskConversation live state', () => {
     expect(progress).toBeInTheDocument();
     expect(progress.closest('details')).toHaveAttribute('open');
     expect(screen.queryByText('I’ll inspect the workspace with Read file.')).not.toBeInTheDocument();
+  });
+
+  it('hides the Thinking indicator after the final assistant segment arrives', () => {
+    render(<TaskConversation task={task} activities={[]} activityAttachments={{}} activityArtifacts={{}} fileChangesByTurn={{}} onOpenFileChanges={() => undefined} onOpenImage={() => undefined} thinking finalResponseReceived thinkingStartedAt={Date.now()} turnTimings={{}} onTrust={async () => undefined} />);
+
+    expect(screen.queryByLabelText('Thinking...')).not.toBeInTheDocument();
   });
 });

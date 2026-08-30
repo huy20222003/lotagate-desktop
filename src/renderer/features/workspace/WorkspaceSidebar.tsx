@@ -33,7 +33,7 @@ export function WorkspaceSidebar({ accountName, avatarProps, workspaces, activeW
     <Button variant="ghost" className="new-task sidebar-action" onClick={() => onNewChat(activeWorkspace)} disabled={activeWorkspace === undefined}><Icon icon={Pencil} size={16} /> New chat</Button>
     <Button variant="ghost" className="sidebar-plugin sidebar-action" onClick={onPlugins}><Icon icon={Blocks} size={16} /> Plugins</Button>
     <Button variant="ghost" className="sidebar-automation sidebar-action" onClick={onAutomations}><Icon icon={Clock3} size={16} /> Automations</Button>
-    <Scrollbar className="workspace-scrollbar sidebar-section">
+    <Scrollbar className="workspace-scrollbar sidebar-section scrollbar-hide-track">
       <div className="section-heading"><span>Workspaces</span><IconButton icon={CirclePlus} iconSize={14} label="Add workspace" onClick={onAddWorkspace} /></div>
       {loading ? <SidebarLoadingSkeleton /> : workspaces.length === 0 ? <button className="workspace-row" onClick={onAddWorkspace}><Icon icon={Folder} size={15} /><span>Add a workspace</span></button> : workspaces.map(workspace => <WorkspaceGroup key={workspace.id} workspace={workspace} tasks={tasks.filter(task => task.workspaceId === workspace.id && !task.archived)} activeTask={activeTask} runningTaskIds={runningTaskIds} unreadTaskIds={unreadTaskIds} onWorkspace={onWorkspace} onTask={onTask} onNewChat={onNewChat} onRename={onRenameWorkspace} onRemove={onRemoveWorkspace} onArchive={onArchiveTask} onPin={onPinTask} onRenameTask={onRenameTask} />)}
     </Scrollbar>

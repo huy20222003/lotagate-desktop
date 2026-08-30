@@ -13,18 +13,17 @@ interface ChatMessageProps {
   fileChangeSummary?: FileChangeSummary | undefined;
   undoState?: CheckpointUndoState | undefined;
   undoBusy?: boolean;
-  progressActivities?: readonly Activity[];
-  toolActivities?: readonly Activity[];
+  activities?: readonly Activity[];
   workspaceCwd: string;
   onOpenFileChanges: (summary: FileChangeSummary) => void;
   onUndoFileChanges: (turnId: string) => Promise<void>;
   onOpenImage: (attachment: AttachmentPreview) => void;
 }
 
-export const ChatMessage = memo(function ChatMessage({ activity, attachments, artifacts, timing, fileChangeSummary, undoState, undoBusy, progressActivities, toolActivities, workspaceCwd, onOpenFileChanges, onUndoFileChanges, onOpenImage }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ activity, attachments, artifacts, timing, fileChangeSummary, undoState, undoBusy, activities, workspaceCwd, onOpenFileChanges, onUndoFileChanges, onOpenImage }: ChatMessageProps) {
   if (activity.kind === 'user') return <UserMessage activity={activity} attachments={attachments} workspaceCwd={workspaceCwd} onOpenImage={onOpenImage} />;
   const streaming = timing?.endedAt === undefined && timing !== undefined;
-  return <AgentMessage activity={activity} artifacts={artifacts} workspaceCwd={workspaceCwd} onUndoFileChanges={onUndoFileChanges} {...(undoState === undefined ? {} : { undoState })} {...(undoBusy === undefined ? {} : { undoBusy })} onOpenFileChanges={onOpenFileChanges} streaming={streaming} {...(timing === undefined ? {} : { timing })} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...(progressActivities === undefined ? {} : { progressActivities })} {...(toolActivities === undefined ? {} : { toolActivities })} />;
+  return <AgentMessage activity={activity} artifacts={artifacts} workspaceCwd={workspaceCwd} onUndoFileChanges={onUndoFileChanges} {...(undoState === undefined ? {} : { undoState })} {...(undoBusy === undefined ? {} : { undoBusy })} onOpenFileChanges={onOpenFileChanges} streaming={streaming} {...(timing === undefined ? {} : { timing })} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...(activities === undefined ? {} : { activities })} />;
 }, areChatMessagePropsEqual);
 
 function areChatMessagePropsEqual(previous: ChatMessageProps, next: ChatMessageProps): boolean {
@@ -40,8 +39,7 @@ function areChatMessagePropsEqual(previous: ChatMessageProps, next: ChatMessageP
     && previous.onOpenImage === next.onOpenImage
     && previous.timing?.startedAt === next.timing?.startedAt
     && previous.timing?.endedAt === next.timing?.endedAt
-    && sameActivities(previous.progressActivities, next.progressActivities)
-    && sameActivities(previous.toolActivities, next.toolActivities);
+    && sameActivities(previous.activities, next.activities);
 }
 
 function sameActivities(previous: readonly Activity[] | undefined, next: readonly Activity[] | undefined): boolean {

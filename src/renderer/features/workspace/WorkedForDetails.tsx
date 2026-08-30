@@ -10,13 +10,26 @@ interface ToolStep {
   state: 'running' | 'completed' | 'failed';
 }
 
-export function WorkedForDetails({ active = false, statusText, progressActivities, toolActivities }: { active?: boolean; statusText?: string | undefined; progressActivities: readonly Activity[]; toolActivities: readonly Activity[] }) {
-  const toolSteps = groupToolActivities(toolActivities);
-  if (statusText === undefined && progressActivities.length === 0 && toolSteps.length === 0) return null;
+export interface WorkedForDetailsProps {
+  active?: boolean;
+  statusText?: string | undefined;
+  activities: readonly Activity[];
+}
+
+type WorkedItem =
+  | { kind: 'progress'; activity: Activity }
+  | { kind: 'tool'; step: ToolStep };
+
+export function hasWorkedForDetails({ statusText, activities }: WorkedForDetailsProps): boolean {
+  return statusText !== undefined || buildWorkedItems(activities).length > 0;
+}
+
+export function WorkedForDetails({ active = false, statusText, activities }: WorkedForDetailsProps) {
+  const items = buildWorkedItems(activities);
+  if (!hasWorkedForDetails({ statusText, activities })) return null;
   return <div className="worked-details">
     {statusText ? <WorkedText className="worked-status" content={statusText} active={active} /> : null}
-    {progressActivities.filter(isAssistantProgressActivity).map(activity => <WorkedProgress key={activity.id} content={activity.text} active={active} />)}
-    {toolSteps.map(step => <div className={`worked-tool worked-tool-${step.state}`} key={step.actionId}><span className={step.state === 'running' ? 'typing-label' : undefined}>{toolLabel(step)}</span></div>)}
+    {items.map(item => item.kind === 'progress' ? <WorkedProgress key={item.activity.id} content={item.activity.text} active={active} /> : <div className={`worked-tool worked-tool-${item.step.state}`} key={item.step.actionId}><span className={item.step.state === 'running' ? 'typing-label' : undefined}>{toolLabel(item.step)}</span></div>)}
   </div>;
 }
 
@@ -29,19 +42,38 @@ function WorkedText({ className, content, active, markdown = false }: { classNam
   return <div className={className}>{markdown ? <AgentMarkdown content={displayedText} /> : displayedText}</div>;
 }
 
-function groupToolActivities(activities: readonly Activity[]): ToolStep[] {
-  const steps = new Map<string, ToolStep>();
+function buildWorkedItems(activities: readonly Activity[]): WorkedItem[] {
+  const items: WorkedItem[] = [];
+  const toolItemIndexes = new Map<string, number>();
   for (const activity of activities) {
+    if (isAssistantProgressActivity(activity)) {
+      items.push({ kind: 'progress', activity });
+      continue;
+    }
+    if (activity.kind !== 'tool') continue;
     const actionId = readString(activity.metadata['actionId']) ?? activity.id;
-    const previous = steps.get(actionId);
-    const failed = activity.metadata['isError'] === true || activity.metadata['status'] === 'failed' || activity.text.endsWith(' failed.');
-    const completed = activity.metadata['status'] === 'completed' || activity.metadata['status'] === 'failed' || activity.text.endsWith(' completed.') || failed;
-    const state = failed ? 'failed' : completed ? 'completed' : previous?.state ?? 'running';
-    const fallbackName = activity.text.replace(/^Running /u, '').replace(/ (?:completed|failed)\.$/u, '').trim();
-    const displayName = formatToolDisplayName(readString(activity.metadata['toolName']) ?? fallbackName, readString(activity.metadata['displayName']));
-    steps.set(actionId, { actionId, displayName, state });
+    const existingIndex = toolItemIndexes.get(actionId);
+    const existing = existingIndex === undefined ? undefined : items[existingIndex];
+    const step = toolStepForActivity(activity, existing?.kind === 'tool' ? existing.step : undefined);
+    if (existingIndex === undefined) {
+      toolItemIndexes.set(step.actionId, items.length);
+      items.push({ kind: 'tool', step });
+    } else {
+      const existing = items[existingIndex];
+      if (existing?.kind === 'tool') items[existingIndex] = { kind: 'tool', step };
+    }
   }
-  return [...steps.values()];
+  return items;
+}
+
+function toolStepForActivity(activity: Activity, previousStep: ToolStep | undefined): ToolStep {
+  const actionId = readString(activity.metadata['actionId']) ?? activity.id;
+  const failed = activity.metadata['isError'] === true || activity.metadata['status'] === 'failed' || activity.text.endsWith(' failed.');
+  const completed = activity.metadata['status'] === 'completed' || activity.metadata['status'] === 'failed' || activity.text.endsWith(' completed.') || failed;
+  const state = failed ? 'failed' : completed ? 'completed' : previousStep?.state ?? 'running';
+  const fallbackName = activity.text.replace(/^Running /u, '').replace(/ (?:completed|failed)\.$/u, '').trim();
+  const displayName = formatToolDisplayName(readString(activity.metadata['toolName']) ?? fallbackName, readString(activity.metadata['displayName']));
+  return { actionId, displayName, state };
 }
 
 function toolLabel(step: ToolStep): string {

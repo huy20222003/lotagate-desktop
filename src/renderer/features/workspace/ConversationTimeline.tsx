@@ -1,10 +1,27 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import type { Activity } from '../../../contracts/ipc/v1/workspace.js';
 import { formatTextClamp } from '../../utils/text.js';
+import { mergeChatActivities } from './conversation-activities.js';
 
 const TIMELINE_MARKER_MIN_GAP = 14;
 const TIMELINE_MARKER_MAX_GAP = 18;
 const TIMELINE_TRACK_PADDING = 14;
+
+interface TimelineMessage {
+  activity: Activity;
+  responseText?: string;
+}
+
+function buildTimelineMessages(activities: Activity[]): TimelineMessage[] {
+  const transcript = mergeChatActivities(activities);
+  return transcript.flatMap((activity, index) => {
+    if (activity.kind !== 'user') return [];
+    const nextUserIndex = transcript.findIndex((candidate, candidateIndex) => candidateIndex > index && candidate.kind === 'user');
+    const response = transcript.slice(index + 1, nextUserIndex < 0 ? transcript.length : nextUserIndex).find(candidate => candidate.kind === 'assistant' || candidate.kind === 'error');
+    const responseText = response?.text.trim();
+    return [{ activity, ...(responseText ? { responseText } : {}) }];
+  });
+}
 
 function initialTimelineHeight(): number {
   if (typeof window === 'undefined') return 0;
@@ -12,10 +29,13 @@ function initialTimelineHeight(): number {
 }
 
 export function ConversationTimeline({ activities, onSelect, viewportRef }: { activities: Activity[]; onSelect: (activityId: string) => void; viewportRef: RefObject<HTMLDivElement | null> }) {
-  const userMessages = useMemo(() => activities.filter(activity => activity.kind === 'user'), [activities]);
+  const timelineMessages = useMemo(() => buildTimelineMessages(activities), [activities]);
+  const userMessages = useMemo(() => timelineMessages.map(message => message.activity), [timelineMessages]);
   const [activeActivityId, setActiveActivityId] = useState<string | undefined>(userMessages[0]?.id);
   const [timelineHeight, setTimelineHeight] = useState(initialTimelineHeight);
   const [scrollState, setScrollState] = useState({ canScrollUp: false, canScrollDown: false });
+  const [timelineScrollTop, setTimelineScrollTop] = useState(0);
+  const [hoveredActivityId, setHoveredActivityId] = useState<string | undefined>();
   const timelineViewportRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; startY: number; startScrollTop: number } | undefined>(undefined);
   const previousLastMessageIdRef = useRef<string | undefined>();
@@ -37,6 +57,7 @@ export function ConversationTimeline({ activities, onSelect, viewportRef }: { ac
   const updateScrollState = useCallback(() => {
     const timelineViewport = timelineViewportRef.current;
     if (!timelineViewport) return;
+    setTimelineScrollTop(timelineViewport.scrollTop);
     setScrollState({ canScrollUp: timelineViewport.scrollTop > 1, canScrollDown: timelineViewport.scrollTop + timelineViewport.clientHeight < timelineViewport.scrollHeight - 1 });
   }, []);
 
@@ -65,6 +86,9 @@ export function ConversationTimeline({ activities, onSelect, viewportRef }: { ac
   const markerGap = userMessages.length <= 1 ? 0 : Math.max(TIMELINE_MARKER_MIN_GAP, Math.min(TIMELINE_MARKER_MAX_GAP, (timelineHeight - TIMELINE_TRACK_PADDING * 2) / (userMessages.length - 1)));
   const trackHeight = Math.max(timelineHeight, TIMELINE_TRACK_PADDING * 2 + Math.max(0, userMessages.length - 1) * markerGap);
   const activeIndex = userMessages.findIndex(activity => activity.id === activeActivityId);
+  const hoveredMessage = timelineMessages.find(message => message.activity.id === hoveredActivityId);
+  const hoveredIndex = hoveredActivityId === undefined ? -1 : userMessages.findIndex(activity => activity.id === hoveredActivityId);
+  const hoveredPopoverTop = hoveredIndex < 0 ? undefined : TIMELINE_TRACK_PADDING + hoveredIndex * markerGap - timelineScrollTop;
   const lastUserMessageId = userMessages[userMessages.length - 1]?.id;
   useEffect(() => {
     if (lastUserMessageId === undefined) {
@@ -108,5 +132,5 @@ export function ConversationTimeline({ activities, onSelect, viewportRef }: { ac
   const stopPointerDrag = (event: ReactPointerEvent<HTMLDivElement>) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = undefined; };
 
   if (userMessages.length === 0) return null;
-  return <aside className="conversation-timeline" aria-label="User messages"><div className={`conversation-timeline-window${scrollState.canScrollUp ? ' has-overflow-above' : ''}${scrollState.canScrollDown ? ' has-overflow-below' : ''}`} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={stopPointerDrag} onPointerCancel={stopPointerDrag}><div ref={timelineViewportRef} className="conversation-timeline-scroll" onScroll={updateScrollState}><div className="conversation-timeline-list" style={{ height: `${trackHeight}px` }}>{userMessages.map((activity, index) => { const position = userMessages.length === 1 ? TIMELINE_TRACK_PADDING : TIMELINE_TRACK_PADDING + index * markerGap; return <button type="button" key={activity.id} className={`conversation-timeline-marker ${activeActivityId === activity.id ? 'active' : ''}`} style={{ top: `${position}px` }} aria-current={activeActivityId === activity.id ? 'location' : undefined} aria-label={`Jump to message: ${formatTextClamp(80, activity.text)}`} onClick={() => onSelect(activity.id)}><span /><span className="conversation-timeline-popover">{formatTextClamp(120, activity.text)}</span></button>; })}</div></div><span className="conversation-timeline-fade conversation-timeline-fade-top" aria-hidden="true" /><span className="conversation-timeline-fade conversation-timeline-fade-bottom" aria-hidden="true" /></div></aside>;
+  return <aside className="conversation-timeline" aria-label="User messages"><div className={`conversation-timeline-window${scrollState.canScrollUp ? ' has-overflow-above' : ''}${scrollState.canScrollDown ? ' has-overflow-below' : ''}`} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={stopPointerDrag} onPointerCancel={stopPointerDrag}><div ref={timelineViewportRef} className="conversation-timeline-scroll" onScroll={updateScrollState}><div className="conversation-timeline-list" style={{ height: `${trackHeight}px` }}>{userMessages.map((activity, index) => { const position = userMessages.length === 1 ? TIMELINE_TRACK_PADDING : TIMELINE_TRACK_PADDING + index * markerGap; return <button type="button" key={activity.id} className={`conversation-timeline-marker ${activeActivityId === activity.id ? 'active' : ''}`} style={{ top: `${position}px` }} aria-current={activeActivityId === activity.id ? 'location' : undefined} aria-label={`Jump to message: ${formatTextClamp(80, activity.text)}`} onMouseEnter={() => setHoveredActivityId(activity.id)} onMouseLeave={() => setHoveredActivityId(undefined)} onFocus={() => setHoveredActivityId(activity.id)} onBlur={() => setHoveredActivityId(undefined)} onClick={() => onSelect(activity.id)}><span /></button>; })}</div></div>{hoveredMessage && hoveredPopoverTop !== undefined ? <div className="conversation-timeline-popover" style={{ top: `${hoveredPopoverTop}px` }}><span className="conversation-timeline-preview-user">{formatTextClamp(60, hoveredMessage.activity.text)}</span>{hoveredMessage.responseText ? <span className="conversation-timeline-preview-agent">{formatTextClamp(60, hoveredMessage.responseText)}</span> : null}</div> : null}<span className="conversation-timeline-fade conversation-timeline-fade-top" aria-hidden="true" /><span className="conversation-timeline-fade conversation-timeline-fade-bottom" aria-hidden="true" /></div></aside>;
 }

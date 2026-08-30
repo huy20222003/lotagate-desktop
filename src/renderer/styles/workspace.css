@@ -25,6 +25,7 @@
 .scrollbar-thin .scrollbar-thumb { background: var(--color-scrollbar); }
 .scrollbar-viewport { height: 100%; overflow: auto; scrollbar-width: none; }
 .scrollbar-viewport::-webkit-scrollbar { display: none; }
+.scrollbar-hide-track .scrollbar-track { display: none; }
 .scrollbar-track { position: absolute; top: 4px; right: 2px; bottom: 4px; width: 4px; border-radius: 99px; pointer-events: none; }
 .scrollbar-thumb { display: block; width: 100%; border-radius: 99px; background: var(--color-scrollbar); opacity: .85; }
 .scrollbar-track-horizontal { top: auto; right: 4px; bottom: 2px; left: 4px; width: auto; height: 4px; }
@@ -132,8 +133,10 @@
 .conversation-timeline-fade-top { top: 0; background: linear-gradient(to bottom, var(--color-canvas), transparent); opacity: 0; }
 .conversation-timeline-fade-bottom { bottom: 0; background: linear-gradient(to top, var(--color-canvas), transparent); opacity: 0; }
 .conversation-timeline-window.has-overflow-above .conversation-timeline-fade-top, .conversation-timeline-window.has-overflow-below .conversation-timeline-fade-bottom { opacity: 1; }
-.conversation-timeline-popover { position: absolute; top: 50%; left: 25px; z-index: 6; width: 300px; transform: translateY(-50%); border: 1px solid var(--color-border); border-radius: 8px; padding: 9px 10px; background: var(--color-surface-elevated); color: var(--color-text-secondary); font-size: 11px; line-height: 1.45; opacity: 0; pointer-events: none; text-align: left; transition: opacity .12s ease; }
-.conversation-timeline-marker:hover .conversation-timeline-popover, .conversation-timeline-marker:focus-visible .conversation-timeline-popover { opacity: 1; }
+.conversation-timeline-popover { position: absolute; left: 25px; z-index: 6; width: 300px; transform: translateY(-50%); border: 1px solid var(--color-border); border-radius: 8px; padding: 9px 10px; background: var(--color-surface-elevated); color: var(--color-text); font-size: 11px; line-height: 1.45; pointer-events: none; text-align: left; }
+.conversation-timeline-preview-user, .conversation-timeline-preview-agent { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-timeline-preview-user { color: var(--color-text); }
+.conversation-timeline-preview-agent { margin-top: 10px; color: var(--color-text-tertiary); }
 .message { display: flex; margin-top: 28px; line-height: 1.6; }
 .user-message { justify-content: flex-end; }
 .agent-message { justify-content: flex-start; }
@@ -167,6 +170,7 @@
 .worked-time { margin-bottom: 12px; color: var(--color-text-tertiary); font-size: 12px; }
 .worked-time > summary { display: flex; align-items: center; gap: 5px; cursor: pointer; list-style: none; user-select: none; border-bottom: 1px solid var(--color-surface-muted); padding-bottom: 10px; }
 .worked-time > summary::-webkit-details-marker { display: none; }
+.worked-time-static { border-bottom: 1px solid var(--color-surface-muted); padding-bottom: 10px; }
 .worked-time-chevron { display: inline-flex; color: var(--color-text-muted); }
 .worked-details { display: grid; gap: 8px; margin-top: 10px; border-left: 1px solid var(--color-border-subtle); padding-left: 12px; }
 .worked-status, .worked-progress, .worked-tool { color: var(--color-text-secondary); font-size: 14px; line-height: 1.5; }
