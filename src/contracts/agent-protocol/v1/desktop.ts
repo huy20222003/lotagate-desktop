@@ -67,6 +67,9 @@ export const desktopHostRequestSchema = z.object({
   params,
   executionBoundary: z.enum(['sandbox', 'host']),
   hostFallback: z.enum(['ask', 'deny', 'allow']).default('deny'),
+  projectRoot: z.string().min(1).max(4_096).optional(),
+  executionCwd: z.string().min(1).max(4_096).optional(),
+  executionWorkspaceId: id.optional(),
 });
 
 export const desktopHostResponseSchema = z.object({

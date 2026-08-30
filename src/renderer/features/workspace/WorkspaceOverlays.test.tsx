@@ -95,6 +95,12 @@ describe('FileChangesDrawer', () => {
     Object.defineProperty(window, 'lotagate', { configurable: true, value: { git: { readFile }, workspaces: { fileSuggestions } } });
     const contextLines = Array.from({ length: 9 }, (_, index) => ({ kind: 'context' as const, text: `context-${index + 1}`, oldLine: index + 1, newLine: index + 1 }));
     render(<FileChangesDrawer cwd="/workspace" summary={{ additions: 1, deletions: 1, files: [{ path: 'src/file.ts', additions: 1, deletions: 1, truncated: false, lines: [...contextLines, { kind: 'deletion', text: 'old line', oldLine: 10 }, { kind: 'addition', text: 'new line', newLine: 10 }] }] }} onClose={() => undefined} />);
+    const drawer = screen.getByRole('complementary', { name: 'Changed files' });
+    fireEvent.click(screen.getByRole('button', { name: 'Expand changed files' }));
+    expect(drawer).toHaveClass('is-expanded');
+    expect(screen.getByRole('button', { name: 'Collapse changed files' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse changed files' }));
+    expect(drawer).not.toHaveClass('is-expanded');
     const openFileButton = screen.getByRole('button', { name: 'Open src/file.ts in a tab' });
     expect(openFileButton.querySelector('.file-icon')).not.toBeInTheDocument();
     expect(document.querySelector('.file-change-counts .change-additions')).toHaveTextContent('1');

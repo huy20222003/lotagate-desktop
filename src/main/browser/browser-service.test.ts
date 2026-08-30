@@ -68,4 +68,18 @@ describe('BrowserService layout lifecycle', () => {
     expect(inspection.computedStyle?.['display']).toBe('block');
     await service.close(snapshot.id);
   });
+
+  it('passes the requested interaction action into the page script', async () => {
+    const service = new BrowserService();
+    const snapshot = await service.create();
+    const contents = mocks.views.at(-1)!.webContents;
+
+    await service.click(snapshot.id, snapshot.activeTabId, { type: 'css', selector: '#submit' });
+
+    const calls = contents.executeJavaScript.mock.calls as unknown[][];
+    const script = calls.at(-1)?.[0];
+    expect(typeof script).toBe('string');
+    expect(script as string).toContain('const action = "click";');
+    await service.close(snapshot.id);
+  });
 });

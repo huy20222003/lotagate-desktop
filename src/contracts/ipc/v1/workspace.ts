@@ -93,6 +93,10 @@ export type FileDiffLineKind = 'context' | 'addition' | 'deletion';
 export interface FileDiffLine { kind: FileDiffLineKind; text: string; oldLine?: number; newLine?: number }
 export interface FileChangeDiff { path: string; lines: FileDiffLine[]; additions: number; deletions: number; truncated: boolean }
 export interface FileChangeSummary { files: FileChangeDiff[]; additions: number; deletions: number }
+export const CHECKPOINT_RETENTION_DAYS = 30;
+export type CheckpointUndoState = 'ready' | 'undone' | 'conflict' | 'failed';
+export interface CheckpointStatus { checkpointId: string; taskId: string; turnId: string; state: CheckpointUndoState; fileCount: number; createdAt: string; }
+export interface CheckpointUndoResult { checkpointId: string; state: CheckpointUndoState; revertedPaths: string[]; conflicts: string[]; error?: string; }
 export type SubagentStatus = 'queued' | 'running' | 'completed' | 'completed_with_warning' | 'failed' | 'cancelled';
 export interface SubagentHandoff { summary: string; filesInspected: string[]; filesChanged: string[]; commandsRun: string[]; verification: string[]; warnings: string[] }
 export interface SubagentSnapshot { id: string; displayName: string; task: string; mode: 'research' | 'worker'; model: string; status: SubagentStatus; background: boolean; timestamp: number; durationMs?: number; summary?: string; lastAction?: { kind: string; label: string }; handoff?: SubagentHandoff }
@@ -113,6 +117,11 @@ export interface DesktopWorkspaceApi {
   remove(workspaceId: string): Promise<void>;
   trust(workspaceId: string, trusted: boolean): Promise<Workspace>;
   fileSuggestions(rootPath: string, query: string): Promise<WorkspaceFileSuggestion[]>;
+}
+
+export interface DesktopCheckpointApi {
+  list(cwd: string, taskId: string): Promise<CheckpointStatus[]>;
+  undo(cwd: string, taskId: string, turnId: string): Promise<CheckpointUndoResult>;
 }
 
 export interface WorkspaceFileSuggestion { path: string; kind: 'file' | 'folder' }

@@ -1,6 +1,10 @@
-import type { FileChangeSummary } from '../../../contracts/ipc/v1/workspace.js';
+import { Eye, FileDiff, Undo2 } from 'lucide-react';
+import type { CheckpointUndoState, FileChangeSummary } from '../../../contracts/ipc/v1/workspace.js';
+import { Button } from '../../components/ui.js';
 import { FileChangeItem } from './FileChangeItem.js';
 
-export function FileChangeCard({ summary, onOpenFileChanges }: { summary: FileChangeSummary; onOpenFileChanges: (summary: FileChangeSummary) => void }) {
-  return <section className="file-change-card" aria-label="Edited files"><header><div><strong>Edited {summary.files.length} {summary.files.length === 1 ? 'file' : 'files'}</strong><span><b className="change-additions">+{summary.additions}</b><b className="change-deletions">-{summary.deletions}</b></span></div></header><div className="file-change-card-list">{summary.files.map(change => <FileChangeItem key={change.path} change={change} onOpenFileChanges={() => onOpenFileChanges(summary)} />)}</div></section>;
+export function FileChangeCard({ summary, undoState, undoBusy = false, onUndo, onOpenFileChanges }: { summary: FileChangeSummary; undoState?: CheckpointUndoState; undoBusy?: boolean; onUndo?: () => Promise<void>; onOpenFileChanges: (summary: FileChangeSummary) => void }) {
+  const canUndo = undoState === 'ready' && !undoBusy && onUndo !== undefined;
+  const undoLabel = undoBusy ? 'Undoing…' : undoState === 'undone' ? 'Undone' : undoState === 'conflict' ? 'Conflict' : undoState === 'failed' ? 'Undo failed' : 'Undo';
+  return <section className="file-change-card" aria-label="Edited files"><header><div className="file-change-card-heading"><div className="file-change-card-title"><FileDiff size={16} aria-hidden="true" /><strong>Edited {summary.files.length} {summary.files.length === 1 ? 'file' : 'files'}</strong></div><div className="file-change-card-counts"><span className="change-additions">+{summary.additions}</span><span className="change-deletions">-{summary.deletions}</span></div></div><div className="file-change-card-actions"><Button variant="ghost" className="file-change-card-action" disabled={!canUndo} title={canUndo ? 'Undo all changes from this turn' : undoState === undefined ? 'Undo checkpoint is not available' : undoLabel} onClick={() => { if (onUndo !== undefined) void onUndo(); }}><Undo2 size={14} aria-hidden="true" />{undoLabel}</Button><Button variant="secondary" className="file-change-card-action" onClick={() => onOpenFileChanges(summary)}><Eye size={14} aria-hidden="true" />Review</Button></div></header><div className="file-change-card-list">{summary.files.map(change => <FileChangeItem key={change.path} change={change} onOpenFileChanges={() => onOpenFileChanges(summary)} />)}</div></section>;
 }

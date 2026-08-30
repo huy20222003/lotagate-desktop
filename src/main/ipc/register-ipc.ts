@@ -24,6 +24,7 @@ import type { WorkspaceFileSuggestions } from '../workspaces/workspace-file-sugg
 import { terminalExecutionInputSchema, terminalSessionOpenSchema, terminalSessionResizeSchema } from '../../contracts/ipc/v1/workspace.js';
 import { registerLoggedIpcHandler } from './logged-ipc.js';
 import type { DesktopLogger } from '../observability/desktop-logger.js';
+import type { CheckpointService } from '../checkpoints/checkpoint-service.js';
 import type { ExtensionFileService } from '../extensions/extension-file-service.js';
 import { extensionDetailInputSchema, extensionDetailWriteInputSchema, hookCreateInputSchema, hookRemoveInputSchema } from '../../contracts/ipc/v1/extensions-schema.js';
 import { automationCreateInputSchema, automationUpdateInputSchema } from '../../contracts/ipc/v1/automation.js';
@@ -40,6 +41,7 @@ export interface DesktopIpcServices {
   workspaces: WorkspaceRegistry;
   workspaceFileSuggestions: WorkspaceFileSuggestions;
   tasks: TaskStore;
+  checkpoints: CheckpointService;
   extensionFiles: ExtensionFileService;
   git: GitService;
   terminal: TerminalService;
@@ -57,7 +59,7 @@ export interface DesktopIpcServices {
 }
 
 export function registerIpc(services: DesktopIpcServices): void {
-  const { auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, extensionFiles, git, terminal, interactiveTerminal, settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext, logger } = services;
+  const { auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, checkpoints, extensionFiles, git, terminal, interactiveTerminal, settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext, logger } = services;
   const handle = <TArgs extends unknown[], TResult>(channel: string, listener: (event: Electron.IpcMainInvokeEvent, ...args: TArgs) => TResult): void => registerLoggedIpcHandler(logger, channel, listener);
   const requireWorkspaceCwd = (input: unknown): Promise<string> => workspaces.requireRegisteredRoot(cwdSchema.parse(input));
   const taskUpdateSchema = z.object({
@@ -181,6 +183,8 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('workspace.remove', async (event, workspaceId: unknown) => { assertTrustedRenderer(event); return workspaces.remove(idSchema.parse(workspaceId)); });
   handle('workspace.trust', async (event, workspaceId: unknown, trusted: unknown) => { assertTrustedRenderer(event); return workspaces.trust(idSchema.parse(workspaceId), z.boolean().parse(trusted)); });
   handle('workspace.fileSuggestions', async (event, rootPath: unknown, query: unknown) => { assertTrustedRenderer(event); return workspaceFileSuggestions.list(await requireWorkspaceCwd(rootPath), z.string().max(256).parse(query)); });
+  handle('checkpoint.list', async (event, cwd: unknown, taskId: unknown) => { assertTrustedRenderer(event); const canonicalCwd = await requireWorkspaceCwd(cwd); const task = await tasks.requireForCwd(idSchema.parse(taskId), canonicalCwd); return checkpoints.list(canonicalCwd, task.id); });
+  handle('checkpoint.undo', async (event, cwd: unknown, taskId: unknown, turnId: unknown) => { assertTrustedRenderer(event); const canonicalCwd = await requireWorkspaceCwd(cwd); const task = await tasks.requireForCwd(idSchema.parse(taskId), canonicalCwd); return checkpoints.undo(canonicalCwd, task.id, idSchema.parse(turnId)); });
   handle('task.list', async (event, workspaceId?: unknown) => { assertTrustedRenderer(event); return tasks.list(workspaceId === undefined ? undefined : idSchema.parse(workspaceId)); });
   handle('task.create', async (event, input: unknown) => {
     assertTrustedRenderer(event);
@@ -296,7 +300,7 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('automation.cancel', async (event, runId: unknown) => { assertTrustedRenderer(event); return automations.cancel(idSchema.parse(runId)); });
   handle('automation.retry', async (event, runId: unknown) => { assertTrustedRenderer(event); return retryAutomation(idSchema.parse(runId)); });
   handle('automation.review', async (event, runId: unknown, approved: unknown) => { assertTrustedRenderer(event); return automations.review(idSchema.parse(runId), z.boolean().parse(approved)); });
-  handle('automation.approvalRespond', async (event, runId: unknown, approvalId: unknown, approved: unknown) => { assertTrustedRenderer(event); const resolution = await approvals.respond(idSchema.parse(approvalId), z.boolean().parse(approved)); if (resolution.result === undefined) throw new Error(`Approval ${idSchema.parse(approvalId)} is not owned by the automation coordinator.`); return resolution.result as AutomationRun; });
+  handle('automation.approvalRespond', async (event, runId: unknown, approvalId: unknown, approved: unknown) => { assertTrustedRenderer(event); return automations.respondApproval(idSchema.parse(runId), idSchema.parse(approvalId), z.boolean().parse(approved)); });
   handle('automation.runs', async (event, id: unknown, limit?: unknown) => { assertTrustedRenderer(event); return automations.runs(idSchema.parse(id), limit === undefined ? 100 : z.number().int().min(1).max(100).parse(limit)); });
   handle('operations.notify', async (event, title: unknown, body: unknown) => { assertTrustedRenderer(event); operations.notify(z.string().min(1).parse(title), z.string().max(2_000).parse(body)); });
   handle('operations.showWindow', async event => { assertTrustedRenderer(event); operations.showWindow(); });

@@ -70,6 +70,10 @@ const bridge: DesktopBridge = {
     trust: (workspaceId, trusted) => ipcRenderer.invoke('workspace.trust', workspaceId, trusted),
     fileSuggestions: (rootPath, query) => ipcRenderer.invoke('workspace.fileSuggestions', rootPath, query),
   },
+  checkpoints: {
+    list: (cwd, taskId) => ipcRenderer.invoke('checkpoint.list', cwd, taskId),
+    undo: (cwd, taskId, turnId) => ipcRenderer.invoke('checkpoint.undo', cwd, taskId, turnId),
+  },
   tasks: {
     list: workspaceId => ipcRenderer.invoke('task.list', workspaceId),
     create: input => ipcRenderer.invoke('task.create', input),

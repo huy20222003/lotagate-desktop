@@ -111,6 +111,9 @@ export class TaskEventProjector {
   }
 
   private async selectTask(cwd: string, event: DesktopEvent): Promise<Awaited<ReturnType<TaskStore['require']>> | undefined> {
+    const taskId = typeof event.data['taskId'] === 'string' ? event.data['taskId'] : undefined;
+    const directTask = taskId === undefined ? undefined : await this.tasks.require(taskId).then(task => task.cwd === cwd ? task : undefined).catch(() => undefined);
+    if (directTask !== undefined) return directTask;
     const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
     const sessionTask = sessionId === undefined ? undefined : await this.tasks.findBySession(sessionId);
     const activeTaskId = this.activeTasks.get(cwd);

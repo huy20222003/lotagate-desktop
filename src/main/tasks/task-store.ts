@@ -65,6 +65,20 @@ export class TaskStore {
     });
   }
 
+  async interruptActiveBySession(sessionId: string, reason: string): Promise<Task | undefined> {
+    return this.withExclusive(async () => {
+      let interrupted: Task | undefined;
+      await this.taskStore.update(current => {
+        const index = current.findIndex(task => !task.archived && task.sessionId === sessionId && task.status === 'active' && task.turnId !== undefined);
+        if (index < 0) return current;
+        const now = new Date().toISOString();
+        interrupted = taskSchema.parse({ ...current[index], status: 'interrupted', turnId: undefined, interruptedReason: reason, updatedAt: now });
+        const next = [...current]; next[index] = interrupted; return next;
+      });
+      return interrupted;
+    });
+  }
+
   async appendActivity(taskId: string, kind: Activity['kind'], text: string, metadata: Record<string, unknown>): Promise<Activity> {
     return this.withExclusive(() => this.appendActivityInternal(taskId, kind, text, metadata));
   }

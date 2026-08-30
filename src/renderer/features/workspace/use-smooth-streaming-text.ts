@@ -10,8 +10,12 @@ export function useSmoothStreamingText(target: string, active: boolean): string 
   const [visibleCount, setVisibleCount] = useState(() => active ? Math.min(codePoints.length, STREAM_INITIAL_CODE_POINTS) : codePoints.length);
 
   useEffect(() => {
+    if (!active) {
+      setVisibleCount(codePoints.length);
+      return;
+    }
     setVisibleCount(current => Math.min(current, codePoints.length));
-  }, [codePoints.length]);
+  }, [active, codePoints.length]);
 
   useEffect(() => {
     if (visibleCount >= codePoints.length) return;

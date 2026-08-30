@@ -9,14 +9,14 @@ import { WorkspaceGroup } from './WorkspaceGroup.js';
 
 export interface WorkspaceSidebarProps {
   accountName: string; avatarProps: { name: string; src?: string };
-  workspaces: Workspace[]; activeWorkspace?: Workspace | undefined; tasks: Task[]; activeTask?: Task | undefined; loading: boolean;
+  workspaces: Workspace[]; activeWorkspace?: Workspace | undefined; tasks: Task[]; activeTask?: Task | undefined; runningTaskIds: ReadonlySet<string>; unreadTaskIds: ReadonlySet<string>; loading: boolean;
   accountOpen: boolean; onAccount: () => void; onCloseAccount: () => void; onSettings: () => void; onPlugins: () => void; onAutomations: () => void; onLogout: () => void;
   onNewChat: (workspace?: Workspace) => void; onWorkspace: (workspace: Workspace) => void; onTask: (task: Task) => void; onAddWorkspace: () => void;
   onRenameWorkspace: (workspace: Workspace) => void; onRemoveWorkspace: (workspace: Workspace) => void; onArchiveTask: (task: Task) => void; onPinTask: (task: Task, pinned: boolean) => void; onRenameTask: (task: Task) => void; collapsed: boolean; onToggleCollapsed: () => void;
   sidebarResizing: boolean; onStartResize: PointerEventHandler<HTMLDivElement>; onResizeKeyDown: KeyboardEventHandler<HTMLDivElement>;
 }
 
-export function WorkspaceSidebar({ accountName, avatarProps, workspaces, activeWorkspace, tasks, activeTask, loading, accountOpen, onAccount, onCloseAccount, onSettings, onPlugins, onAutomations, onLogout, onNewChat, onWorkspace, onTask, onAddWorkspace, onRenameWorkspace, onRemoveWorkspace, onArchiveTask, onPinTask, onRenameTask, collapsed, onToggleCollapsed, sidebarResizing, onStartResize, onResizeKeyDown }: WorkspaceSidebarProps) {
+export function WorkspaceSidebar({ accountName, avatarProps, workspaces, activeWorkspace, tasks, activeTask, runningTaskIds, unreadTaskIds, loading, accountOpen, onAccount, onCloseAccount, onSettings, onPlugins, onAutomations, onLogout, onNewChat, onWorkspace, onTask, onAddWorkspace, onRenameWorkspace, onRemoveWorkspace, onArchiveTask, onPinTask, onRenameTask, collapsed, onToggleCollapsed, sidebarResizing, onStartResize, onResizeKeyDown }: WorkspaceSidebarProps) {
   const accountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -35,7 +35,7 @@ export function WorkspaceSidebar({ accountName, avatarProps, workspaces, activeW
     <Button variant="ghost" className="sidebar-automation sidebar-action" onClick={onAutomations}><Icon icon={Clock3} size={16} /> Automations</Button>
     <Scrollbar className="workspace-scrollbar sidebar-section">
       <div className="section-heading"><span>Workspaces</span><IconButton icon={CirclePlus} iconSize={14} label="Add workspace" onClick={onAddWorkspace} /></div>
-      {loading ? <SidebarLoadingSkeleton /> : workspaces.length === 0 ? <button className="workspace-row" onClick={onAddWorkspace}><Icon icon={Folder} size={15} /><span>Add a workspace</span></button> : workspaces.map(workspace => <WorkspaceGroup key={workspace.id} workspace={workspace} tasks={tasks.filter(task => task.workspaceId === workspace.id && !task.archived)} activeTask={activeTask} onWorkspace={onWorkspace} onTask={onTask} onNewChat={onNewChat} onRename={onRenameWorkspace} onRemove={onRemoveWorkspace} onArchive={onArchiveTask} onPin={onPinTask} onRenameTask={onRenameTask} />)}
+      {loading ? <SidebarLoadingSkeleton /> : workspaces.length === 0 ? <button className="workspace-row" onClick={onAddWorkspace}><Icon icon={Folder} size={15} /><span>Add a workspace</span></button> : workspaces.map(workspace => <WorkspaceGroup key={workspace.id} workspace={workspace} tasks={tasks.filter(task => task.workspaceId === workspace.id && !task.archived)} activeTask={activeTask} runningTaskIds={runningTaskIds} unreadTaskIds={unreadTaskIds} onWorkspace={onWorkspace} onTask={onTask} onNewChat={onNewChat} onRename={onRenameWorkspace} onRemove={onRemoveWorkspace} onArchive={onArchiveTask} onPin={onPinTask} onRenameTask={onRenameTask} />)}
     </Scrollbar>
     <div ref={accountRef} className="account-area">
       {loading ? <div className="account-loading"><Skeleton className="sidebar-avatar-skeleton" /><Skeleton className="sidebar-account-skeleton" /></div> : <button className="account-button" onClick={onAccount} aria-expanded={accountOpen}><Avatar {...avatarProps} /><span className="account-copy"><strong>{accountName}</strong></span><Icon icon={ChevronDown} size={14} className={`account-chevron ${accountOpen ? 'open' : ''}`} /></button>}

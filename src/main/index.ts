@@ -38,6 +38,7 @@ import { artifactKind } from './artifacts/artifact-kind.js';
 import { formatToolDisplayName } from '../shared/tool-display.js';
 import { AutomationOsScheduler } from './automation/automation-os-scheduler.js';
 import { ApprovalCoordinator } from './approvals/approval-coordinator.js';
+import { CheckpointService } from './checkpoints/checkpoint-service.js';
 import type { DesktopApprovalInput } from '../contracts/ipc/v1/approval.js';
 
 loadRuntimeEnvironment();
@@ -83,6 +84,7 @@ app.whenReady().then(async () => {
   const workspaces = new WorkspaceRegistry();
   const extensionFiles = new ExtensionFileService(workspaces);
   const tasks = new TaskStore();
+  const checkpoints = new CheckpointService({ onError: (error, cwd) => logger.warn('checkpoint.capture.failed', { cwd, message: error instanceof Error ? error.message : 'Unable to capture workspace checkpoint.' }) });
   const artifacts = new ArtifactService();
   const settings = new SettingsService();
   const approvals = new ApprovalCoordinator();
@@ -112,8 +114,10 @@ app.whenReady().then(async () => {
   automationService = automations;
   const automationSessions = new Map<string, { runId: string; cwd: string }>();
   const agents = new AgentManager({
-    onEvent: (cwd, event) => {
-      logger.debug('agent.event', { cwd, event: event.event });
+    onEvent: (projectRoot, event) => {
+      const executionCwd = typeof event.data['executionCwd'] === 'string' ? event.data['executionCwd'] : undefined;
+      logger.debug('agent.event', { projectRoot, executionCwd, event: event.event });
+      checkpoints.observeEvent(projectRoot, event);
       if (event.event === 'approval.requested') {
         const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
         const binding = sessionId === undefined ? undefined : automationSessions.get(sessionId);
@@ -124,30 +128,32 @@ app.whenReady().then(async () => {
         const displayName = formatToolDisplayName(event.data['toolName'], event.data['displayName']);
         const kind = String(event.data['kind'] ?? 'action');
         const detail = typeof event.data['detail'] === 'object' && event.data['detail'] !== null && !Array.isArray(event.data['detail']) ? event.data['detail'] as Record<string, unknown> : {};
-        const commonInput: Omit<DesktopApprovalInput, 'source' | 'surface'> = { approvalId, toolName, displayName, kind, detail, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }), risk: fallbackReason === undefined ? 'normal' : 'elevated', workspaceCwd: cwd, ...(typeof event.data['taskId'] === 'string' ? { taskId: event.data['taskId'] } : {}), ...(typeof event.data['turnId'] === 'string' ? { turnId: event.data['turnId'] } : {}) };
+        const commonInput: Omit<DesktopApprovalInput, 'source' | 'surface'> = { approvalId, toolName, displayName, kind, detail, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }), risk: fallbackReason === undefined ? 'normal' : 'elevated', workspaceCwd: executionCwd ?? projectRoot, ...(typeof event.data['taskId'] === 'string' ? { taskId: event.data['taskId'] } : {}), ...(typeof event.data['turnId'] === 'string' ? { turnId: event.data['turnId'] } : {}) };
         if (binding !== undefined) {
           const approval: Omit<AutomationApproval, 'requestedAt'> = { approvalId, toolName, displayName, kind, detail, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }) };
           void automations.requestApproval(binding.runId, approval, approved => agents.approvalRespond(binding.cwd, { approvalId, approved }), registered => {
             void approvals.request({ ...commonInput, source: 'automation', surface: 'automation' }, approved => automations.respondApproval(binding.runId, registered.approvalId, approved)).catch(error => logger.warn('approval.registration.failed', { approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
           }).catch(error => logger.warn('automation.approval.registration.failed', { runId: binding.runId, message: error instanceof Error ? error.message : 'Unable to register automation approval.' }));
         } else {
-          void approvals.request({ ...commonInput, source: 'agent', surface: 'composer' }, approved => agents.approvalRespond(cwd, { approvalId, approved })).catch(error => logger.warn('approval.registration.failed', { cwd, approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
+          void approvals.request({ ...commonInput, source: 'agent', surface: 'composer' }, approved => agents.approvalRespond(projectRoot, { approvalId, approved })).catch(error => logger.warn('approval.registration.failed', { cwd: projectRoot, approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
         }
       }
-      void taskProjector?.apply(cwd, event).catch(error => logger.error('task.event.persist.failed', { cwd, event: event.event, message: error instanceof Error ? error.message : 'Unable to persist agent event.' }));
+      void taskProjector?.apply(projectRoot, event).catch(error => logger.error('task.event.persist.failed', { cwd: projectRoot, event: event.event, message: error instanceof Error ? error.message : 'Unable to persist agent event.' }));
       if (event.event !== 'approval.requested') {
-        for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
+        for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd: projectRoot, event });
       }
     },
-    onDiagnostic: (cwd, diagnostic) => { logger.warn('agent.diagnostic', { cwd, kind: diagnostic.kind, message: diagnostic.message }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic }); },
-    onHostRequest: async (cwd, request) => request.tool === 'browser'
-      ? browserHost.handle(cwd, request)
-      : hostExecution.handle(cwd, request),
-    onExit: (cwd, error) => {
-      void browserHost.closeForWorkspace(cwd);
-      void tasks.interruptActiveByCwd(cwd, error.message).catch(() => undefined);
-      logger.error('agent.process.exit', { cwd, error: error.message });
-      for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd, diagnostic: { kind: 'protocol', message: error.message } });
+    onDiagnostic: (projectRoot, diagnostic) => { logger.warn('agent.diagnostic', { projectRoot, kind: diagnostic.kind, message: diagnostic.message }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic }); },
+    onHostRequest: async (projectRoot, request) => {
+      if (request.tool === 'browser') return browserHost.handle(projectRoot, request);
+      if (request.executionCwd === undefined) throw new Error('The CLI host request is missing its execution workspace.');
+      return checkpoints.withHostRequest(projectRoot, request, () => hostExecution.handle(request.executionCwd as string, request));
+    },
+    onExit: (projectRoot, error, sessionId) => {
+      void browserHost.closeForWorkspace(projectRoot);
+      void (sessionId === undefined ? tasks.interruptActiveByCwd(projectRoot, error.message) : tasks.interruptActiveBySession(sessionId, error.message)).catch(() => undefined);
+      logger.error('agent.process.exit', { projectRoot, sessionId, error: error.message });
+      for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic: { kind: 'protocol', message: error.message } });
     },
   }, cache, async () => {
     const configured = await settings.get();
@@ -200,7 +206,7 @@ app.whenReady().then(async () => {
       operations.notify(`Automation · ${event.automation.name}`, detail);
     }
   });
-  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, extensionFiles, git, terminal: new TerminalService(workspaces, tasks), interactiveTerminal: new InteractiveTerminalService(workspaces), settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger });
+  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks), interactiveTerminal: new InteractiveTerminalService(workspaces), settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }

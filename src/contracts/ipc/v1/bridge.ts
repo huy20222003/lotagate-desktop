@@ -1,7 +1,7 @@
 import type { DesktopRendererAuthApi } from './auth.js';
 import type { ExtensionDetail, ExtensionDetailInput, ExtensionDetailWriteInput, HookCreateInput, HookRemoveInput } from './extensions.js';
 import type { DesktopAgentResult } from '../../agent-protocol/v1/desktop.js';
-import type { DesktopWorkspaceApi, DesktopTaskApi, AgentEventEnvelope, DesktopGitApi, DesktopTerminalApi, DesktopSettingsApi, DesktopAutomationApi, DesktopBrowserApi } from './workspace.js';
+import type { DesktopWorkspaceApi, DesktopTaskApi, DesktopCheckpointApi, AgentEventEnvelope, DesktopGitApi, DesktopTerminalApi, DesktopSettingsApi, DesktopAutomationApi, DesktopBrowserApi } from './workspace.js';
 import type { DesktopApprovalApi } from './approval.js';
 
 export interface DesktopBridge {
@@ -36,6 +36,7 @@ export interface DesktopBridge {
     onEvent(listener: (envelope: AgentEventEnvelope) => void): () => void;
   };
   workspaces: DesktopWorkspaceApi;
+  checkpoints: DesktopCheckpointApi;
   tasks: DesktopTaskApi;
   extensions: {
     readDetail(input: ExtensionDetailInput): Promise<ExtensionDetail>;

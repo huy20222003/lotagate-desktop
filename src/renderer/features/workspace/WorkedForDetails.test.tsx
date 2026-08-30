@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Activity } from '../../../contracts/ipc/v1/workspace.js';
 import { WorkedForDetails } from './WorkedForDetails.js';
 
@@ -10,7 +10,7 @@ function toolActivity(id: string, text: string, metadata: Record<string, unknown
 }
 
 describe('WorkedForDetails', () => {
-  afterEach(() => cleanup());
+  afterEach(() => { cleanup(); vi.useRealTimers(); });
 
   it('shows the live status separately from the final transcript', () => {
     render(<WorkedForDetails statusText="I’ll inspect the workspace with List files." progressActivities={[]} toolActivities={[]} />);
@@ -42,5 +42,17 @@ describe('WorkedForDetails', () => {
     ]} />);
 
     expect(screen.getByText('Run Tavily Search')).toBeInTheDocument();
+  });
+
+  it('reveals live progress text gradually', () => {
+    vi.useFakeTimers();
+    const content = 'Đang kiểm tra nội dung của workspace và chuẩn bị cập nhật kết quả cho anh. '.repeat(3).trimEnd();
+    const activity = toolActivity('progress-1', content, { turnId: 'turn-1', assistantPhase: 'progress' });
+    const { container } = render(<WorkedForDetails active progressActivities={[{ ...activity, kind: 'assistant' }]} toolActivities={[]} />);
+    const progress = container.querySelector('.worked-progress');
+
+    expect(progress).not.toHaveTextContent(content);
+    for (let frame = 0; frame < 30; frame += 1) act(() => vi.advanceTimersByTime(16));
+    expect(progress).toHaveTextContent(content);
   });
 });

@@ -515,9 +515,11 @@ export class BrowserService {
 
   private async executeTargetAction(contents: WebContents, target: BrowserTarget, action: 'click' | 'type' | 'focus' | 'clear' | 'hover' | 'check' | 'select' | 'read', value?: string): Promise<BrowserInteractionResult> {
     const serializedTarget = JSON.stringify(target).replace(/\u2028/gu, '\\u2028').replace(/\u2029/gu, '\\u2029');
+    const serializedAction = JSON.stringify(action);
     const serializedValue = JSON.stringify(value ?? '').replace(/\u2028/gu, '\\u2028').replace(/\u2029/gu, '\\u2029');
     const result = await contents.executeJavaScript(`(() => {
       const target = ${serializedTarget};
+      const action = ${serializedAction};
       const value = ${serializedValue};
       const candidates = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role]'));
       const normalized = (input) => (input || '').trim().replace(/\\s+/gu, ' ').toLowerCase();

@@ -2,6 +2,7 @@ import type { Activity } from '../../../contracts/ipc/v1/workspace.js';
 import { formatToolDisplayName } from '../../../shared/tool-display.js';
 import { AgentMarkdown } from './markdown-renderer.js';
 import { isAssistantProgressActivity } from './conversation-activities.js';
+import { useSmoothStreamingText } from './use-smooth-streaming-text.js';
 
 interface ToolStep {
   actionId: string;
@@ -9,14 +10,23 @@ interface ToolStep {
   state: 'running' | 'completed' | 'failed';
 }
 
-export function WorkedForDetails({ statusText, progressActivities, toolActivities }: { statusText?: string | undefined; progressActivities: readonly Activity[]; toolActivities: readonly Activity[] }) {
+export function WorkedForDetails({ active = false, statusText, progressActivities, toolActivities }: { active?: boolean; statusText?: string | undefined; progressActivities: readonly Activity[]; toolActivities: readonly Activity[] }) {
   const toolSteps = groupToolActivities(toolActivities);
   if (statusText === undefined && progressActivities.length === 0 && toolSteps.length === 0) return null;
   return <div className="worked-details">
-    {statusText ? <div className="worked-status">{statusText}</div> : null}
-    {progressActivities.filter(isAssistantProgressActivity).map(activity => <div className="worked-progress" key={activity.id}><AgentMarkdown content={activity.text} /></div>)}
+    {statusText ? <WorkedText className="worked-status" content={statusText} active={active} /> : null}
+    {progressActivities.filter(isAssistantProgressActivity).map(activity => <WorkedProgress key={activity.id} content={activity.text} active={active} />)}
     {toolSteps.map(step => <div className={`worked-tool worked-tool-${step.state}`} key={step.actionId}><span className={step.state === 'running' ? 'typing-label' : undefined}>{toolLabel(step)}</span></div>)}
   </div>;
+}
+
+function WorkedProgress({ content, active }: { content: string; active: boolean }) {
+  return <div className="worked-progress"><WorkedText content={content} active={active} markdown /></div>;
+}
+
+function WorkedText({ className, content, active, markdown = false }: { className?: string; content: string; active: boolean; markdown?: boolean }) {
+  const displayedText = useSmoothStreamingText(content, active);
+  return <div className={className}>{markdown ? <AgentMarkdown content={displayedText} /> : displayedText}</div>;
 }
 
 function groupToolActivities(activities: readonly Activity[]): ToolStep[] {

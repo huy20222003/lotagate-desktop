@@ -89,4 +89,12 @@ describe('TaskEventProjector turn lifecycle', () => {
     expect(tasks.appendEvent).not.toHaveBeenCalled();
     expect(tasks.findByCwd).not.toHaveBeenCalled();
   });
+
+  it('uses the explicit task identity before session or cwd fallbacks', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'tool.completed', data: { taskId: 'task-1', sessionId: 'unknown-session', toolName: 'filesystem.read', isError: false } });
+    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'tool', 'Read file completed.', expect.any(Object));
+    expect(tasks.findBySession).not.toHaveBeenCalled();
+    expect(tasks.findByCwd).not.toHaveBeenCalled();
+  });
 });

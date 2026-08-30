@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import type { Activity, Artifact, FileChangeSummary } from '../../../contracts/ipc/v1/workspace.js';
+import type { Activity, Artifact, CheckpointUndoState, FileChangeSummary } from '../../../contracts/ipc/v1/workspace.js';
 import type { AttachmentPreview } from './attachment-types.js';
 import { AgentMessage } from './AgentMessage.js';
 import { UserMessage } from './UserMessage.js';
@@ -11,17 +11,20 @@ interface ChatMessageProps {
   artifacts: Artifact[];
   timing?: TurnTiming | undefined;
   fileChangeSummary?: FileChangeSummary | undefined;
+  undoState?: CheckpointUndoState | undefined;
+  undoBusy?: boolean;
   progressActivities?: readonly Activity[];
   toolActivities?: readonly Activity[];
   workspaceCwd: string;
   onOpenFileChanges: (summary: FileChangeSummary) => void;
+  onUndoFileChanges: (turnId: string) => Promise<void>;
   onOpenImage: (attachment: AttachmentPreview) => void;
 }
 
-export const ChatMessage = memo(function ChatMessage({ activity, attachments, artifacts, timing, fileChangeSummary, progressActivities, toolActivities, workspaceCwd, onOpenFileChanges, onOpenImage }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ activity, attachments, artifacts, timing, fileChangeSummary, undoState, undoBusy, progressActivities, toolActivities, workspaceCwd, onOpenFileChanges, onUndoFileChanges, onOpenImage }: ChatMessageProps) {
   if (activity.kind === 'user') return <UserMessage activity={activity} attachments={attachments} workspaceCwd={workspaceCwd} onOpenImage={onOpenImage} />;
   const streaming = timing?.endedAt === undefined && timing !== undefined;
-  return <AgentMessage activity={activity} artifacts={artifacts} workspaceCwd={workspaceCwd} onOpenFileChanges={onOpenFileChanges} streaming={streaming} {...(timing === undefined ? {} : { timing })} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...(progressActivities === undefined ? {} : { progressActivities })} {...(toolActivities === undefined ? {} : { toolActivities })} />;
+  return <AgentMessage activity={activity} artifacts={artifacts} workspaceCwd={workspaceCwd} onUndoFileChanges={onUndoFileChanges} {...(undoState === undefined ? {} : { undoState })} {...(undoBusy === undefined ? {} : { undoBusy })} onOpenFileChanges={onOpenFileChanges} streaming={streaming} {...(timing === undefined ? {} : { timing })} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...(progressActivities === undefined ? {} : { progressActivities })} {...(toolActivities === undefined ? {} : { toolActivities })} />;
 }, areChatMessagePropsEqual);
 
 function areChatMessagePropsEqual(previous: ChatMessageProps, next: ChatMessageProps): boolean {
@@ -29,8 +32,11 @@ function areChatMessagePropsEqual(previous: ChatMessageProps, next: ChatMessageP
     && previous.attachments === next.attachments
     && previous.artifacts === next.artifacts
     && previous.fileChangeSummary === next.fileChangeSummary
+    && previous.undoState === next.undoState
+    && previous.undoBusy === next.undoBusy
     && previous.workspaceCwd === next.workspaceCwd
     && previous.onOpenFileChanges === next.onOpenFileChanges
+    && previous.onUndoFileChanges === next.onUndoFileChanges
     && previous.onOpenImage === next.onOpenImage
     && previous.timing?.startedAt === next.timing?.startedAt
     && previous.timing?.endedAt === next.timing?.endedAt

@@ -22,9 +22,9 @@ import { cancelWorkspaceTask } from './cancel-workspace-task.js';
 import { useDeferredStatePublisher } from './deferred-state-publisher.js';
 import { useActivityRefreshScheduler } from './use-activity-refresh-scheduler.js';
 import { useDraftPersistence } from './use-draft-persistence.js';
-
+import { useWorkspaceCheckpoints } from './use-workspace-checkpoints.js';
+import { useTaskSidebarStatus } from './use-task-sidebar-status.js';
 type ContextCompactionPhase = 'compacting' | 'compacted' | 'failed';
-
 export function useWorkspaceController() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspace, setWorkspace] = useState<Workspace | undefined>();
@@ -75,6 +75,7 @@ export function useWorkspaceController() {
   const suppressQueueRef = useRef(false);
   useEffect(() => { draftTaskRef.current = task; }, [task]);
   useEffect(() => { workspaceRef.current = workspace; tasksRef.current = tasks; }, [tasks, workspace]);
+  const { runningTaskIds, unreadTaskIds, markTurnStarted, markTurnFinished } = useTaskSidebarStatus(task?.id);
   const reportControllerError = useCallback((reason: unknown) => setError(toMessage(reason)), []);
   useEffect(() => { void window.lotagate.settings.get().then(settings => { setApprovalMode(settings.approvalMode); }).catch(() => undefined); }, []);
   useEffect(() => {
@@ -184,9 +185,9 @@ export function useWorkspaceController() {
       else setFileChanges(current => summaries[liveTurnId] === undefined ? current : mergeFileChangeSummaries({ [liveTurnId]: current }, summaries)[liveTurnId] ?? current);
     }
   }, [publishActivities]);
+  const { checkpointStatuses, undoingTurns, refreshCheckpointStatuses, undoFileChanges } = useWorkspaceCheckpoints(task, loadActivities);
 
   const scheduleActivityRefresh = useActivityRefreshScheduler(loadActivities, reportControllerError, task?.id);
-
   const loadOlderActivities = useCallback(async (): Promise<boolean> => {
     const taskId = task?.id;
     const before = activityPageCursorRef.current;
@@ -249,6 +250,10 @@ export function useWorkspaceController() {
     const currentTaskId = currentTask?.id;
     const allowUnscopedFallback = allowsUnscopedTaskFallback(envelope.event.event, eventSessionId, turnId);
     const eventTask = currentTasks.find(item => eventSessionId !== undefined && item.sessionId === eventSessionId) ?? (currentTask?.sessionId === eventSessionId ? currentTask : undefined) ?? (allowUnscopedFallback ? currentTask : undefined) ?? (allowUnscopedFallback && currentTasks.length === 1 ? currentTasks[0] : undefined);
+    if (eventTask !== undefined) {
+      if (envelope.event.event === 'turn.started') markTurnStarted(eventTask.id);
+      else if (terminal) markTurnFinished(eventTask.id, envelope.event.event === 'turn.completed', currentTaskId);
+    }
     if (eventTask !== undefined && eventTask.id === currentTaskId) {
       if (turnId && envelope.event.event === 'turn.started') setTurnTimings(current => ({ ...current, [turnId]: { startedAt: Date.now() } }));
       if (turnId && terminal) setTurnTimings(current => ({ ...current, [turnId]: { startedAt: current[turnId]?.startedAt ?? Date.now(), endedAt: Date.now() } }));
@@ -272,6 +277,7 @@ export function useWorkspaceController() {
         suppressQueueRef.current = false;
         if (queued) window.setTimeout(() => { void dispatchQueuedPromptRef.current?.(queued); }, 0);
       }
+      if (terminal && eventTask.id === currentTaskId) window.setTimeout(() => { void refreshCheckpointStatuses().catch(() => undefined); }, 150);
     }
     if (eventTask !== undefined && eventTask.id === currentTaskId) {
       if (envelope.event.event === 'trust.requested') setTrust({ trustRequestId: String(data['trustRequestId']), taskId: eventTask.id, sessionId: String(data['sessionId']), path: String(data['path']) });
@@ -304,7 +310,7 @@ export function useWorkspaceController() {
     }
     if (eventTask !== undefined && eventTask.id === currentTaskId && envelope.event.event !== 'assistant.delta') scheduleActivityRefresh(eventTask.id);
     if (eventTask !== undefined && (terminal || envelope.event.event === 'turn.started')) scheduleTaskReload(currentWorkspace.id);
-  }), [publishActivities, scheduleActivityRefresh, scheduleTaskReload]);
+  }), [markTurnFinished, markTurnStarted, publishActivities, refreshCheckpointStatuses, scheduleActivityRefresh, scheduleTaskReload]);
 
   const selectWorkspace = useCallback((next: Workspace) => {
     void discardQueuedAttachments(task?.id, messageQueueServiceRef.current.snapshot(), activities, task?.draftAttachmentIds ?? []);
@@ -589,5 +595,5 @@ export function useWorkspaceController() {
     setTasks(current => current.map(item => item.id === updated.id ? updated : item));
     setTask(current => current?.id === updated.id ? updated : current);
   }, []);
-  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode: updateApprovalMode, trust, models, selectedModel, setSelectedModel: selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, removeQueuedMessage, editQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, plan, subagents, attachments, queuedMessages, approval, approvalMode, trust, models, selectedModel, selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, retryTask, archiveTask, pinTask, pinTaskById, updateApprovalMode]);
+  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, checkpointStatuses, undoingTurns, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode: updateApprovalMode, trust, models, selectedModel, setSelectedModel: selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, runningTaskIds, unreadTaskIds, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, undoFileChanges, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, checkpointStatuses, undoingTurns, approvalMode, trust, models, selectedModel, selectModel, loading, busy, thinking, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, runningTaskIds, unreadTaskIds, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, undoFileChanges, retryTask, archiveTask, pinTask, pinTaskById, updateApprovalMode]);
 }

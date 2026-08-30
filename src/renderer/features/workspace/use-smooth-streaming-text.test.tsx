@@ -33,4 +33,15 @@ describe('useSmoothStreamingText', () => {
     render(<StreamProbe target={target} active={false} />);
     expect(screen.getByTestId('stream-output')).toHaveTextContent(target);
   });
+
+  it('finishes the reveal when a live message becomes persisted', () => {
+    vi.useFakeTimers();
+    const target = 'Nội dung live dài cần được hiển thị đầy đủ sau khi lượt chạy kết thúc. '.repeat(3).trimEnd();
+    const view = render(<StreamProbe target={target} active />);
+    expect(screen.getByTestId('stream-output')).not.toHaveTextContent(target);
+
+    view.rerender(<StreamProbe target={target} active={false} />);
+
+    expect(screen.getByTestId('stream-output')).toHaveTextContent(target);
+  });
 });
