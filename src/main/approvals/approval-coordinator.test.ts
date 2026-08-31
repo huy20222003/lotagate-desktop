@@ -27,4 +27,32 @@ describe('ApprovalCoordinator', () => {
     await expect(coordinator.respond(request!.approvalId, true)).rejects.toThrow('no longer active');
     await expect(pending).resolves.toMatchObject({ approvalId: request!.approvalId, approved: false });
   });
+
+  it('resolves as denied without calling the action when its process is unavailable', async () => {
+    const coordinator = new ApprovalCoordinator();
+    const listener = vi.fn();
+    const onDecision = vi.fn().mockResolvedValue(undefined);
+    coordinator.onRequest(listener);
+    const pending = coordinator.request({ source: 'agent', surface: 'composer', toolName: 'filesystem.write', detail: { summary: 'Write.' } }, onDecision, { isAvailable: () => false });
+    const request = listener.mock.calls[0]?.[0];
+
+    await expect(coordinator.respond(request!.approvalId, true)).resolves.toMatchObject({ approvalId: request!.approvalId, approved: false });
+    await expect(pending).resolves.toMatchObject({ approvalId: request!.approvalId, approved: false });
+    expect(onDecision).not.toHaveBeenCalled();
+  });
+
+  it('cancels on timeout without calling the action when the process disappears', async () => {
+    vi.useFakeTimers();
+    try {
+      const coordinator = new ApprovalCoordinator();
+      const onDecision = vi.fn().mockResolvedValue(undefined);
+      const pending = coordinator.request({ source: 'agent', surface: 'composer', toolName: 'filesystem.write', detail: { summary: 'Write.' }, timeoutMs: 10_000 }, onDecision, { isAvailable: () => false });
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      await expect(pending).resolves.toMatchObject({ approved: false });
+      expect(onDecision).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

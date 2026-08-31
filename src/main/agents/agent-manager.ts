@@ -11,7 +11,7 @@ export interface AgentManagerHandler {
   onEvent(projectRoot: string, event: DesktopEvent): void;
   onHostRequest?(projectRoot: string, request: DesktopHostRequest): Promise<DesktopHostResponse>;
   onDiagnostic?(projectRoot: string, diagnostic: { kind: 'stderr' | 'protocol'; message: string }): void;
-  onExit?(projectRoot: string, error: Error, sessionId?: string): void;
+  onExit?(projectRoot: string, error: Error, sessionId?: string, approvalIds?: readonly string[]): void;
 }
 
 export interface CliAttachmentInput { id: string; name: string; mimeType: string; sizeBytes: number; path: string; }
@@ -43,7 +43,7 @@ export class AgentManager {
       if (sessionId === undefined) throw new Error('The CLI did not return a session id.');
       binding.sessionId = sessionId; this.sessionBindings.set(sessionId, binding);
       return result;
-    } catch (error) { this.removeBinding(binding); await binding.process.shutdown(); throw error; }
+    } catch (error) { this.removeBinding(binding); await binding.process.shutdown('session-create-failed'); throw error; }
   }
 
   async sessionList(cwd: string): Promise<unknown> { return this.request(cwd, 'session.list', {}); }
@@ -63,7 +63,7 @@ export class AgentManager {
     const binding = this.createProcess(projectRoot, `session:${sessionId}`);
     await binding.process.initialize();
     try { const result = await binding.process.request('session.resume', { sessionId }); binding.sessionId = sessionId; this.sessionBindings.set(sessionId, binding); return result; }
-    catch (error) { this.removeBinding(binding); await binding.process.shutdown(); throw error; }
+    catch (error) { this.removeBinding(binding); await binding.process.shutdown('session-resume-failed'); throw error; }
   }
 
   async turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; runId?: string; taskId?: string; execution?: DesktopExecutionPolicy; skills?: DesktopSkillSelection; attachments?: CliAttachmentInput[] }): Promise<unknown> {
@@ -83,8 +83,13 @@ export class AgentManager {
   async commandExecute(cwd: string, input: Record<string, unknown>): Promise<unknown> { return this.request(cwd, 'command.execute', input); }
   async commandCancel(cwd: string, commandId: string): Promise<unknown> { return this.request(cwd, 'command.cancel', { commandId }); }
 
-  async shutdown(cwd: string): Promise<void> { const projectRoot = await requireDirectory(cwd); await Promise.allSettled([...this.processes.values()].filter(binding => binding.projectRoot === projectRoot).map(binding => this.shutdownBinding(binding))); }
-  async shutdownAll(): Promise<void> { await Promise.allSettled([...this.processes.values()].map(binding => this.shutdownBinding(binding))); this.processes.clear(); this.sessionBindings.clear(); this.sessionResumes.clear(); this.turnBindings.clear(); this.approvalBindings.clear(); this.trustBindings.clear(); for (const timer of this.recoveryTimers.values()) clearTimeout(timer); this.recoveryTimers.clear(); this.recoveryAttempts.clear(); }
+  isApprovalProcessAvailable(cwd: string, approvalId: string): boolean {
+    const binding = this.approvalBindings.get(approvalId);
+    return binding !== undefined && binding.projectRoot === cwd && binding.process.isAvailable();
+  }
+
+  async shutdown(cwd: string, reason = 'ipc.agent.shutdown'): Promise<void> { const projectRoot = await requireDirectory(cwd); await Promise.allSettled([...this.processes.values()].filter(binding => binding.projectRoot === projectRoot).map(binding => this.shutdownBinding(binding, reason))); }
+  async shutdownAll(reason = 'shutdown-all'): Promise<void> { await Promise.allSettled([...this.processes.values()].map(binding => this.shutdownBinding(binding, reason))); this.processes.clear(); this.sessionBindings.clear(); this.sessionResumes.clear(); this.turnBindings.clear(); this.approvalBindings.clear(); this.trustBindings.clear(); for (const timer of this.recoveryTimers.values()) clearTimeout(timer); this.recoveryTimers.clear(); this.recoveryAttempts.clear(); }
 
   private createProcess(projectRoot: string, key: string): ProcessBinding {
     const current = this.processes.get(key); if (current !== undefined) return current;
@@ -98,7 +103,12 @@ export class AgentManager {
       },
       onHostRequest: request => this.handler.onHostRequest === undefined ? Promise.resolve({ version: 2, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message: 'The Desktop host is unavailable.', retryable: false } }) : this.handler.onHostRequest(projectRoot, request),
       onDiagnostic: diagnostic => this.handler.onDiagnostic?.(projectRoot, diagnostic),
-      onExit: error => { this.handler.onExit?.(projectRoot, error, binding.sessionId); this.scheduleRecovery(binding); },
+      onExit: error => {
+        const approvalIds = [...this.approvalBindings.entries()].filter(([, candidate]) => candidate === binding).map(([approvalId]) => approvalId);
+        for (const approvalId of approvalIds) this.approvalBindings.delete(approvalId);
+        this.handler.onExit?.(projectRoot, error, binding.sessionId, approvalIds);
+        this.scheduleRecovery(binding);
+      },
     };
     binding = { key, projectRoot, process: new CliAgentProcess({ cwd: projectRoot, ...resolveCliInvocation() }, eventHandler) }; this.processes.set(key, binding); return binding;
   }
@@ -117,7 +127,7 @@ export class AgentManager {
   private async bindingForId(projectRoot: string, binding: ProcessBinding | undefined, kind: string): Promise<ProcessBinding> { if (binding === undefined || binding.projectRoot !== projectRoot) throw new Error(`The requested ${kind} does not belong to this project.`); return binding; }
   private scheduleRecovery(binding: ProcessBinding): void { const attempt = this.recoveryAttempts.get(binding.key) ?? 0; if (attempt >= 3 || this.recoveryTimers.has(binding.key)) return; const delayMs = 1_000 * 2 ** attempt; this.recoveryAttempts.set(binding.key, attempt + 1); this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', message: `CLI recovery scheduled in ${delayMs}ms (attempt ${attempt + 1}/3).` }); const timer = setTimeout(() => { this.recoveryTimers.delete(binding.key); void binding.process.initialize().then(() => { this.recoveryAttempts.delete(binding.key); }).catch(error => { this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', message: error instanceof Error ? error.message : 'CLI recovery failed.' }); this.scheduleRecovery(binding); }); }, delayMs); this.recoveryTimers.set(binding.key, timer); }
   private removeBinding(binding: ProcessBinding): void { this.processes.delete(binding.key); if (binding.sessionId !== undefined) this.sessionBindings.delete(binding.sessionId); }
-  private async shutdownBinding(binding: ProcessBinding): Promise<void> { this.removeBinding(binding); this.clearRecovery(binding.key); await binding.process.shutdown(); }
+  private async shutdownBinding(binding: ProcessBinding, reason: string): Promise<void> { this.removeBinding(binding); this.clearRecovery(binding.key); await binding.process.shutdown(reason); }
   private clearRecovery(key: string): void { const timer = this.recoveryTimers.get(key); if (timer !== undefined) clearTimeout(timer); this.recoveryTimers.delete(key); this.recoveryAttempts.delete(key); }
   private async cachedProtocolResult(cwd: string, kind: string, ttlMs: number, load: () => Promise<unknown>): Promise<unknown> { const canonical = await requireDirectory(cwd); const key = `agent:${kind}:${canonical}`; const cached = await this.cache?.get<unknown>(key); if (cached !== undefined) return cached; const value = await load(); await this.cache?.set(key, value, ttlMs); return value; }
 }

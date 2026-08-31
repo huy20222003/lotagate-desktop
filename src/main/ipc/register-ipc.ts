@@ -112,7 +112,11 @@ export function registerIpc(services: DesktopIpcServices): void {
   });
   handle('agent.shutdown', async (event, cwd: unknown) => {
     assertTrustedRenderer(event);
-    await agents.shutdown(await requireWorkspaceCwd(cwd));
+    const projectRoot = await requireWorkspaceCwd(cwd);
+    logger.info('agent.shutdown.requested', { cwd: projectRoot, source: 'ipc' });
+    await approvals.cancelWhere(request => request.workspaceCwd === projectRoot);
+    await agents.shutdown(projectRoot, 'ipc.agent.shutdown');
+    logger.info('agent.shutdown.completed', { cwd: projectRoot, source: 'ipc' });
   });
   handle('agent.sessionCreate', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.sessionCreate(await requireWorkspaceCwd(cwd), objectSchema.parse(input) as { model?: string; name?: string }); });
   handle('agent.sessionList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.sessionList(await requireWorkspaceCwd(cwd)); });

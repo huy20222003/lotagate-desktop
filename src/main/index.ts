@@ -79,7 +79,7 @@ app.whenReady().then(async () => {
     partition: runtimeConfig.authPartition,
     logger,
     cache,
-    onSessionExpired: async () => { await agentManager?.shutdownAll(); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('auth.sessionExpired'); },
+    onSessionExpired: async () => { await approvalCoordinator?.cancelAll(); await agentManager?.shutdownAll('auth.session-expired'); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('auth.sessionExpired'); },
   });
   const workspaces = new WorkspaceRegistry();
   const extensionFiles = new ExtensionFileService(workspaces);
@@ -128,14 +128,14 @@ app.whenReady().then(async () => {
         const displayName = formatToolDisplayName(event.data['toolName'], event.data['displayName']);
         const kind = String(event.data['kind'] ?? 'action');
         const detail = typeof event.data['detail'] === 'object' && event.data['detail'] !== null && !Array.isArray(event.data['detail']) ? event.data['detail'] as Record<string, unknown> : {};
-        const commonInput: Omit<DesktopApprovalInput, 'source' | 'surface'> = { approvalId, toolName, displayName, kind, detail, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }), risk: fallbackReason === undefined ? 'normal' : 'elevated', workspaceCwd: executionCwd ?? projectRoot, ...(typeof event.data['taskId'] === 'string' ? { taskId: event.data['taskId'] } : {}), ...(typeof event.data['turnId'] === 'string' ? { turnId: event.data['turnId'] } : {}) };
+        const commonInput: Omit<DesktopApprovalInput, 'source' | 'surface'> = { approvalId, toolName, displayName, kind, detail, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }), risk: fallbackReason === undefined ? 'normal' : 'elevated', workspaceCwd: projectRoot, ...(typeof event.data['taskId'] === 'string' ? { taskId: event.data['taskId'] } : {}), ...(typeof event.data['turnId'] === 'string' ? { turnId: event.data['turnId'] } : {}) };
         if (binding !== undefined) {
           const approval: Omit<AutomationApproval, 'requestedAt'> = { approvalId, toolName, displayName, kind, detail, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }) };
           void automations.requestApproval(binding.runId, approval, approved => agents.approvalRespond(binding.cwd, { approvalId, approved }), registered => {
             void approvals.request({ ...commonInput, source: 'automation', surface: 'automation' }, approved => automations.respondApproval(binding.runId, registered.approvalId, approved)).catch(error => logger.warn('approval.registration.failed', { approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
           }).catch(error => logger.warn('automation.approval.registration.failed', { runId: binding.runId, message: error instanceof Error ? error.message : 'Unable to register automation approval.' }));
         } else {
-          void approvals.request({ ...commonInput, source: 'agent', surface: 'composer' }, approved => agents.approvalRespond(projectRoot, { approvalId, approved })).catch(error => logger.warn('approval.registration.failed', { cwd: projectRoot, approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
+          void approvals.request({ ...commonInput, source: 'agent', surface: 'composer' }, approved => agents.approvalRespond(projectRoot, { approvalId, approved }), { isAvailable: () => agents.isApprovalProcessAvailable(projectRoot, approvalId) }).catch(error => logger.warn('approval.registration.failed', { cwd: projectRoot, approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
         }
       }
       void taskProjector?.apply(projectRoot, event).catch(error => logger.error('task.event.persist.failed', { cwd: projectRoot, event: event.event, message: error instanceof Error ? error.message : 'Unable to persist agent event.' }));
@@ -149,10 +149,11 @@ app.whenReady().then(async () => {
       if (request.executionCwd === undefined) throw new Error('The CLI host request is missing its execution workspace.');
       return checkpoints.withHostRequest(projectRoot, request, () => hostExecution.handle(request.executionCwd as string, request));
     },
-    onExit: (projectRoot, error, sessionId) => {
+    onExit: (projectRoot, error, sessionId, approvalIds = []) => {
+      if (approvalIds.length > 0) void approvals.cancelWhere(request => approvalIds.includes(request.approvalId));
       void browserHost.closeForWorkspace(projectRoot);
       void (sessionId === undefined ? tasks.interruptActiveByCwd(projectRoot, error.message) : tasks.interruptActiveBySession(sessionId, error.message)).catch(() => undefined);
-      logger.error('agent.process.exit', { projectRoot, sessionId, error: error.message });
+      logger.error('agent.process.exit', { projectRoot, sessionId, approvalCount: approvalIds.length, error: error.message });
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic: { kind: 'protocol', message: error.message } });
     },
   }, cache, async () => {
@@ -212,7 +213,8 @@ app.whenReady().then(async () => {
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }
   if (automationDispatchRequested) {
     await automationDispatchHandler();
-    await agents.shutdownAll();
+    await approvals.cancelAll();
+    await agents.shutdownAll('automation-dispatch');
     await browser.closeAll();
     app.quit();
     return;
@@ -226,6 +228,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  logger.info('app.window-all-closed', { platform: process.platform });
   if (process.platform !== 'darwin') app.quit();
 });
 
@@ -234,7 +237,13 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   shuttingDown = true;
   automationService?.stop();
-  void Promise.all([taskProjector?.flush(), agentManager?.shutdownAll(), browserService?.closeAll(), approvalCoordinator?.cancelAll()]).finally(async () => { await logger.close(); app.quit(); });
+  logger.info('app.before-quit', { windowCount: BrowserWindow.getAllWindows().length });
+  void (async () => {
+    await approvalCoordinator?.cancelAll();
+    await agentManager?.shutdownAll('app.before-quit');
+    await taskProjector?.flush();
+    await browserService?.closeAll();
+  })().finally(async () => { await logger.close(); app.quit(); });
 });
 
 function extractSessionId(value: unknown): string | undefined {
