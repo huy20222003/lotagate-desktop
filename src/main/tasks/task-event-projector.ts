@@ -95,7 +95,7 @@ export class TaskEventProjector {
     }
     const text = eventText(event.event, data);
     if (text !== undefined) {
-      const metadata = event.event === 'assistant.delta' ? { ...redactMetadata(data), assistantPhase: 'progress' } : redactMetadata(data);
+      const metadata = event.event === 'assistant.delta' ? { ...redactMetadata(data), assistantPhase: 'progress' } : { ...redactMetadata(data), ...(event.event.startsWith('work.') ? { orchestrationEvent: event.event } : {}) };
       if (event.event === 'assistant.delta') await this.tasks.appendAssistantDelta(task.id, text, metadata);
       else await this.tasks.appendEvent(task.id, activityKind(event.event), text, metadata);
     }
@@ -131,15 +131,32 @@ function eventText(event: string, data: Record<string, unknown>): string | undef
   if (event === 'assistant.delta') return typeof data['content'] === 'string' ? data['content'] : undefined;
   if (event === 'approval.requested') return `Approval requested for ${formatToolDisplayName(data['toolName'], data['displayName'])}.`;
   if (event === 'trust.requested') return `Project trust requested for ${String(data['path'] ?? 'workspace')}.`;
-  if (event === 'tool.started') return `Running ${formatToolDisplayName(data['toolName'], data['displayName'])}.`;
-  if (event === 'tool.completed') return data['isError'] === true
-    ? `${formatToolDisplayName(data['toolName'], data['displayName'])} failed.`
-    : `${formatToolDisplayName(data['toolName'], data['displayName'])} completed.`;
+  if (event === 'tool.started' || event === 'tool.completed') {
+    // Filesystem and shell tools emit a richer tool.activity lifecycle with
+    // the file path, command, and (for writes) diff metadata. Persisting the
+    // generic lifecycle as well gives both records the same actionId; the
+    // later generic completion can then overwrite the detailed Worked For
+    // entry with a label such as only "Read file".
+    if (hasDetailedToolActivity(data)) return undefined;
+    const displayName = formatToolDisplayName(data['toolName'], data['displayName']);
+    return event === 'tool.started'
+      ? `Running ${displayName}.`
+      : data['isError'] === true ? `${displayName} failed.` : `${displayName} completed.`;
+  }
   if (event === 'tool.activity.started') return `Running ${toolActivityDisplayName(data)}.`;
   if (event === 'tool.activity.completed') return data['isError'] === true
     ? `${toolActivityDisplayName(data)} failed.`
     : `${toolActivityDisplayName(data)} completed.`;
   if (event === 'file.changed') return 'Workspace files changed.';
+  if (event === 'work.plan.created') return `Work plan created: ${String(data['goal'] ?? '')}`;
+  if (event === 'work.plan.updated') return 'Work plan updated.';
+  if (event === 'work.evidence.recorded') return `Verification evidence recorded: ${String((data['evidence'] as Record<string, unknown> | undefined)?.['summary'] ?? '')}`;
+  if (event === 'work.task.started') return `Work task started: ${String(data['stepId'] ?? data['taskId'] ?? '')}`;
+  if (event === 'work.task.completed') return `Work task completed: ${String(data['stepId'] ?? data['taskId'] ?? '')}`;
+  if (event === 'work.task.failed' || event === 'work.task.blocked') return `Work task stopped: ${String(data['stepId'] ?? data['taskId'] ?? '')}`;
+  if (event === 'work.plan.completed') return 'Work plan completed.';
+  if (event === 'work.plan.failed') return 'Work plan failed.';
+  if (event === 'work.plan.blocked') return 'Work plan blocked.';
   // Command output is a transport detail. The command runner creates the
   // final assistant activity after completion; persisting each output event
   // here leaves stale command text in the activity log and can replay it on
@@ -163,7 +180,7 @@ function failedTurnText(data: Record<string, unknown>): string {
   return 'Agent turn failed.';
 }
 
-function activityKind(event: string): 'assistant' | 'tool' | 'approval' | 'trust' | 'file' | 'command' | 'context' | 'usage' | 'error' {
+function activityKind(event: string): 'assistant' | 'tool' | 'approval' | 'trust' | 'file' | 'command' | 'context' | 'usage' | 'error' | 'verification' {
   if (event === 'assistant.delta') return 'assistant';
   if (event.startsWith('approval')) return 'approval';
   if (event.startsWith('trust')) return 'trust';
@@ -172,6 +189,7 @@ function activityKind(event: string): 'assistant' | 'tool' | 'approval' | 'trust
   if (event.startsWith('command')) return 'command';
   if (event.startsWith('context')) return 'context';
   if (event.startsWith('usage')) return 'usage';
+  if (event.startsWith('work.')) return 'verification';
   if (event.includes('failed')) return 'error';
   return 'assistant';
 }
@@ -193,3 +211,7 @@ function redactValue(value: unknown, depth: number): unknown {
 function redactString(value: string): string { return value.replace(/Bearer\s+[^\s]+/giu, 'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]{8,}/gu, '[REDACTED]').slice(0, 4_096); }
 function isSensitiveKey(key: string): boolean { return /(?:token|secret|password|authorization|credential|cookie|api[-_]?key)/iu.test(key); }
 function toolActivityDisplayName(data: Record<string, unknown>): string { return formatToolDisplayName(data['toolName'], data['command'] ?? data['displayName']); }
+function hasDetailedToolActivity(data: Record<string, unknown>): boolean {
+  const toolName = data['toolName'];
+  return toolName === 'shell.exec' || toolName === 'filesystem.read' || toolName === 'filesystem.write' || toolName === 'filesystem.exists';
+}

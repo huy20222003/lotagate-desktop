@@ -46,6 +46,9 @@ export function Composer({ disabled, workspace, thinking, task, attachments, que
   const composerRef = useRef<HTMLDivElement>(null);
   const suggestionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const suggestionRequestId = useRef(0);
+  // File mentions are scoped to the workspace selected in the sidebar. The task cwd
+  // may point at an execution worktree and must not change the visible workspace.
+  const fileSuggestionRoot = workspace?.rootPath;
   const resizePromptInput = useCallback(() => {
     const input = inputRef.current;
     if (!input) return;
@@ -56,10 +59,11 @@ export function Composer({ disabled, workspace, thinking, task, attachments, que
   }, []);
   useLayoutEffect(() => { resizePromptInput(); }, [draft, resizePromptInput]);
   useEffect(() => { setDraft(task?.draft ?? ''); setSuggestions([]); setSuggestionIndex(0); setInputScrollTop(0); setSlashCommand(undefined); setSlashForm(createSlashCommandForm()); setSlashError(undefined); setSlashValidationAttempted(false); setSlashCommandIndex(0); setSlashPickerDismissed(false); suggestionRequestId.current += 1; window.requestAnimationFrame(() => inputRef.current?.focus()); }, [task?.id]);
+  useEffect(() => { suggestionRequestId.current += 1; setSuggestions([]); setSuggestionIndex(0); }, [fileSuggestionRoot]);
   useEffect(() => { const focusPrompt = () => inputRef.current?.focus(); window.addEventListener('lotagate.focusPrompt', focusPrompt); return () => window.removeEventListener('lotagate.focusPrompt', focusPrompt); }, []);
   useEffect(() => { if (!workspace) { setSlashCommands([]); return; } let mounted = true; void listDesktopCommands(workspace.rootPath).then(descriptors => { if (mounted) setSlashCommands(availableSlashCommands(descriptors)); }).catch(() => { if (mounted) setSlashCommands([]); }); return () => { mounted = false; }; }, [workspace]);
   useEffect(() => { if (!workspace) { setSkillRows([]); return; } let mounted = true; void extensionClient.current.list(workspace.rootPath, 'skill').then(rows => { if (mounted) setSkillRows(rows.filter(row => row.status === 'ENABLED')); }).catch(() => { if (mounted) setSkillRows([]); }); return () => { mounted = false; }; }, [workspace]);
-  const updateSuggestions = useCallback(async (value: string, position: number) => { const requestId = ++suggestionRequestId.current; if (!workspace) { setSuggestions([]); return; } const match = /(?:^|\s)@([^\s]*)$/u.exec(value.slice(0, position)); if (!match) { setSuggestions([]); setSuggestionIndex(0); return; } try { const nextSuggestions = await window.lotagate.workspaces.fileSuggestions(workspace.rootPath, match[1] ?? ''); if (requestId !== suggestionRequestId.current) return; setSuggestions(nextSuggestions); setSuggestionIndex(0); } catch { if (requestId !== suggestionRequestId.current) return; setSuggestions([]); setSuggestionIndex(0); } }, [workspace]);
+  const updateSuggestions = useCallback(async (value: string, position: number) => { const requestId = ++suggestionRequestId.current; if (fileSuggestionRoot === undefined) { setSuggestions([]); return; } const match = /(?:^|\s)@([^\s]*)$/u.exec(value.slice(0, position)); if (!match) { setSuggestions([]); setSuggestionIndex(0); return; } try { const nextSuggestions = await window.lotagate.workspaces.fileSuggestions(fileSuggestionRoot, match[1] ?? ''); if (requestId !== suggestionRequestId.current) return; setSuggestions(nextSuggestions); setSuggestionIndex(0); } catch { if (requestId !== suggestionRequestId.current) return; setSuggestions([]); setSuggestionIndex(0); } }, [fileSuggestionRoot]);
   const applySuggestion = (suggestion: WorkspaceFileSuggestion) => { const position = inputRef.current?.selectionStart ?? cursor; const tokenMatch = /(?:^|\s)@([^\s]*)$/u.exec(draft.slice(0, position)); if (!tokenMatch) return; const query = tokenMatch[1] ?? ''; const tokenStart = position - query.length - 1; const next = `${draft.slice(0, tokenStart)}@${suggestion.path} ${draft.slice(position)}`; setDraft(next); setCursor(tokenStart + suggestion.path.length + 2); setSuggestions([]); setSuggestionIndex(0); void onDraft(next); window.requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(tokenStart + suggestion.path.length + 2, tokenStart + suggestion.path.length + 2); }); };
   const slashMatch = /^\/([^\s]*)$/u.exec(draft.trim());
   const visibleSkills = skillRows.filter(skill => !slashMatch?.[1] || skill.name.toLocaleLowerCase().startsWith((slashMatch[1] ?? '').toLocaleLowerCase()));

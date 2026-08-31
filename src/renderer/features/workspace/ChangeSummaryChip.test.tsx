@@ -2,16 +2,16 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { describe, expect, it, vi } from 'vitest';
-import type { FileChangeSummary, PlanSnapshot } from '../../../contracts/ipc/v1/workspace.js';
+import type { FileChangeSummary, WorkPlanSnapshot } from '../../../contracts/ipc/v1/workspace.js';
 import { ChangeSummaryChip } from './ChangeSummaryChip.js';
 
-const plan: PlanSnapshot = {
-  id: 'plan-1', goal: 'Update the workspace', totalSteps: 3,
+const plan: WorkPlanSnapshot = {
+  id: 'plan-1', turnId: 'turn-1', goal: 'Update the workspace', language: 'en', version: 2, totalSteps: 3, evidence: [],
   steps: [
-    { index: 0, id: 'inspect', title: 'Inspect files', description: '', status: 'completed' },
-    { index: 1, id: 'update', title: 'Update files', description: '', status: 'started' },
-    { index: 2, id: 'verify', title: 'Verify changes', description: '', status: 'queued' },
-  ], status: 'started', currentStep: 1,
+    { index: 0, id: 'inspect', title: 'Inspect files', description: '', dependencies: [], scope: [], acceptanceCriteria: [], verificationHints: [], evidenceIds: [], status: 'completed' },
+    { index: 1, id: 'update', title: 'Update files', description: '', dependencies: [], scope: [], acceptanceCriteria: [], verificationHints: [], evidenceIds: [], status: 'active' },
+    { index: 2, id: 'verify', title: 'Verify changes', description: '', dependencies: [], scope: [], acceptanceCriteria: [], verificationHints: [], evidenceIds: [], status: 'queued' },
+  ], status: 'active', currentStep: 1,
 };
 
 const summary: FileChangeSummary = {

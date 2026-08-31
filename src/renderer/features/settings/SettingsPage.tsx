@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Blocks, Clock3, CreditCard, KeyRound, Keyboard, MonitorCog, Plug, Puzzle, ShieldCheck, UserRound, Workflow, Globe2 } from 'lucide-react';
+import { ArrowLeft, Blocks, Clock3, CreditCard, KeyRound, Keyboard, MonitorCog, Plug, Puzzle, ShieldCheck, UserRound, Workflow, Globe2, Settings2 } from 'lucide-react';
 import type { UserProfile } from '../../../contracts/ipc/v1/auth.js';
 import type { Workspace } from '../../../contracts/ipc/v1/workspace.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
@@ -15,10 +15,11 @@ import { AutomationCenter } from './AutomationCenter.js';
 import { BrowserSettingsPage } from './BrowserSettingsPage.js';
 import { SandboxSettingsPage } from './SandboxSettingsPage.js';
 import { ApiKeySettingsPage } from './ApiKeySettingsPage.js';
+import { GeneralSettingsPage } from './GeneralSettingsPage.js';
 
-export type SettingsSection = 'profile' | 'api-key' | 'billing' | 'appearance' | 'keyboard-shortcuts' | 'automation' | 'browser' | 'sandbox' | ExtensionKind;
+export type SettingsSection = 'general' | 'profile' | 'api-key' | 'billing' | 'appearance' | 'keyboard-shortcuts' | 'automation' | 'browser' | 'sandbox' | ExtensionKind;
 const settingsGroups: Array<{ title: string; items: Array<{ value: SettingsSection; label: string; icon: typeof UserRound }> }> = [
-  { title: 'Account', items: [{ value: 'profile', label: 'Profile', icon: UserRound }, { value: 'api-key', label: 'API key', icon: KeyRound }, { value: 'billing', label: 'Billing', icon: CreditCard }] },
+  { title: 'Account', items: [{ value: 'general', label: 'General', icon: Settings2 }, { value: 'profile', label: 'Profile', icon: UserRound }, { value: 'api-key', label: 'API key', icon: KeyRound }, { value: 'billing', label: 'Billing', icon: CreditCard }] },
   { title: 'Preferences', items: [{ value: 'appearance', label: 'Appearance', icon: MonitorCog }, { value: 'keyboard-shortcuts', label: 'Keyboard shortcuts', icon: Keyboard }] },
   { title: 'Workflows', items: [{ value: 'automation', label: 'Automations', icon: Clock3 }] },
   { title: 'Runtime', items: [{ value: 'browser', label: 'Browser', icon: Globe2 }, { value: 'sandbox', label: 'Sandbox', icon: ShieldCheck }] },
@@ -33,6 +34,6 @@ export function SettingsPage({ user, workspace, workspaces, onBack, keyboardShor
   const title = settingsGroups.flatMap(group => group.items).find(item => item.value === section)?.label ?? 'Settings';
   return <div className="settings-page">
     <aside className="settings-sidebar"><Button variant="ghost" className="settings-back" onClick={onBack}><Icon icon={ArrowLeft} size={16} /> Back to app</Button><h2>Settings</h2><Scrollbar className="settings-nav scrollbar-hide-track"><div className="settings-nav-groups">{settingsGroups.map(group => <section className="settings-nav-group" key={group.title}><h3>{group.title}</h3><div className="settings-nav-list">{group.items.map(item => <button key={item.value} className={section === item.value ? 'settings-nav-item selected' : 'settings-nav-item'} onClick={() => setSection(item.value)}><Icon icon={item.icon} size={15} /> {item.label}</button>)}</div></section>)}</div></Scrollbar></aside>
-    <Scrollbar className="settings-content-scrollbar"><main className="settings-content"><header className="settings-header"><h1>{title}</h1></header>{section === 'profile' ? <ProfilePanel user={user} accountName={accountName} /> : section === 'api-key' ? <ApiKeySettingsPage {...(workspace?.rootPath ? { cwd: workspace.rootPath } : {})} /> : section === 'billing' ? <BillingPanel {...(organizationCode ? { organizationCode } : {})} /> : section === 'appearance' ? <AppearancePage /> : section === 'keyboard-shortcuts' ? <KeyboardShortcutsPage bindings={keyboardShortcuts} onUpdate={onUpdateShortcut} /> : section === 'automation' ? <AutomationCenter workspaces={workspaces} /> : section === 'browser' ? <BrowserSettingsPage /> : section === 'sandbox' ? <SandboxSettingsPage /> : <ExtensionsPage kind={section} {...(workspace?.rootPath ? { cwd: workspace.rootPath } : {})} trusted={workspace?.trusted === true} />}</main></Scrollbar>
+    <Scrollbar className="settings-content-scrollbar"><main className="settings-content"><header className="settings-header"><h1>{title}</h1></header>{section === 'general' ? <GeneralSettingsPage /> : section === 'profile' ? <ProfilePanel user={user} accountName={accountName} /> : section === 'api-key' ? <ApiKeySettingsPage {...(workspace?.rootPath ? { cwd: workspace.rootPath } : {})} /> : section === 'billing' ? <BillingPanel {...(organizationCode ? { organizationCode } : {})} /> : section === 'appearance' ? <AppearancePage /> : section === 'keyboard-shortcuts' ? <KeyboardShortcutsPage bindings={keyboardShortcuts} onUpdate={onUpdateShortcut} /> : section === 'automation' ? <AutomationCenter workspaces={workspaces} /> : section === 'browser' ? <BrowserSettingsPage /> : section === 'sandbox' ? <SandboxSettingsPage /> : <ExtensionsPage kind={section} {...(workspace?.rootPath ? { cwd: workspace.rootPath } : {})} trusted={workspace?.trusted === true} />}</main></Scrollbar>
   </div>;
 }

@@ -1,10 +1,10 @@
 import { Check, Circle, ChevronRight, LoaderCircle } from 'lucide-react';
-import type { FileChangeSummary, PlanSnapshot } from '../../../contracts/ipc/v1/workspace.js';
+import type { FileChangeSummary, WorkPlanSnapshot } from '../../../contracts/ipc/v1/workspace.js';
 import { useState } from 'react';
 
-export function ChangeSummaryChip({ summary, plan, onPlanClick, onFilesClick }: { summary: FileChangeSummary; plan?: PlanSnapshot; onPlanClick?: () => void; onFilesClick?: () => void }) {
+export function ChangeSummaryChip({ summary, plan, onPlanClick, onFilesClick }: { summary: FileChangeSummary; plan?: WorkPlanSnapshot; onPlanClick?: () => void; onFilesClick?: () => void }) {
   const [popover, setPopover] = useState<'plan' | 'files' | undefined>();
-  const hasPlan = plan?.status === 'started' && onPlanClick !== undefined;
+  const hasPlan = plan?.status === 'active' && onPlanClick !== undefined;
   const hasFiles = summary.files.length > 0 && onFilesClick !== undefined;
   if (!hasPlan && !hasFiles) return null;
   return <div className={`change-summary-chip${hasPlan && hasFiles ? ' has-segments' : ''}`} onMouseLeave={() => setPopover(undefined)}>
@@ -27,22 +27,22 @@ export function ChangeSummaryChip({ summary, plan, onPlanClick, onFilesClick }: 
   </div>;
 }
 
-function PlanProgressRing({ plan }: { plan: PlanSnapshot }) {
+function PlanProgressRing({ plan }: { plan: WorkPlanSnapshot }) {
   const total = Math.max(1, plan.steps.length);
   const circumference = 2 * Math.PI * 7;
   const segmentLength = circumference / total;
   return <svg className="change-summary-plan-ring" viewBox="0 0 20 20" aria-hidden="true">{plan.steps.map((step, index) => <circle key={step.id} cx="10" cy="10" r="7" fill="none" className={`plan-ring-segment plan-ring-segment-${step.status}`} strokeDasharray={`${Math.max(1, segmentLength - 1.8)} ${circumference - Math.max(1, segmentLength - 1.8)}`} strokeDashoffset={-index * segmentLength} transform="rotate(-90 10 10)" />)}</svg>;
 }
 
-function PlanPopover({ plan }: { plan: PlanSnapshot }) {
-  return <div className="change-summary-popover change-summary-plan-popover" role="tooltip"><strong>{plan.goal}</strong>{plan.steps.map(step => <div className={`change-summary-plan-step plan-step-${step.status}`} key={step.id}>{step.status === 'completed' ? <Check size={13} /> : step.status === 'started' ? <LoaderCircle size={13} className="spin" /> : <Circle size={11} />}<span>{step.title}</span></div>)}</div>;
+function PlanPopover({ plan }: { plan: WorkPlanSnapshot }) {
+  return <div className="change-summary-popover change-summary-plan-popover" role="tooltip"><strong>{plan.goal}</strong>{plan.steps.map(step => <div className={`change-summary-plan-step plan-step-${step.status}`} key={step.id}>{step.status === 'completed' ? <Check size={13} /> : step.status === 'active' ? <LoaderCircle size={13} className="spin" /> : step.status === 'failed' || step.status === 'blocked' ? <Circle size={11} /> : <Circle size={11} />}<span>{step.title}</span></div>)}</div>;
 }
 
 function FileChangesPopover({ summary }: { summary: FileChangeSummary }) {
   return <div className="change-summary-popover change-summary-files-popover" role="tooltip">{summary.files.map(file => <div className="change-summary-file" key={file.path}><span>{file.path}</span><span className="file-change-counts"><span className="change-additions">+{file.additions}</span><span className="change-deletions">-{file.deletions}</span></span></div>)}</div>;
 }
 
-export function planStepNumber(plan: PlanSnapshot): number {
+export function planStepNumber(plan: WorkPlanSnapshot): number {
   if (plan.currentStep !== undefined) return Math.min(plan.currentStep + 1, Math.max(1, plan.totalSteps));
   const completed = plan.steps.filter(step => step.status === 'completed').length;
   return Math.min(completed + 1, Math.max(1, plan.totalSteps));

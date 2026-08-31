@@ -100,8 +100,10 @@ export interface CheckpointUndoResult { checkpointId: string; state: CheckpointU
 export type SubagentStatus = 'queued' | 'running' | 'completed' | 'completed_with_warning' | 'failed' | 'cancelled';
 export interface SubagentHandoff { summary: string; filesInspected: string[]; filesChanged: string[]; commandsRun: string[]; verification: string[]; warnings: string[] }
 export interface SubagentSnapshot { id: string; displayName: string; task: string; mode: 'research' | 'worker'; model: string; status: SubagentStatus; background: boolean; timestamp: number; durationMs?: number; summary?: string; lastAction?: { kind: string; label: string }; handoff?: SubagentHandoff }
-export interface PlanStepSnapshot { index: number; id: string; title: string; description: string; status: 'queued' | 'started' | 'completed' }
-export interface PlanSnapshot { id: string; goal: string; totalSteps: number; steps: PlanStepSnapshot[]; status: 'started' | 'completed' | 'failed'; currentStep?: number; error?: string }
+export type WorkPlanStepStatus = 'queued' | 'active' | 'completed' | 'failed' | 'blocked';
+export interface WorkPlanStepSnapshot { index: number; id: string; title: string; description: string; dependencies: string[]; scope: string[]; acceptanceCriteria: string[]; verificationHints: string[]; evidenceIds: string[]; status: WorkPlanStepStatus }
+export interface WorkEvidenceSnapshot { id: string; stepId: string; kind: string; summary: string; status: 'passed' | 'failed' | 'informational'; command?: string; paths?: string[]; exitCode?: number; createdAt: string }
+export interface WorkPlanSnapshot { id: string; turnId: string; goal: string; language: string; version: number; totalSteps: number; steps: WorkPlanStepSnapshot[]; evidence: WorkEvidenceSnapshot[]; status: 'active' | 'completed' | 'failed' | 'blocked'; currentStep?: number; error?: string }
 
 export interface DesktopWorkspaceApi {
   list(): Promise<Workspace[]>;

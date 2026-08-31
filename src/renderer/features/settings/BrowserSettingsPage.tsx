@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
 import type { BrowserSettings } from '../../../contracts/ipc/v1/settings.js';
 import { normalizeOriginAllowlist } from '../../../contracts/ipc/v1/origin-allowlist.js';
@@ -12,11 +12,32 @@ export function BrowserSettingsPage() {
   const [value, setValue] = useState<BrowserSettings>(defaults);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const { success, error } = useToast();
-  useEffect(() => { void window.lotagate.settings.get().then(settings => setValue(settings.browser)).catch(reason => error('Unable to load Browser settings', reason instanceof Error ? reason.message : 'Please try again.')).finally(() => setLoading(false)); }, [error]);
-  const save = async () => { setSaving(true); try { const result = await window.lotagate.settings.update({ browser: value }); setValue(result.browser); success('Browser settings saved'); } catch (reason) { error('Unable to save Browser settings', reason instanceof Error ? reason.message : 'Please try again.'); } finally { setSaving(false); } };
+  const valueRef = useRef(value);
+  const saveSequenceRef = useRef(0);
+  const pendingSavesRef = useRef(0);
+  const { error } = useToast();
+  useEffect(() => { void window.lotagate.settings.get().then(settings => { valueRef.current = settings.browser; setValue(settings.browser); }).catch(reason => error('Unable to load Browser settings', reason instanceof Error ? reason.message : 'Please try again.')).finally(() => setLoading(false)); }, [error]);
   if (loading) return <div className="settings-loading">Loading Browser settings…</div>;
-  const set = <K extends keyof BrowserSettings>(key: K, next: BrowserSettings[K]) => setValue(current => ({ ...current, [key]: next }));
+  const persist = async (next: BrowserSettings) => {
+    const sequence = ++saveSequenceRef.current;
+    pendingSavesRef.current += 1;
+    setSaving(true);
+    try {
+      const result = await window.lotagate.settings.update({ browser: next });
+      if (sequence === saveSequenceRef.current) { valueRef.current = result.browser; setValue(result.browser); }
+    } catch (reason) {
+      error('Unable to save Browser settings', reason instanceof Error ? reason.message : 'Please try again.');
+    } finally {
+      pendingSavesRef.current -= 1;
+      if (pendingSavesRef.current === 0) setSaving(false);
+    }
+  };
+  const set = <K extends keyof BrowserSettings>(key: K, next: BrowserSettings[K]) => {
+    const updated = { ...valueRef.current, [key]: next };
+    valueRef.current = updated;
+    setValue(updated);
+    void persist(updated);
+  };
   const chooseDownloadDirectory = async () => {
     try {
       const directory = await window.lotagate.workspaces.pickFolder();
@@ -32,6 +53,6 @@ export function BrowserSettingsPage() {
       <Card className="settings-form-card"><div className="settings-card-heading"><div><h3>Profile & downloads</h3><p>Control browser data lifetime and where downloaded files are written.</p></div></div><div className="settings-form-grid"><Field label="Session retention"><Dropdown ariaLabel="Session retention" value={value.sessionRetention} options={retentionOptions} onChange={next => set('sessionRetention', next as BrowserSettings['sessionRetention'])} /></Field>{value.sessionRetention === 'ttl' ? <Field label="Retention timeout (minutes)"><TextInput type="number" min={1} max={10080} value={value.sessionRetentionMinutes} onChange={event => set('sessionRetentionMinutes', Number(event.target.value))} /></Field> : null}<div className="field-wide"><Field label="Download directory"><div className="settings-directory-control"><TextInput value={value.downloadDirectory} onChange={event => set('downloadDirectory', event.target.value)} placeholder="Default: system Downloads/LotaGate Browser" /><Button variant="secondary" onClick={() => void chooseDownloadDirectory()}><FolderOpen size={14} />Browse</Button></div></Field></div></div><label className="settings-toggle"><input type="checkbox" checked={value.clearDataOnClose} onChange={event => set('clearDataOnClose', event.target.checked)} /><span><strong>Clear cookies and browser data when the session closes</strong><small>Useful for clean test runs. Session evidence is removed as part of the same cleanup.</small></span></label></Card>
       <Card className="settings-form-card settings-form-card-wide"><div className="settings-card-heading"><div><h3>Network access & evidence</h3><p>Restrict destinations and control how long screenshots and recordings remain available.</p></div></div><div className="settings-form-grid"><div className="field-wide"><Field label="Origin allowlist"><TextArea value={value.originAllowlist.join('\n')} onChange={event => set('originAllowlist', normalizeOriginAllowlist([event.target.value]))} placeholder={'https://example.com, https://staging.example.com\nLeave empty to allow all HTTP(S) origins'} /></Field></div><Field label="Evidence retention (days)"><TextInput type="number" min={1} max={365} value={value.evidenceRetentionDays} onChange={event => set('evidenceRetentionDays', Number(event.target.value))} /></Field></div></Card>
     </div>
-    <div className="settings-form-actions"><Button variant="primary" onClick={() => void save()} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button></div>
+    <div className="settings-form-actions">{saving ? <span className="settings-save-status">Saving…</span> : <span className="settings-save-status">Changes are saved automatically.</span>}</div>
   </div>;
 }

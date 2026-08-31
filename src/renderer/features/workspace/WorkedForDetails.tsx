@@ -9,6 +9,9 @@ interface ToolStep {
   actionId: string;
   displayName: string;
   command?: string;
+  additions?: number;
+  deletions?: number;
+  detailed: boolean;
   state: 'running' | 'completed' | 'failed';
 }
 
@@ -95,7 +98,7 @@ function buildWorkedItems(activities: readonly Activity[]): WorkedItem[] {
       items.push({ kind: 'tool', step });
     } else {
       const existing = items[existingIndex];
-      if (existing?.kind === 'tool') items[existingIndex] = { kind: 'tool', step };
+      if (existing?.kind === 'tool') items[existingIndex] = { kind: 'tool', step: mergeToolSteps(existing.step, step) };
     }
   }
   return items;
@@ -123,14 +126,28 @@ function toolStepForActivity(activity: Activity, previousStep: ToolStep | undefi
   const fallbackName = activity.text.replace(/^Running /u, '').replace(/ (?:completed|failed)\.$/u, '').trim();
   const command = readString(activity.metadata['command']) ?? previousStep?.command;
   const displayName = command ?? formatToolDisplayName(readString(activity.metadata['toolName']) ?? fallbackName, readString(activity.metadata['displayName']));
-  return { actionId, displayName, ...(command === undefined ? {} : { command }), state };
+  const fileChange = readFileChange(activity.metadata['fileChange']);
+  return { actionId, displayName, ...(command === undefined ? {} : { command }), ...(fileChange === undefined ? {} : { additions: fileChange.additions, deletions: fileChange.deletions }), detailed: isDetailedToolActivity(activity), state };
+}
+
+function mergeToolSteps(previous: ToolStep, current: ToolStep): ToolStep {
+  if (!previous.detailed || current.detailed) return current;
+  return {
+    ...current,
+    displayName: previous.displayName,
+    detailed: true,
+    ...(previous.command === undefined ? {} : { command: previous.command }),
+    ...(previous.additions === undefined ? {} : { additions: previous.additions }),
+    ...(previous.deletions === undefined ? {} : { deletions: previous.deletions }),
+  };
 }
 
 function toolLabel(step: ToolStep): string {
   const actionName = normalizeActionName(step.displayName);
   if (step.state === 'running') return `Run ${actionName}`;
   if (step.state === 'failed') return `Failed ${actionName}`;
-  return `Ran ${actionName}`;
+  const counts = step.additions === undefined || step.deletions === undefined ? '' : ` +${step.additions} -${step.deletions}`;
+  return `Ran ${actionName}${counts}`;
 }
 
 function normalizeActionName(value: string): string {
@@ -139,3 +156,15 @@ function normalizeActionName(value: string): string {
 }
 
 function readString(value: unknown): string | undefined { return typeof value === 'string' && value.length > 0 ? value : undefined; }
+function isDetailedToolActivity(activity: Activity): boolean {
+  const toolName = readString(activity.metadata['toolName']);
+  if (toolName !== 'shell.exec' && toolName !== 'filesystem.read' && toolName !== 'filesystem.write' && toolName !== 'filesystem.exists') return false;
+  const displayName = readString(activity.metadata['displayName']);
+  return readString(activity.metadata['command']) !== undefined || activity.metadata['fileChange'] !== undefined || (displayName !== undefined && displayName !== toolName);
+}
+function readFileChange(value: unknown): { additions: number; deletions: number } | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const additions = (value as Record<string, unknown>)['additions'];
+  const deletions = (value as Record<string, unknown>)['deletions'];
+  return typeof additions === 'number' && Number.isInteger(additions) && additions >= 0 && typeof deletions === 'number' && Number.isInteger(deletions) && deletions >= 0 ? { additions, deletions } : undefined;
+}

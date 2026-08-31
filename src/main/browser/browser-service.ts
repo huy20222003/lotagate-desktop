@@ -506,7 +506,6 @@ export class BrowserService {
     finally { entry.recordingCaptureInFlight = false; }
   }
   private async capture(entry: BrowserSessionEntry, contents: WebContents): Promise<{ path: string; bytes: Buffer }> { const image = await contents.capturePage(); const directory = desktopDataPath('browser-evidence'); await mkdir(directory, { recursive: true }); const path = `${directory}/${entry.evidence.id}-${Date.now()}.png`; const bytes = image.toPNG(); await writeFile(path, bytes); return { path, bytes }; }
-
   private async targetAction(sessionId: string, tabId: string | undefined, target: BrowserTarget, action: 'focus' | 'clear' | 'hover' | 'check' | 'select' | 'read', value?: string): Promise<BrowserInteractionResult> {
     const entry = this.require(sessionId);
     const tab = this.requireTab(entry, tabId ?? entry.activeTabId);

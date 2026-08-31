@@ -8,6 +8,7 @@ import type { FileChangeDiff, FileDiffLine } from '../../contracts/ipc/v1/worksp
 
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_SCRIPT_BYTES = 512 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 export interface DesktopHostExecutionBrokerOptions {
@@ -102,9 +103,15 @@ export class DesktopHostExecutionBroker {
   }
 
   private async shell(root: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
-    const command = requiredString(params, 'command');
-    const args = params['args'] === undefined ? [] : params['args'];
+    let command = requiredString(params, 'command');
+    let args = params['args'] === undefined ? [] : params['args'];
     if (!Array.isArray(args) || args.some(item => typeof item !== 'string') || args.length > 256) throw new Error('shell.exec args must be an array of strings.');
+    const script = params['script'];
+    if (script !== undefined) {
+      if (typeof script !== 'string' || script.trim().length === 0 || Buffer.byteLength(script, 'utf8') > MAX_SCRIPT_BYTES) throw new Error('shell.exec script is invalid or exceeds the configured limit.');
+      if (!isPowerShellExecutable(command) || args.length > 0) throw new Error('shell.exec script requires powershell.exe or pwsh.exe and cannot be combined with args.');
+      args = ['-NoProfile', '-NonInteractive', '-Command', script];
+    }
     const cwd = await this.resolveExistingPath(root, typeof params['cwd'] === 'string' ? params['cwd'] : '.');
     const timeoutMs = typeof params['timeoutMs'] === 'number' && Number.isSafeInteger(params['timeoutMs']) ? Math.min(Math.max(params['timeoutMs'], 100), 120_000) : DEFAULT_TIMEOUT_MS;
     return runProcess(command, args as string[], cwd, timeoutMs, signal);
@@ -137,6 +144,11 @@ export class DesktopHostExecutionBroker {
 
   private async exists(path: string): Promise<boolean> { try { await access(path); return true; } catch { return false; } }
   private unsupported(message: string): never { throw new Error(message); }
+}
+
+function isPowerShellExecutable(command: string): boolean {
+  const executable = command.replace(/^.*[\\/]/u, '').toLowerCase();
+  return executable === 'powershell' || executable === 'powershell.exe' || executable === 'pwsh' || executable === 'pwsh.exe';
 }
 
 function runProcess(command: string, args: string[], cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Record<string, unknown>> {

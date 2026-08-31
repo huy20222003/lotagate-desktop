@@ -16,6 +16,7 @@ export const BUILTIN_TOOL_DISPLAY_NAMES = {
   'agent.spawn': 'Start subagent',
   'agent.wait': 'Wait for subagent',
   'agent.cancel': 'Cancel subagent',
+  'work_plan.update': 'Update work plan',
   'browser.navigate': 'Open webpage',
   'browser.newTab': 'Open new tab',
   'browser.closeTab': 'Close browser tab',

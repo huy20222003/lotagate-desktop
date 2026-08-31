@@ -207,7 +207,7 @@ app.whenReady().then(async () => {
       operations.notify(`Automation · ${event.automation.name}`, detail);
     }
   });
-  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks), interactiveTerminal: new InteractiveTerminalService(workspaces), settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger });
+    registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }

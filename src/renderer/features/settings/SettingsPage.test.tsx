@@ -15,7 +15,7 @@ describe('SettingsPage', () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
   it.each([
-    ['profile', 'Profile'], ['api-key', 'API key'], ['billing', 'Billing'], ['appearance', 'Appearance'], ['keyboard-shortcuts', 'Keyboard shortcuts'],
+    ['general', 'General'], ['profile', 'Profile'], ['api-key', 'API key'], ['billing', 'Billing'], ['appearance', 'Appearance'], ['keyboard-shortcuts', 'Keyboard shortcuts'],
     ['automation', 'Automations'], ['browser', 'Browser'], ['sandbox', 'Sandbox'], ['hook', 'Hooks'], ['skill', 'Skills'], ['plugin', 'Plugins'], ['mcp', 'MCP'],
   ] as Array<[SettingsSection, string]> )('routes the %s settings section', async (section, title) => {
     installBridge();
@@ -23,18 +23,18 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: title, level: 1 })).toBeVisible());
   });
 
-  it('saves Browser and Sandbox changes through the shared settings bridge', async () => {
+  it('saves Browser and Sandbox changes immediately through the shared settings bridge', async () => {
     const update = installBridge();
     const view = render(<ToastProvider><SettingsPage user={user} workspaces={[]} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="browser" /></ToastProvider>);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Save changes' })).toBeVisible());
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith({ browser }));
+    const downloadDirectory = await screen.findByPlaceholderText('Default: system Downloads/LotaGate Browser');
+    fireEvent.change(downloadDirectory, { target: { value: 'C:/downloads' } });
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ browser: { ...browser, downloadDirectory: 'C:/downloads' } }));
 
     view.unmount();
     render(<ToastProvider><SettingsPage user={user} workspaces={[]} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="sandbox" /></ToastProvider>);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Save changes' })).toBeVisible());
-    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith({ sandbox }));
+    const memory = await screen.findByRole('spinbutton', { name: 'Memory limit (MB)' });
+    fireEvent.change(memory, { target: { value: '4096' } });
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ sandbox: { ...sandbox, memoryMb: 4096 } }));
   });
 });
 
@@ -50,4 +50,4 @@ function installBridge() {
   return update;
 }
 
-function baseSettings() { return { appearance: 'system', language: 'en', reducedMotion: false, contrast: 60, uiFont: 'inter', codeFont: 'system', browser, sandbox, keyboardShortcuts: {} }; }
+function baseSettings() { return { appearance: 'system', language: 'en', reducedMotion: false, contrast: 60, uiFont: 'inter', codeFont: 'system', browser, sandbox, keyboardShortcuts: {}, terminalShell: 'powershell', terminalPlacement: 'bottom', terminalFontSize: 13, terminalScrollback: 10_000, terminalCursorBlink: true }; }

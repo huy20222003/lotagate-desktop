@@ -4,6 +4,8 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { terminalSessionOpenSchema, terminalSessionIdSchema, terminalSessionResizeSchema, terminalSessionWriteSchema, type TerminalSession, type TerminalSessionOutput } from '../../contracts/ipc/v1/workspace.js';
 import type { WorkspaceRegistry } from '../workspaces/workspace-registry.js';
+import { SettingsService } from '../settings/settings-service.js';
+import { resolveTerminalShell } from './terminal-shell.js';
 // The interactive terminal is an explicit user action. Agent-run commands
 // continue to use TerminalService's trusted-workspace and approval gates.
 
@@ -23,20 +25,19 @@ interface InteractiveSession {
 export class InteractiveTerminalService {
   private readonly sessions = new Map<string, InteractiveSession>();
 
-  constructor(private readonly workspaces: WorkspaceRegistry) {}
+  constructor(private readonly workspaces: WorkspaceRegistry, private readonly settings: SettingsService) {}
 
   async open(input: unknown, ownerId: number, onOutput: (output: TerminalSessionOutput) => void): Promise<TerminalSession> {
     const value = terminalSessionOpenSchema.parse(input);
     const cwd = await this.workspaces.requireRegisteredRoot(value.cwd);
 
-    const shell = process.platform === 'win32' ? 'powershell.exe' : process.env['SHELL'] ?? '/bin/sh';
-    const args = process.platform === 'win32' ? ['-NoLogo', '-NoProfile', '-NoExit'] : ['-i'];
-    const child = nodePty.spawn(shell, args, { cwd, name: 'xterm-256color', cols: 120, rows: 30, env: { ...safeEnvironment(), FORCE_COLOR: '1', TERM: 'xterm-256color', COLORTERM: 'truecolor' } });
+    const launch = resolveTerminalShell((await this.settings.get()).terminalShell);
+    const child = nodePty.spawn(launch.command, launch.args, { cwd, name: 'xterm-256color', cols: 120, rows: 30, env: { ...safeEnvironment(), FORCE_COLOR: '1', TERM: 'xterm-256color', COLORTERM: 'truecolor' } });
     const id = randomUUID();
     this.sessions.set(id, { ownerId, cwd, child });
     child.onData(data => onOutput({ sessionId: id, data }));
     child.onExit(() => this.sessions.delete(id));
-    return { id, cwd, shell };
+    return { id, cwd, shell: launch.command };
   }
 
   write(sessionId: string, data: string, ownerId: number): void {

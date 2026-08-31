@@ -1,4 +1,6 @@
 export type ApprovalMode = 'auto' | 'ask';
+export type TerminalShell = 'powershell' | 'cmd' | 'git-bash';
+export type TerminalPlacement = 'bottom' | 'right';
 
 export type BrowserViewportProfile = 'desktop' | 'laptop' | 'tablet' | 'mobile' | 'custom';
 export type BrowserSessionRetention = 'session' | 'persistent' | 'ttl';
@@ -58,4 +60,9 @@ export interface DesktopSettingsSnapshot {
   notifications: boolean;
   telemetry: boolean;
   keyboardShortcuts: Record<string, string | null>;
+  terminalShell: TerminalShell;
+  terminalPlacement: TerminalPlacement;
+  terminalFontSize: number;
+  terminalScrollback: number;
+  terminalCursorBlink: boolean;
 }

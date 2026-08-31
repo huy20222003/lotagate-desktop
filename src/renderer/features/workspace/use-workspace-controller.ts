@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DESKTOP_COMMAND_TIMING_METADATA_KEY, type Activity, type Artifact, type FileChangeSummary, type PlanSnapshot, type SubagentSnapshot, type Task, type TrustRequest, type Workspace } from '../../../contracts/ipc/v1/workspace.js';
+import { DESKTOP_COMMAND_TIMING_METADATA_KEY, type Activity, type Artifact, type FileChangeSummary, type WorkPlanSnapshot, type SubagentSnapshot, type Task, type TrustRequest, type Workspace } from '../../../contracts/ipc/v1/workspace.js';
 import type { DesktopApprovalRequest } from '../../../contracts/ipc/v1/approval.js';
 import { sessionSlugFromPrompt } from './task-title.js';
 import { shouldAutoApproveDesktop, type ApprovalMode } from './approval-policy.js';
 import { EMPTY_FILE_CHANGE_SUMMARIES, EMPTY_FILE_CHANGE_SUMMARY, fileChangeSummariesFromActivities, mergeFileChange, mergeFileChangeForTurn, mergeFileChangeSummaries } from './file-changes.js';
-import { applyPlanEvent, applySubagentEvent } from './orchestration-events.js';
+import { applyWorkPlanEvent, applySubagentEvent } from './orchestration-events.js';
+import { restoreWorkPlan } from './work-plan-history.js';
 import { readSelectedModel, writeSelectedModel } from './model-preference.js';
 import { MessageQueueService, useMessageQueue, type QueuedMessage } from './message-queue-service.js';
 import type { PromptSendOptions } from './prompt-options.js';
@@ -24,6 +25,7 @@ import { useActivityRefreshScheduler } from './use-activity-refresh-scheduler.js
 import { useDraftPersistence } from './use-draft-persistence.js';
 import { useWorkspaceCheckpoints } from './use-workspace-checkpoints.js';
 import { useTaskSidebarStatus } from './use-task-sidebar-status.js';
+import { useDraftTask } from './use-draft-task.js';
 type ContextCompactionPhase = 'compacting' | 'compacted' | 'failed';
 export function useWorkspaceController() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -39,7 +41,7 @@ export function useWorkspaceController() {
   const [fileChanges, setFileChanges] = useState<FileChangeSummary>(EMPTY_FILE_CHANGE_SUMMARY);
   const [fileChangesByTurn, setFileChangesByTurn] = useState(EMPTY_FILE_CHANGE_SUMMARIES);
   const [activeTurnId, setActiveTurnId] = useState<string | undefined>();
-  const [plan, setPlan] = useState<PlanSnapshot | undefined>();
+  const [plan, setPlan] = useState<WorkPlanSnapshot | undefined>();
   const [subagents, setSubagents] = useState<SubagentSnapshot[]>([]);
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [approval, setApproval] = useState<DesktopApprovalRequest | undefined>();
@@ -182,6 +184,7 @@ export function useWorkspaceController() {
       setActivityAttachments(nextActivityAttachments);
       setActivityArtifacts(nextActivityArtifacts);
       setFileChangesByTurn(current => mergeFileChangeSummaries(current, summaries));
+      setPlan(restoreWorkPlan(next));
       const liveTurnId = activeTurnRef.current?.turnId;
       if (liveTurnId === undefined) setFileChanges(EMPTY_FILE_CHANGE_SUMMARY);
       else setFileChanges(current => summaries[liveTurnId] === undefined ? current : mergeFileChangeSummaries({ [liveTurnId]: current }, summaries)[liveTurnId] ?? current);
@@ -213,6 +216,7 @@ export function useWorkspaceController() {
       setActivityAttachments(nextActivityAttachments);
       setActivityArtifacts(nextActivityArtifacts);
       setFileChangesByTurn(current => mergeFileChangeSummaries(current, summaries));
+      setPlan(restoreWorkPlan(next));
       activityPageCursorRef.current = page.nextCursor;
       setHasOlderActivities(page.hasMore);
       return page.activities.length > 0;
@@ -308,8 +312,8 @@ export function useWorkspaceController() {
       if (envelope.event.event === 'context.compacting') showContextCompactionStatus('compacting');
       if (envelope.event.event === 'context.compacted') showContextCompactionStatus('compacted');
       if (envelope.event.event.startsWith('subagent.')) setSubagents(current => applySubagentEvent(current, envelope.event.event, data));
-      if (envelope.event.event === 'plan.failed' || envelope.event.event === 'turn.failed' || envelope.event.event === 'turn.cancelled') setPlan(undefined);
-      else if (envelope.event.event.startsWith('plan.')) setPlan(current => applyPlanEvent(current, envelope.event.event, data));
+      if (envelope.event.event === 'turn.failed' || envelope.event.event === 'turn.cancelled') setPlan(undefined);
+      else if (envelope.event.event.startsWith('work.')) setPlan(current => applyWorkPlanEvent(current, envelope.event.event, data));
     }
     if (eventTask !== undefined && eventTask.id === currentTaskId && envelope.event.event !== 'assistant.delta') scheduleActivityRefresh(eventTask.id);
     if (eventTask !== undefined && (terminal || envelope.event.event === 'turn.started')) scheduleTaskReload(currentWorkspace.id);
@@ -375,27 +379,7 @@ export function useWorkspaceController() {
     setTask(current => current?.workspaceId === workspaceId ? undefined : current);
     activitiesRef.current = []; activityPageCursorRef.current = null; pendingAssistantStreamsRef.current.clear(); publishActivities([]); setHasOlderActivities(false); setLoadingOlderActivities(false); setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setFinalResponseReceived(false); setActiveTurnId(undefined); activeTurnRef.current = undefined; showContextCompactionStatus(undefined); setThinking(false); setThinkingStartedAt(undefined);
   }, [publishActivities, showContextCompactionStatus]);
-  const createTask = useCallback(async (prompt: string) => {
-    if (workspace === undefined) throw new Error('Select a workspace first.');
-    const title = sessionSlugFromPrompt(prompt);
-    const created = await window.lotagate.tasks.create({ workspaceId: workspace.id, title, prompt });
-    setTasks(current => [created, ...current]); setTask(created); return created;
-  }, [workspace]);
-
-  const ensureDraftTask = useCallback(async (): Promise<Task | undefined> => {
-    if (task) { draftTaskRef.current = task; return task; }
-    if (draftTaskRef.current) return draftTaskRef.current;
-    if (workspace === undefined) return undefined;
-    if (draftTaskPromiseRef.current) return draftTaskPromiseRef.current;
-    const promise = window.lotagate.tasks.create({ workspaceId: workspace.id, title: 'New chat' }).then(created => {
-      draftTaskRef.current = created;
-      setTasks(current => current.some(item => item.id === created.id) ? current : [created, ...current]);
-      setTask(created);
-      return created;
-    }).finally(() => { draftTaskPromiseRef.current = undefined; });
-    draftTaskPromiseRef.current = promise;
-    return promise;
-  }, [task, workspace]);
+  const { createTask, ensureDraftTask } = useDraftTask({ workspace, task, draftTaskRef, draftTaskPromiseRef, setTasks, setTask });
   const { updateDraft, flushDraft } = useDraftPersistence({ taskRef: draftTaskRef, ensureDraftTask, onError: reportControllerError });
 
   const startPrompt = useCallback(async (prompt: string, attachmentIdsOverride?: readonly string[], options?: PromptSendOptions): Promise<boolean> => {

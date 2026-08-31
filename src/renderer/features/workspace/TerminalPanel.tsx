@@ -3,13 +3,17 @@ import { FitAddon } from '@xterm/addon-fit';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
+import type { DesktopSettingsSnapshot } from '../../../contracts/ipc/v1/settings.js';
 import type { TerminalSession } from '../../../contracts/ipc/v1/workspace.js';
 import { IconButton, Tabs } from '../../components/ui.js';
 import { createComposerApprovalInput } from './approval-request.js';
 
-interface TerminalTab extends TerminalSession { label: string; }
+type TerminalPreferences = Pick<DesktopSettingsSnapshot, 'terminalFontSize' | 'terminalScrollback' | 'terminalCursorBlink'>;
+interface TerminalTab extends TerminalSession { label: string; preferences: TerminalPreferences; }
 
-export function TerminalPanel({ cwd, onClose }: { cwd: string; onClose: () => void }) {
+const defaultTerminalPreferences: TerminalPreferences = { terminalFontSize: 13, terminalScrollback: 10_000, terminalCursorBlink: true };
+
+export function TerminalPanel({ cwd, onClose, placement = 'bottom' }: { cwd: string; onClose: () => void; placement?: 'bottom' | 'right' }) {
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeId, setActiveId] = useState('');
   const [error, setError] = useState<string>();
@@ -34,11 +38,18 @@ export function TerminalPanel({ cwd, onClose }: { cwd: string; onClose: () => vo
   const openTab = useCallback(async () => {
     setError(undefined);
     try {
+      let preferences = defaultTerminalPreferences;
+      try {
+        const settings = await window.lotagate.settings.get();
+        preferences = { terminalFontSize: settings.terminalFontSize, terminalScrollback: settings.terminalScrollback, terminalCursorBlink: settings.terminalCursorBlink };
+      } catch {
+        // Terminal settings are optional for opening an interactive session.
+      }
       const session = await window.lotagate.terminal.open({ cwd });
       const folder = cwd.split(/[\\/]/u).filter(Boolean).at(-1) ?? 'PowerShell';
       const existingCount = tabsRef.current.filter(tab => tab.label.startsWith(folder)).length;
       const label = existingCount === 0 ? folder : `${folder} (${existingCount + 1})`;
-      setTabs(current => [...current, { ...session, label }]);
+      setTabs(current => [...current, { ...session, label, preferences }]);
       setActiveId(session.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to open terminal.');
@@ -64,10 +75,10 @@ export function TerminalPanel({ cwd, onClose }: { cwd: string; onClose: () => vo
     });
   }, [activeId]);
 
-  return <section className="terminal-panel" aria-label="Terminal"><header className="terminal-panel-header"><div className="terminal-tab-strip">{tabs.length > 0 ? <Tabs value={activeId} items={tabs.map(tab => ({ value: tab.id, label: tab.label }))} onChange={setActiveId} onClose={closeTab} ariaLabel="Terminal tabs" /> : null}</div><div className="terminal-panel-actions"><IconButton icon={Plus} iconSize={15} label="New terminal" onClick={requestOpenTab} /><IconButton icon={X} iconSize={15} label="Close terminal" onClick={onClose} /></div></header>{error ? <p className="terminal-error">{error}</p> : null}<div className="terminal-output">{tabs.map(tab => <TerminalSessionView key={tab.id} sessionId={tab.id} active={tab.id === activeId} onReady={registerTerminal} onDispose={unregisterTerminal} onError={handleError} />)}</div></section>;
+  return <section className={`terminal-panel${placement === 'right' ? ' terminal-panel-right' : ''}`} aria-label="Terminal"><header className="terminal-panel-header"><div className="terminal-tab-strip">{tabs.length > 0 ? <Tabs value={activeId} items={tabs.map(tab => ({ value: tab.id, label: tab.label }))} onChange={setActiveId} onClose={closeTab} ariaLabel="Terminal tabs" /> : null}</div><div className="terminal-panel-actions"><IconButton icon={Plus} iconSize={15} label="New terminal" onClick={requestOpenTab} /><IconButton icon={X} iconSize={15} label="Close terminal" onClick={onClose} /></div></header>{error ? <p className="terminal-error">{error}</p> : null}<div className="terminal-output">{tabs.map(tab => <TerminalSessionView key={tab.id} sessionId={tab.id} active={tab.id === activeId} preferences={tab.preferences} onReady={registerTerminal} onDispose={unregisterTerminal} onError={handleError} />)}</div></section>;
 }
 
-function TerminalSessionView({ sessionId, active, onReady, onDispose, onError }: { sessionId: string; active: boolean; onReady: (sessionId: string, terminal: XTerm) => void; onDispose: (sessionId: string) => void; onError: (message: string) => void }) {
+function TerminalSessionView({ sessionId, active, preferences, onReady, onDispose, onError }: { sessionId: string; active: boolean; preferences: TerminalPreferences; onReady: (sessionId: string, terminal: XTerm) => void; onDispose: (sessionId: string) => void; onError: (message: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<() => void>(() => undefined);
 
@@ -75,15 +86,15 @@ function TerminalSessionView({ sessionId, active, onReady, onDispose, onError }:
     const container = containerRef.current;
     if (!container) return;
     const terminal = new XTerm({
-      cursorBlink: true,
+      cursorBlink: preferences.terminalCursorBlink,
       convertEol: false,
       fontFamily: terminalFontFamily(),
-      fontSize: 13,
+      fontSize: preferences.terminalFontSize,
       lineHeight: 1.25,
       letterSpacing: 0,
       fontWeight: 400,
       fontWeightBold: 600,
-      scrollback: 10_000,
+      scrollback: preferences.terminalScrollback,
       theme: terminalTheme(),
     });
     const fitAddon = new FitAddon();

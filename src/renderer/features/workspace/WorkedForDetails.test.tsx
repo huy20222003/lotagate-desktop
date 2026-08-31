@@ -57,6 +57,25 @@ describe('WorkedForDetails', () => {
     expect(container.querySelector('.worked-tool')).toHaveTextContent('Run Tavily Search');
   });
 
+  it('shows the file name and write diff counts for filesystem activity', () => {
+    const { container } = render(<WorkedForDetails activities={[
+      toolActivity('write-start', 'Running filesystem.write.', { actionId: 'write-file', toolName: 'filesystem.write', displayName: 'filesystem.write' }),
+      toolActivity('write-complete', 'filesystem.write completed.', { actionId: 'write-file', toolName: 'filesystem.write', displayName: 'Write file test.js', status: 'completed', fileChange: { path: 'test.js', additions: 3, deletions: 1 } }),
+    ]} />);
+
+    expect(container.querySelector('.worked-tool')).toHaveTextContent('Ran Write file test.js +3 -1');
+  });
+
+  it('keeps detailed file activity when a generic completion arrives afterwards', () => {
+    const { container } = render(<WorkedForDetails activities={[
+      toolActivity('read-start', 'Running filesystem.read.', { actionId: 'read-file', toolName: 'filesystem.read', displayName: 'filesystem.read' }),
+      toolActivity('read-detail', 'Read file plan-test.md completed.', { actionId: 'read-file', toolName: 'filesystem.read', displayName: 'Read file plan-test.md', status: 'completed' }),
+      toolActivity('read-generic-complete', 'Read file completed.', { actionId: 'read-file', toolName: 'filesystem.read', displayName: 'filesystem.read', status: 'completed' }),
+    ]} />);
+
+    expect(container.querySelector('.worked-tool')).toHaveTextContent('Ran Read file plan-test.md');
+  });
+
   it('reveals live progress text gradually', () => {
     vi.useFakeTimers();
     const content = 'Đang kiểm tra nội dung của workspace và chuẩn bị cập nhật kết quả cho anh. '.repeat(3).trimEnd();

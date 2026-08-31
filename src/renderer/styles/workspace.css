@@ -107,7 +107,7 @@
 .conversation-header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
 .conversation-panel-toggle { color: var(--color-text-tertiary); }
 .conversation-panel-toggle[aria-pressed='true'] { background: var(--color-surface-elevated); color: var(--color-text-link); }
-.conversation-columns { display: flex; min-width: 0; min-height: 0; flex: 1; }
+.conversation-columns { position: relative; display: flex; min-width: 0; min-height: 0; flex: 1; }
 .conversation-chat { position: relative; display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; }
 .conversation.is-welcome .conversation-columns, .conversation.is-welcome .conversation-chat { min-height: 0; }
 .new-chat-welcome { display: flex; width: min(860px, calc(100% - 96px)); min-height: 0; flex: 1; flex-direction: column; justify-content: center; margin: 0 auto; padding: 0 0 8vh; }
@@ -202,7 +202,7 @@
 .change-summary-plan-ring { width: 16px; height: 16px; flex: 0 0 auto; overflow: visible; }
 .plan-ring-segment { stroke-width: 2.2; }
 .plan-ring-segment-queued { stroke: var(--color-border); }
-.plan-ring-segment-started { stroke: var(--color-accent); }
+.plan-ring-segment-active { stroke: var(--color-accent); }
 .plan-ring-segment-completed { stroke: var(--color-success); }
 .change-summary-popover { position: absolute; bottom: calc(100% + 8px); z-index: 4; display: grid; min-width: 220px; max-width: min(360px, 70vw); gap: 8px; border: 1px solid var(--color-border); border-radius: 9px; padding: 11px 12px; background: var(--color-surface-popover); box-shadow: 0 16px 38px var(--shadow-popover); color: var(--color-text-secondary); font-size: 12px; pointer-events: none; }
 .change-summary-plan-popover { left: 0; }
@@ -210,7 +210,7 @@
 .change-summary-popover > strong { overflow: hidden; color: var(--color-text); font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .change-summary-plan-step { display: flex; min-width: 0; align-items: center; gap: 7px; color: var(--color-text-tertiary); }
 .change-summary-plan-step > svg { flex: 0 0 auto; }
-.change-summary-plan-step.plan-step-started { color: var(--color-text); }
+.change-summary-plan-step.plan-step-active { color: var(--color-text); }
 .change-summary-plan-step.plan-step-completed { color: var(--color-success); }
 .change-summary-file { display: flex; min-width: 0; align-items: center; gap: 12px; }
 .change-summary-file > span:first-child { min-width: 0; overflow: hidden; flex: 1; color: var(--color-text); text-overflow: ellipsis; white-space: nowrap; }
@@ -233,7 +233,7 @@
 .plan-step-list { display: grid; gap: 6px; border-top: 1px solid var(--color-border-subtle); padding: 9px 11px; }
 .plan-step { display: flex; align-items: flex-start; gap: 8px; color: var(--color-text-tertiary); font-size: 11px; }
 .plan-step > svg { flex: 0 0 auto; margin-top: 1px; }
-.plan-step-started { color: var(--color-text-secondary); }
+.plan-step-active { color: var(--color-text-secondary); }
 .plan-step-completed { color: var(--color-success); }
 .plan-step > span { display: grid; gap: 2px; }
 .plan-step small { color: var(--color-text-tertiary); }
@@ -267,6 +267,7 @@
 @keyframes orchestration-pulse { 50% { opacity: .35; transform: scale(.7); } }
 .composer-dock { position: relative; z-index: 1; width: min(860px, calc(100% - 96px)); flex: 0 0 auto; margin: 0 auto 16px; }
 .terminal-panel { display: flex; height: min(320px, 40vh); min-height: 180px; flex: 0 0 auto; flex-direction: column; border-top: 1px solid var(--color-border); background: var(--color-canvas); }
+.terminal-panel-right { position: absolute; top: 0; right: 0; bottom: 0; z-index: 4; width: min(620px, 72%); height: auto; min-height: 0; border-top: 0; border-left: 1px solid var(--color-border); box-shadow: -20px 0 45px var(--shadow-soft); }
 .terminal-panel-header { display: flex; min-height: 42px; align-items: flex-end; gap: 4px; border-bottom: 1px solid var(--color-border); padding: 0 10px; }
 .terminal-tab-strip { min-width: 0; flex: 1; overflow: hidden; }
 .terminal-tab-strip .tabs { min-width: max-content; }

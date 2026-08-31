@@ -45,6 +45,11 @@ export const settingsSchema = z.object({
   notifications: z.boolean().default(true),
   telemetry: z.boolean().default(false),
   keyboardShortcuts: z.record(z.string().min(1).max(80), z.string().max(80).nullable()).default({}),
+  terminalShell: z.enum(['powershell', 'cmd', 'git-bash']).default('powershell'),
+  terminalPlacement: z.enum(['bottom', 'right']).default('bottom'),
+  terminalFontSize: z.number().int().min(8).max(24).default(13),
+  terminalScrollback: z.number().int().min(100).max(100_000).default(10_000),
+  terminalCursorBlink: z.boolean().default(true),
 });
 export type DesktopSettings = z.infer<typeof settingsSchema>;
 const defaultSettings: DesktopSettings = settingsSchema.parse({});

@@ -2,14 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { BUILTIN_TOOL_DISPLAY_NAMES, formatToolDisplayName } from './tool-display.js';
 
 describe('tool display names', () => {
-  it('covers the complete 31-tool built-in catalog', () => {
-    expect(Object.keys(BUILTIN_TOOL_DISPLAY_NAMES)).toHaveLength(40);
+  it('covers the complete built-in catalog', () => {
+    expect(Object.keys(BUILTIN_TOOL_DISPLAY_NAMES)).toHaveLength(41);
   });
 
   it('prefers the canonical Desktop label over a protocol label', () => {
     expect(formatToolDisplayName('browser.newTab', 'browser.newTab')).toBe('Open new tab');
     expect(formatToolDisplayName('filesystem.read', undefined)).toBe('Read file');
     expect(formatToolDisplayName('filesystem.read', 'Read a UTF-8 text file')).toBe('Read a UTF-8 text file');
+    expect(formatToolDisplayName('work_plan.update', 'work_plan.update')).toBe('Update work plan');
   });
 
   it('preserves a friendly MCP label and humanizes an unlabelled MCP tool', () => {

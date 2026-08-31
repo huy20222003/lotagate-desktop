@@ -55,6 +55,12 @@ describe('TaskEventProjector turn lifecycle', () => {
     expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'tool', 'Open new tab failed.', expect.objectContaining({ sessionId: 'session-1', toolName: 'browser.newTab', isError: true }));
   });
 
+  it('does not duplicate generic lifecycle entries for detailed filesystem activity', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'tool.completed', data: { sessionId: 'session-1', actionId: 'run-1:filesystem.read', toolName: 'filesystem.read', displayName: 'filesystem.read', isError: false } });
+    expect(tasks.appendEvent).not.toHaveBeenCalled();
+  });
+
   it('persists shell activity updates with the safe display command', async () => {
     const { projector, tasks } = createProjector(createTask());
     await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'tool.activity.started', data: { sessionId: 'session-1', actionId: 'run-1:shell.exec', toolName: 'shell.exec', command: 'Get-Content test.md', status: 'running' } });
@@ -98,8 +104,8 @@ describe('TaskEventProjector turn lifecycle', () => {
 
   it('uses the explicit task identity before session or cwd fallbacks', async () => {
     const { projector, tasks } = createProjector(createTask());
-    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'tool.completed', data: { taskId: 'task-1', sessionId: 'unknown-session', toolName: 'filesystem.read', isError: false } });
-    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'tool', 'Read file completed.', expect.any(Object));
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'tool.completed', data: { taskId: 'task-1', sessionId: 'unknown-session', toolName: 'filesystem.list', isError: false } });
+    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'tool', 'List files completed.', expect.any(Object));
     expect(tasks.findBySession).not.toHaveBeenCalled();
     expect(tasks.findByCwd).not.toHaveBeenCalled();
   });
