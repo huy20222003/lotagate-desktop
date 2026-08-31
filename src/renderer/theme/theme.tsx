@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
+import { customAccentProperties } from './theme-colors.js';
 
 export type ThemeMode = 'light' | 'dark';
 export type ThemePreference = 'system' | ThemeMode;
@@ -92,7 +93,13 @@ export function ThemeProvider({ children }: PropsWithChildren) {
       if (value === undefined) document.documentElement.style.removeProperty(`--custom-${color}`);
       else document.documentElement.style.setProperty(`--custom-${color}`, value);
     }
-  }, [codeFont, colors, contrast, uiFont]);
+    const accentProperties = colors.accent === undefined ? {} : customAccentProperties(colors.accent, theme);
+    for (const property of ['--custom-accent-strong', '--custom-accent-bg', '--custom-accent-bg-hover', '--custom-border-accent', '--custom-border-focus', '--custom-text-link', '--custom-text-link-hover', '--custom-text-link-bright', '--custom-on-accent', '--custom-focus-ring', '--custom-selection', '--custom-accent-glow']) {
+      const value = accentProperties[property];
+      if (value === undefined) document.documentElement.style.removeProperty(property);
+      else document.documentElement.style.setProperty(property, value);
+    }
+  }, [codeFont, colors, contrast, theme, uiFont]);
   const setColor = useCallback(async (color: ThemeColor, next: string | undefined) => {
     const key = `${color}Color`;
     await window.lotagate.settings.update({ [key]: next });

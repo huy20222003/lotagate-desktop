@@ -70,6 +70,16 @@ describe('ActivityLogStore', () => {
     expect(new Set(activities.map(item => item.id)).size).toBe(25);
   });
 
+  it('returns a task page without returning unrelated activities', async () => {
+    const directory = await createTemporaryDirectory();
+    const store = new ActivityLogStore(join(directory, 'activities.jsonl'));
+    await store.append(activity('task-1-a', 'one'));
+    await store.append({ ...activity('task-2-a', 'other'), taskId: 'task-2' });
+    await store.append(activity('task-1-b', 'two'));
+
+    await expect(store.readPage('task-1', { limit: 1 })).resolves.toEqual({ activities: [expect.objectContaining({ id: 'task-1-b' })], nextCursor: 'task-1-b', hasMore: true });
+  });
+
   it('imports the existing JSON array once and continues with the journal format', async () => {
     const directory = await createTemporaryDirectory();
     const legacyPath = join(directory, 'activities.json');

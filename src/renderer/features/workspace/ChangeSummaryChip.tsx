@@ -1,6 +1,7 @@
 import { Check, Circle, ChevronRight, LoaderCircle } from 'lucide-react';
 import type { FileChangeSummary, WorkPlanSnapshot } from '../../../contracts/ipc/v1/workspace.js';
 import { useState } from 'react';
+import { Icon } from '../../components/ui.js';
 
 export function ChangeSummaryChip({ summary, plan, onPlanClick, onFilesClick }: { summary: FileChangeSummary; plan?: WorkPlanSnapshot; onPlanClick?: () => void; onFilesClick?: () => void }) {
   const [popover, setPopover] = useState<'plan' | 'files' | undefined>();
@@ -12,7 +13,7 @@ export function ChangeSummaryChip({ summary, plan, onPlanClick, onFilesClick }: 
       <button type="button" className="change-summary-button change-summary-plan" onClick={onPlanClick} aria-label={`Open plan, step ${planStepNumber(plan!)} of ${plan!.totalSteps}`}>
         <PlanProgressRing plan={plan!} />
         <span>Step {planStepNumber(plan!)} / {plan!.totalSteps}</span>
-        <ChevronRight size={13} aria-hidden="true" />
+        <Icon icon={ChevronRight} size={13} aria-hidden="true" />
       </button>
       {popover === 'plan' ? <PlanPopover plan={plan!} /> : null}
     </div> : null}

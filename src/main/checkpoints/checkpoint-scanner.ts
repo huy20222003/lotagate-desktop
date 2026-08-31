@@ -1,4 +1,4 @@
-import { lstat, opendir, readFile, readlink } from 'node:fs/promises';
+import { lstat, opendir, readFile, readlink, realpath } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import type { WorkspaceEntry } from './checkpoint-types.js';
 
@@ -6,7 +6,8 @@ const IGNORED_DIRECTORIES = new Set(['.git', '.lotagate']);
 
 export async function scanWorkspace(root: string): Promise<Map<string, WorkspaceEntry>> {
   const entries = new Map<string, WorkspaceEntry>();
-  await visit(root, root, entries);
+  const normalizedRoot = await realpath(root);
+  await visit(normalizedRoot, normalizedRoot, entries);
   return entries;
 }
 

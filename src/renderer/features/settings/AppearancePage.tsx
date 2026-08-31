@@ -6,9 +6,10 @@ import { themeOptions } from './appearance-options.js';
 import { ThemeOption } from './ThemeOption.js';
 import { ColorSetting } from './ColorSetting.js';
 import { FontSetting } from './FontSetting.js';
+import { isReadableThemeColor } from '../../theme/theme-colors.js';
 
 export function AppearancePage() {
-  const { preference, setTheme, reducedMotion, setReducedMotion, contrast, setContrast, uiFont, setUiFont, codeFont, setCodeFont, colors, setColor } = useTheme();
+  const { theme, preference, setTheme, reducedMotion, setReducedMotion, contrast, setContrast, uiFont, setUiFont, codeFont, setCodeFont, colors, setColor } = useTheme();
   const { language, setLanguage } = useLocale();
   const { error } = useToast();
   const [motionBusy, setMotionBusy] = useState(false);
@@ -25,6 +26,10 @@ export function AppearancePage() {
     finally { setMotionBusy(false); }
   };
   const updateColor = async (color: ThemeColor, value: string) => {
+    if (!isReadableThemeColor(color, value, theme, colors)) {
+      reportError('Unable to update color', 'Foreground and background colors must keep at least 4.5:1 contrast.');
+      return;
+    }
     try { await setColor(color, value); } catch (reason) { reportError('Unable to update color', reason); }
   };
   const resetColor = async (color: ThemeColor) => {

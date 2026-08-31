@@ -13,19 +13,32 @@ const summary = {
 describe('FileChangeCard', () => {
   afterEach(() => cleanup());
 
-  it('opens the existing file changes review from the card action', () => {
+  it('opens the existing file changes review from the card or action', () => {
     const onOpenFileChanges = vi.fn();
     render(<FileChangeCard summary={summary} onOpenFileChanges={onOpenFileChanges} />);
 
     const card = screen.getByRole('region', { name: 'Edited files' });
     expect(card.querySelector('.file-change-card-icon svg')).toBeInTheDocument();
     expect(card.querySelector('.file-change-card-title svg')).not.toBeInTheDocument();
+    expect(card).toHaveTextContent('Edited example.ts');
+    expect(card.querySelector('.file-change-card-list')).not.toBeInTheDocument();
     expect(card.querySelector('.file-change-card-counts .change-additions')).toHaveTextContent('+3');
     expect(card.querySelector('.file-change-card-counts .change-deletions')).toHaveTextContent('-1');
     expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+    fireEvent.click(card);
+    expect(onOpenFileChanges).toHaveBeenCalledWith(summary);
     fireEvent.click(screen.getByRole('button', { name: 'Review' }));
 
-    expect(onOpenFileChanges).toHaveBeenCalledWith(summary);
+    expect(onOpenFileChanges).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not open the drawer twice when an action button is clicked', () => {
+    const onOpenFileChanges = vi.fn();
+    render(<FileChangeCard summary={summary} onOpenFileChanges={onOpenFileChanges} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+
+    expect(onOpenFileChanges).toHaveBeenCalledOnce();
   });
 
   it('runs Undo only when a ready checkpoint is supplied', async () => {

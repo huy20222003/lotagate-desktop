@@ -1,11 +1,14 @@
 .diff-split-scroll::-webkit-scrollbar-track { background: transparent; }
 .diff-split-scroll::-webkit-scrollbar-thumb { border-radius: 99px; background: var(--color-scrollbar); }
 .diff-split { min-width: 900px; padding: 7px 0; }
-.diff-split-row { display: grid; grid-template-columns: minmax(400px, max-content) minmax(400px, max-content); min-height: 17px; }
-.diff-side { display: grid; grid-template-columns: 42px max-content; min-width: 0; padding: 0 10px; white-space: pre; }
+.diff-split-row { display: grid; grid-template-columns: minmax(400px, max-content) minmax(400px, max-content); min-height: 20px; }
+.diff-side { display: grid; grid-template-columns: 48px max-content; min-width: 0; padding: 0 10px; white-space: pre; }
 .diff-side-empty { background: var(--color-diff-empty); }
 .diff-side-text { min-width: 0; }
 .diff-side.diff-context { color: var(--color-text-secondary); }
+.diff-side .diff-line-number { padding-right: 12px; color: var(--color-diff-context-fg); font-size: 13px; font-variant-numeric: tabular-nums; line-height: inherit; text-align: right; }
+.diff-side.diff-addition .diff-line-number { color: var(--color-diff-added-border); }
+.diff-side.diff-deletion .diff-line-number { color: var(--color-diff-deleted-border); }
 .chat-loading-skeleton { display: grid; gap: 14px; margin-top: 28px; }
 .skeleton-chat-line, .skeleton-chat-block { display: block; border-radius: 6px; }
 .skeleton-chat-line { width: 72%; height: 14px; }
@@ -13,8 +16,8 @@
 .skeleton-chat-medium { width: 56%; }
 .skeleton-chat-block { width: 100%; height: 120px; margin-top: 10px; }
 .card { border: 1px solid var(--color-border); border-radius: 9px; background: var(--color-surface); padding: 15px; }
-.approval-card, .trust-card { margin-top: 22px; border-color: var(--color-text-code); }
-.approval-heading { display: flex; align-items: center; gap: 8px; color: var(--color-text-code); }
+.approval-card, .trust-card { margin-top: 22px; border-color: var(--color-warning); }
+.approval-heading { display: flex; align-items: center; gap: 8px; color: var(--color-warning); }
 .approval-card p, .trust-card p { color: var(--color-text-secondary); font-size: 13px; line-height: 1.5; }
 .approval-card .modal-actions, .trust-card .modal-actions { margin: 14px -15px -15px; }
 .composer-error { margin: 0; border-top: 1px solid var(--color-border); padding: 8px 12px; color: var(--color-danger); font-size: 12px; }

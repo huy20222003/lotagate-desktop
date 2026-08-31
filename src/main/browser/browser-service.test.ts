@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { BrowserSettings } from '../../contracts/ipc/v1/settings.js';
 
 const mocks = vi.hoisted(() => {
   class MockWebContentsView {
@@ -35,6 +36,20 @@ vi.mock('electron', () => ({ BrowserWindow: class {}, WebContentsView: mocks.Web
 import { BrowserService } from './browser-service.js';
 
 describe('BrowserService layout lifecycle', () => {
+  it('reuses a stable profile partition for the same workspace', async () => {
+    mocks.session.fromPartition.mockClear();
+    const settings: BrowserSettings = { viewportProfile: 'desktop', customViewport: { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 }, downloadDirectory: '', sessionRetention: 'persistent', sessionRetentionMinutes: 60, originAllowlist: [], clearDataOnClose: false, evidenceRetentionDays: 30 };
+    const service = new BrowserService(undefined, async () => settings);
+    const first = await service.create('C:\\workspace-a');
+    const second = await service.create('C:\\workspace-a');
+
+    const partitions = mocks.session.fromPartition.mock.calls as unknown as Array<[string]>;
+    expect(partitions[0]?.[0]).toBe(partitions[1]?.[0]);
+    expect(partitions[0]?.[0]).toMatch(/^persist:lotagate-browser-/u);
+    await service.close(first.id);
+    await service.close(second.id);
+  });
+
   it('ignores stale bounds updates after a browser session is closed', async () => {
     const service = new BrowserService();
     const snapshot = await service.create();

@@ -10,6 +10,8 @@ import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+const MAX_EVIDENCE_RECORDS = 1_000;
+const MAX_EVIDENCE_BYTES = 64 * 1024 * 1024;
 
 export interface TerminalResult { command: string; args: string[]; cwd: string; stdout: string; stderr: string; exitCode: number | null; truncated: boolean; durationMs: number; }
 export interface TerminalEvidence extends TerminalResult { id: string; taskId?: string | undefined; createdAt: string; }
@@ -24,7 +26,7 @@ interface EvidenceStore {
 export class TerminalService {
   private readonly evidence: EvidenceStore;
 
-  constructor(private readonly workspaces: WorkspaceRegistry, private readonly tasks: TaskStore, evidence: EvidenceStore = new JsonFileStore<TerminalEvidence[]>(desktopDataPath('terminal-evidence.json'), [], value => terminalEvidenceSchemaArray.parse(value))) {
+  constructor(private readonly workspaces: WorkspaceRegistry, private readonly tasks: TaskStore, evidence: EvidenceStore = new JsonFileStore<TerminalEvidence[]>(desktopDataPath('terminal-evidence.json'), [], value => terminalEvidenceSchemaArray.parse(value)), private readonly getRetentionDays: () => Promise<number> = async () => 30) {
     this.evidence = evidence;
   }
 
@@ -53,11 +55,26 @@ export class TerminalService {
     const exitCode = await new Promise<number | null>((resolve, reject) => { child.on('error', reject); child.on('close', code => resolve(code)); });
     if (timeout !== undefined) clearTimeout(timeout);
     const result: TerminalEvidence = { id: randomUUID(), taskId: value.taskId, command: value.command, args: [...value.args], cwd, stdout: redact(stdout), stderr: redact(stderr), exitCode, truncated, durationMs: Date.now() - started, createdAt: new Date().toISOString() };
-    await this.evidence.write([...(await this.evidence.read()), result]);
+    await this.evidence.write(await retainEvidence([...(await this.evidence.read()), result], await this.getRetentionDays()));
     return result;
   }
 
   async list(taskId?: string): Promise<TerminalEvidence[]> { const values = await this.evidence.read(); return taskId === undefined ? values : values.filter(item => item.taskId === taskId); }
+}
+
+async function retainEvidence(values: TerminalEvidence[], retentionDays: number): Promise<TerminalEvidence[]> {
+  const boundedDays = Math.max(1, Math.min(365, Math.floor(retentionDays)));
+  const cutoff = Date.now() - boundedDays * 24 * 60 * 60 * 1_000;
+  const recent = values.filter(value => Date.parse(value.createdAt) >= cutoff).slice(-MAX_EVIDENCE_RECORDS);
+  const retained: TerminalEvidence[] = [];
+  let bytes = 0;
+  for (const value of [...recent].reverse()) {
+    const size = Buffer.byteLength(JSON.stringify(value), 'utf8');
+    if (retained.length > 0 && bytes + size > MAX_EVIDENCE_BYTES) break;
+    retained.unshift(value);
+    bytes += size;
+  }
+  return retained;
 }
 
 function safeEnvironment(): NodeJS.ProcessEnv { const allowed = ['PATH', 'Path', 'PATHEXT', 'SystemRoot', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'LANG', 'LC_ALL']; return Object.fromEntries(allowed.flatMap(key => process.env[key] === undefined ? [] : [[key, process.env[key] as string]])); }

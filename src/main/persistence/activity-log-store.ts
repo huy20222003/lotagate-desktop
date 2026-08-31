@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
-import { activitySchema, type Activity } from '../../contracts/ipc/v1/workspace.js';
+import { activitySchema, type Activity, type ActivityPage } from '../../contracts/ipc/v1/workspace.js';
 
 const ACTIVITY_LOG_VERSION = 1;
 const DEFAULT_COMPACTION_BYTES = 1_024 * 1_024;
@@ -77,6 +77,23 @@ export class ActivityLogStore {
     await this.writeChain;
     await this.ensureLoaded();
     return this.activitiesCache!;
+  }
+
+  async readPage(taskId: string, options: { limit?: number; before?: string } = {}): Promise<ActivityPage> {
+    await this.read();
+    const limit = Math.max(1, Math.min(options.limit ?? 40, 100));
+    const collected: Activity[] = [];
+    const cursorIndex = options.before === undefined ? -1 : this.activitiesCache!.findIndex(activity => activity.taskId === taskId && activity.id === options.before);
+    const startIndex = cursorIndex < 0 ? this.activitiesCache!.length - 1 : cursorIndex - 1;
+    for (let index = startIndex; index >= 0; index -= 1) {
+      const activity = this.activitiesCache![index]!;
+      if (activity.taskId !== taskId) continue;
+      collected.push(activitySchema.parse(activity));
+      if (collected.length > limit) break;
+    }
+    const hasMore = collected.length > limit;
+    const activities = collected.slice(0, limit).reverse();
+    return { activities, nextCursor: hasMore ? activities[0]?.id ?? null : null, hasMore };
   }
 
   async append(activity: Activity): Promise<void> {

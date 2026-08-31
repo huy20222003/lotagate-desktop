@@ -5,6 +5,7 @@ import type { DesktopEvent, DesktopHostRequest, DesktopHostResponse } from '../.
 import { checkpointWorkspaceDirectory } from './checkpoint-paths.js';
 import { CheckpointService } from './checkpoint-service.js';
 import { CheckpointStore } from './checkpoint-store.js';
+import { requireWorkspaceMutationPath } from '../security/path-policy.js';
 
 const roots: string[] = [];
 const originalHome = process.env['LOTAGATE_HOME'];
@@ -131,6 +132,30 @@ describe('CheckpointService', () => {
     await service.observeEvent(root, event('turn.completed', { sessionId: 'session-6', turnId: 'turn-6' }));
     expect((await service.undo(root, 'task-6', 'turn-6')).state).toBe('undone');
     await expect(readlink(join(root, 'link.txt'))).resolves.toBe('target-a');
+  });
+
+  it.skipIf(process.platform === 'win32')('does not undo through a symlinked directory outside the workspace', async () => {
+    const root = await workspace();
+    const outside = await workspace();
+    process.env['LOTAGATE_HOME'] = root;
+    await symlink(outside, join(root, 'linked'), process.platform === 'win32' ? 'junction' : undefined);
+    const service = new CheckpointService();
+    await service.observeEvent(root, event('turn.started', { taskId: 'task-symlink-parent', sessionId: 'session-symlink-parent', turnId: 'turn-symlink-parent' }));
+    await execute(service, root, request('shell', 'shell.exec', {}, 'session-symlink-parent'), async () => {
+      await writeFile(join(root, 'linked', 'outside.txt'), 'must remain');
+      return response();
+    });
+    await service.observeEvent(root, event('turn.completed', { sessionId: 'session-symlink-parent', turnId: 'turn-symlink-parent' }));
+
+    await expect(service.undo(root, 'task-symlink-parent', 'turn-symlink-parent')).resolves.toMatchObject({ state: 'failed' });
+    await expect(readFile(join(outside, 'outside.txt'), 'utf8')).resolves.toBe('must remain');
+  });
+
+  it('rejects mutation paths through a symlinked directory on every supported platform', async () => {
+    const root = await workspace();
+    const outside = await workspace();
+    await symlink(outside, join(root, 'linked'), process.platform === 'win32' ? 'junction' : undefined);
+    await expect(requireWorkspaceMutationPath(join(root, 'linked', 'outside.txt'), root)).rejects.toThrow(/workspace boundary|symbolic-link directories/u);
   });
 
   it('does not create an undo entry for a mutation request that changes nothing', async () => {

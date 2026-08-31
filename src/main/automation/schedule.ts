@@ -3,6 +3,7 @@ import type { AutomationSchedule } from '../../contracts/ipc/v1/automation.js';
 type CalendarParts = { year: number; month: number; day: number; hour: number; minute: number; second: number };
 type CronField = Set<number>;
 type CronExpression = { minute: CronField; hour: CronField; dayOfMonth: CronField; month: CronField; dayOfWeek: CronField; dayOfMonthWildcard: boolean; dayOfWeekWildcard: boolean };
+const CRON_SEARCH_DAYS = 28 * 366;
 
 export function nextRunAt(schedule: AutomationSchedule, from = new Date()): string | null {
   if (schedule.kind === 'manual') return null;
@@ -50,16 +51,24 @@ function nextWeekly(days: number[], time: string, timezone: string, from: Date):
 }
 
 function nextCron(expression: CronExpression, timezone: string, from: Date): string | null {
-  const start = new Date(Math.floor(from.getTime() / 60_000) * 60_000 + 60_000);
-  const limit = start.getTime() + 366 * 24 * 60 * 60_000;
-  for (let timestamp = start.getTime(); timestamp <= limit; timestamp += 60_000) {
-    const date = new Date(timestamp);
-    const parts = zonedParts(date, timezone);
-    if (!expression.minute.has(parts.minute) || !expression.hour.has(parts.hour) || !expression.month.has(parts.month)) continue;
-    const domMatches = expression.dayOfMonth.has(parts.day);
-    const dowMatches = expression.dayOfWeek.has(new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay());
+  const formatter = createZonedFormatter(timezone);
+  const today = zonedParts(from, timezone, formatter);
+  const hours = [...expression.hour].sort((left, right) => left - right);
+  const minutes = [...expression.minute].sort((left, right) => left - right);
+  for (let offset = 0; offset <= CRON_SEARCH_DAYS; offset += 1) {
+    const date = addCalendarDays(today, offset);
+    if (!expression.month.has(date.month)) continue;
+    const domMatches = expression.dayOfMonth.has(date.day);
+    const dowMatches = expression.dayOfWeek.has(new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay());
     const dayMatches = expression.dayOfMonthWildcard || expression.dayOfWeekWildcard ? domMatches && dowMatches : domMatches || dowMatches;
-    if (dayMatches) return date.toISOString();
+    if (!dayMatches) continue;
+    for (const hour of hours) {
+      for (const minute of minutes) {
+        const candidate = zonedDateToUtc({ ...date, hour, minute, second: 0 }, timezone, formatter);
+        const actual = zonedParts(candidate, timezone, formatter);
+        if (candidate.getTime() > from.getTime() && actual.year === date.year && actual.month === date.month && actual.day === date.day && actual.hour === hour && actual.minute === minute) return candidate.toISOString();
+      }
+    }
   }
   return null;
 }
@@ -97,16 +106,19 @@ function parseCronField(value: string, min: number, max: number, sundayAlias = f
 function parseTime(value: string): { hour: number; minute: number } { const [hour, minute] = value.split(':').map(Number); return { hour: hour!, minute: minute! }; }
 function addCalendarDays(parts: CalendarParts, days: number): CalendarParts { const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days)); return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(), hour: parts.hour, minute: parts.minute, second: parts.second }; }
 
-function zonedParts(date: Date, timezone: string): CalendarParts {
-  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+function createZonedFormatter(timezone: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+}
+
+function zonedParts(date: Date, timezone: string, formatter = createZonedFormatter(timezone)): CalendarParts {
   const values = Object.fromEntries(formatter.formatToParts(date).filter(part => part.type !== 'literal').map(part => [part.type, Number(part.value)]));
   return { year: values['year']!, month: values['month']!, day: values['day']!, hour: values['hour']!, minute: values['minute']!, second: values['second']! };
 }
 
-function zonedDateToUtc(target: CalendarParts, timezone: string): Date {
+function zonedDateToUtc(target: CalendarParts, timezone: string, formatter = createZonedFormatter(timezone)): Date {
   let guess = Date.UTC(target.year, target.month - 1, target.day, target.hour, target.minute, target.second);
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const actual = zonedParts(new Date(guess), timezone);
+    const actual = zonedParts(new Date(guess), timezone, formatter);
     const actualAsUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, actual.second);
     guess += Date.UTC(target.year, target.month - 1, target.day, target.hour, target.minute, target.second) - actualAsUtc;
   }

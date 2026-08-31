@@ -151,7 +151,7 @@ app.whenReady().then(async () => {
     },
     onExit: (projectRoot, error, sessionId, approvalIds = []) => {
       if (approvalIds.length > 0) void approvals.cancelWhere(request => approvalIds.includes(request.approvalId));
-      void browserHost.closeForWorkspace(projectRoot);
+      void (sessionId === undefined ? browserHost.closeForWorkspace(projectRoot) : browserHost.closeForSession(projectRoot, sessionId));
       void (sessionId === undefined ? tasks.interruptActiveByCwd(projectRoot, error.message) : tasks.interruptActiveBySession(sessionId, error.message)).catch(() => undefined);
       logger.error('agent.process.exit', { projectRoot, sessionId, approvalCount: approvalIds.length, error: error.message });
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic: { kind: 'protocol', message: error.message } });
@@ -207,7 +207,7 @@ app.whenReady().then(async () => {
       operations.notify(`Automation · ${event.automation.name}`, detail);
     }
   });
-    registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger });
+  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }

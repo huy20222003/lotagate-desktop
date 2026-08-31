@@ -27,14 +27,8 @@ export function ProfilePanel({ user, accountName }: { user: UserProfile; account
       const apiDailyTokens = normalizeDailyTokens(dashboard);
       const localDailyTokens = new Map<string, number>();
       if (apiDailyTokens.size === 0) {
-        const activities = (await Promise.all(tasks.map(task => window.lotagate.tasks.activities(task.id).catch(() => [])))).flat();
-        for (const activity of activities) {
-          if (activity.kind !== 'usage') continue;
-          const tokens = readTokens(activity.metadata['usage']);
-          if (tokens <= 0) continue;
-          const day = activity.createdAt.slice(0, 10);
-          localDailyTokens.set(day, (localDailyTokens.get(day) ?? 0) + tokens);
-        }
+        const values = await window.lotagate.tasks.dailyUsage().catch(() => ({}));
+        for (const [day, tokens] of Object.entries(values)) if (Number.isFinite(tokens) && tokens > 0) localDailyTokens.set(day, tokens);
       }
       const dailyTokens = apiDailyTokens.size > 0 ? apiDailyTokens : localDailyTokens;
       const dashboardTokens = readNumber(dashboardValue(dashboard, 'totalTokens')) ?? 0;

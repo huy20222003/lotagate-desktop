@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopBridge } from '../contracts/ipc/v1/bridge.js';
-import type { AgentEventEnvelope } from '../contracts/ipc/v1/workspace.js';
+import type { AgentDiagnosticEnvelope, AgentEventEnvelope } from '../contracts/ipc/v1/workspace.js';
 import type { DesktopApprovalRequest, DesktopApprovalResolution } from '../contracts/ipc/v1/approval.js';
 
 const bridge: DesktopBridge = {
@@ -54,6 +54,11 @@ const bridge: DesktopBridge = {
       ipcRenderer.on('agent.event', handler);
       return () => ipcRenderer.removeListener('agent.event', handler);
     },
+    onDiagnostic: (listener: (envelope: AgentDiagnosticEnvelope) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, value: AgentDiagnosticEnvelope) => listener(value);
+      ipcRenderer.on('agent.diagnostic', handler);
+      return () => ipcRenderer.removeListener('agent.diagnostic', handler);
+    },
   },
   workspaces: {
     list: () => ipcRenderer.invoke('workspace.list'),
@@ -87,6 +92,7 @@ const bridge: DesktopBridge = {
     addActivity: (taskId, kind, text, metadata) => ipcRenderer.invoke('task.activity', taskId, kind, text, metadata),
     activities: taskId => ipcRenderer.invoke('task.activities', taskId),
     activitiesPage: (taskId, options) => ipcRenderer.invoke('task.activitiesPage', taskId, options),
+    dailyUsage: () => ipcRenderer.invoke('task.dailyUsage'),
     artifacts: taskId => ipcRenderer.invoke('task.artifacts', taskId),
     pickArtifact: taskId => ipcRenderer.invoke('task.pickArtifact', taskId),
     importArtifact: (taskId, sourcePath) => ipcRenderer.invoke('task.importArtifact', taskId, sourcePath),

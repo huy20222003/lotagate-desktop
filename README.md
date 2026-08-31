@@ -140,6 +140,26 @@ The ZIP maker uses a small in-repository compatibility override at
 The Electron main/preload bundle uses the CommonJS output emitted by the
 current electron-vite integration; the renderer remains Vite-managed.
 
+## Agent, MCP, and update behavior
+
+Desktop starts the CLI with `lotagate agent desktop` and exchanges only the
+versioned JSONL Desktop protocol. Each request has a bounded timeout; malformed
+protocol data, mismatched responses, and stalled sidecars fail closed and are
+reported through the diagnostic bridge. Shutdown sends a best-effort request
+and then terminates the process within the configured close deadlines.
+
+The CLI owns MCP configuration, transport, connection pooling, warm-up, and
+tool discovery. Desktop receives only sanitized MCP lifecycle/catalog events
+for status display. Development/link mode does not check for updates; the
+current update endpoint is enabled only for packaged applications. Release
+update verification and installer application remain release-pipeline work,
+not an automatic development action.
+
+Persistent browser data uses a stable, hashed profile partition per workspace
+for agent-hosted sessions. Session profiles are ephemeral, while TTL profiles
+clear storage and evidence when they expire. The renderer never owns browser
+transport or Electron session objects.
+
 ## Boundaries
 
 - API calls run in Electron main through the native network stack and typed
@@ -160,7 +180,4 @@ current electron-vite integration; the renderer remains Vite-managed.
   responses are intentionally not persisted in the cache.
 - Executable TypeScript/JavaScript and executable tests are checked at 600
   lines or fewer. Configuration, lockfiles, docs, schemas, and assets are
-  exempt as documented in `PLAN.md`.
-
-See [PLAN.md](./PLAN.md) for architecture and [TASK.md](./TASK.md) for the
-implementation register and verification audit.
+  exempt from that executable-source gate.

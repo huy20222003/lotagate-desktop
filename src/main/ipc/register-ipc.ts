@@ -211,6 +211,7 @@ export function registerIpc(services: DesktopIpcServices): void {
     const value = options === undefined ? {} : activityPageOptionsSchema.parse(options);
     return tasks.activitiesPage(idSchema.parse(taskId), { ...(value.limit === undefined ? {} : { limit: value.limit }), ...(value.before === undefined ? {} : { before: value.before }) });
   });
+  handle('task.dailyUsage', async event => { assertTrustedRenderer(event); return tasks.dailyUsage(); });
   handle('task.artifacts', async (event, taskId: unknown) => { assertTrustedRenderer(event); return artifacts.list(idSchema.parse(taskId)); });
   handle('task.pickArtifact', async (event, taskId: unknown) => { assertTrustedRenderer(event); const selected = await dialog.showOpenDialog({ properties: ['openFile'] }); if (selected.canceled || selected.filePaths[0] === undefined) return null; return artifacts.importFile(idSchema.parse(taskId), selected.filePaths[0], artifactKind(selected.filePaths[0])); });
   handle('task.importArtifact', async (event, taskId: unknown, sourcePath: unknown) => { assertTrustedRenderer(event); const path = cwdSchema.parse(sourcePath); return artifacts.importFile(idSchema.parse(taskId), path, artifactKind(path)); });

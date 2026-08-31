@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Mic, Square } from 'lucide-react';
+import { IconButton } from '../../components/ui.js';
 
 interface SpeechResultEventLike { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }
 interface SpeechRecognitionLike {
@@ -111,7 +112,7 @@ export function VoiceInput({ disabled, onComplete, onError }: { disabled: boolea
     else finish(false);
   };
   useEffect(() => () => { recognitionRef.current?.abort?.(); recordingRef.current = false; stopAudio(); }, [stopAudio]);
-  return recording ? <div className="voice-input voice-input-recording"><div className="voice-wave" aria-label="Recording"><span className="voice-wave-line" />{levels.map((level, index) => <span key={index} style={{ height: `${3 + Math.round(level * 17)}px` }} />)}<span className="voice-wave-line" /></div>{interim ? <span className="voice-interim" aria-live="polite">{interim}</span> : null}<button type="button" className="icon-button voice-stop-button" aria-label="Stop voice input" onClick={stop}><Square size={14} fill="currentColor" /></button></div> : <button type="button" className="icon-button voice-input-button" aria-label="Start voice input" disabled={disabled} onClick={start}><Mic size={16} /></button>;
+  return recording ? <div className="voice-input voice-input-recording"><div className="voice-wave" aria-label="Recording"><span className="voice-wave-line" />{levels.map((level, index) => <span key={index} style={{ height: `${3 + Math.round(level * 17)}px` }} />)}<span className="voice-wave-line" /></div>{interim ? <span className="voice-interim" aria-live="polite">{interim}</span> : null}<IconButton icon={Square} iconSize={14} className="voice-stop-button" label="Stop voice input" onClick={stop} /> </div> : <IconButton icon={Mic} iconSize={16} className="voice-input-button" label="Start voice input" disabled={disabled} onClick={start} />;
 }
 
 function microphoneErrorMessage(error: string | undefined): string {

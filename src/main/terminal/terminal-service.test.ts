@@ -39,4 +39,13 @@ describe('TerminalService', () => {
     expect(result.stdout).toBe('ok');
     expect(result.taskId).toBe('task-1');
   });
+
+  it('removes terminal evidence outside the configured retention window', async () => {
+    const evidenceStore = createEvidenceStore();
+    await evidenceStore.write([{ id: 'old', taskId: 'task-1', command: 'old', args: [], cwd: process.cwd(), stdout: '', stderr: '', exitCode: 0, truncated: false, durationMs: 1, createdAt: '2020-01-01T00:00:00.000Z' }]);
+    const service = new TerminalService(workspaceRegistry, taskStore, evidenceStore, async () => 1);
+    await service.execute({ cwd: process.cwd(), command: process.execPath, args: ['-e', ''], taskId: 'task-1', approved: true });
+    await expect(service.list()).resolves.toHaveLength(1);
+    await expect(service.list()).resolves.not.toContainEqual(expect.objectContaining({ id: 'old' }));
+  });
 });

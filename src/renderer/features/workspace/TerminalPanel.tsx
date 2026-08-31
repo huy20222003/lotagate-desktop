@@ -1,6 +1,6 @@
 import '@xterm/xterm/css/xterm.css';
 import { FitAddon } from '@xterm/addon-fit';
-import { Terminal as XTerm } from '@xterm/xterm';
+import { Terminal as XTerm, type ITheme } from '@xterm/xterm';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import type { DesktopSettingsSnapshot } from '../../../contracts/ipc/v1/settings.js';
@@ -115,10 +115,31 @@ function TerminalSessionView({ sessionId, active, preferences, onReady, onDispos
   return <div ref={containerRef} className={`terminal-session-view${active ? ' is-active' : ''}`} aria-hidden={!active} />;
 }
 
-function terminalTheme(): { background: string; foreground: string; cursor: string; selectionBackground: string } {
+function terminalTheme(): ITheme {
   const styles = getComputedStyle(document.documentElement);
   const value = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
-  return { background: value('--color-canvas', '#10151c'), foreground: value('--color-text-secondary', '#d4d4d4'), cursor: value('--color-accent', '#5ba7d8'), selectionBackground: value('--color-selection', '#264f78') };
+  return {
+    background: value('--color-canvas', '#10151c'),
+    foreground: value('--color-text-secondary', '#d4d4d4'),
+    cursor: value('--color-accent', '#5ba7d8'),
+    selectionBackground: value('--color-selection', '#264f78'),
+    black: value('--terminal-ansi-black', '#0f141a'),
+    red: value('--terminal-ansi-red', '#e06c75'),
+    green: value('--terminal-ansi-green', '#86c991'),
+    yellow: value('--terminal-ansi-yellow', '#d6b574'),
+    blue: value('--terminal-ansi-blue', '#5ba7d8'),
+    magenta: value('--terminal-ansi-magenta', '#c2a0e6'),
+    cyan: value('--terminal-ansi-cyan', '#65c5c0'),
+    white: value('--terminal-ansi-white', '#dbe4ec'),
+    brightBlack: value('--terminal-ansi-bright-black', '#6f7b89'),
+    brightRed: value('--terminal-ansi-bright-red', '#ff9da3'),
+    brightGreen: value('--terminal-ansi-bright-green', '#b7e3bd'),
+    brightYellow: value('--terminal-ansi-bright-yellow', '#f0d99b'),
+    brightBlue: value('--terminal-ansi-bright-blue', '#79b8ff'),
+    brightMagenta: value('--terminal-ansi-bright-magenta', '#e0c5ff'),
+    brightCyan: value('--terminal-ansi-bright-cyan', '#9be6df'),
+    brightWhite: value('--terminal-ansi-bright-white', '#ffffff'),
+  };
 }
 
 function terminalFontFamily(): string {

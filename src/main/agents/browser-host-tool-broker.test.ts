@@ -61,6 +61,24 @@ describe('BrowserHostToolBroker', () => {
     expect(browser.download).toHaveBeenCalledOnce();
     expect(browser.dialog).toHaveBeenCalledOnce();
   });
+
+  it('closes only the browser session belonging to an exited agent session', async () => {
+    const browser = {
+      create: vi.fn()
+        .mockResolvedValueOnce({ id: 'browser-1', activeTabId: 'tab-1', tabs: [] })
+        .mockResolvedValueOnce({ id: 'browser-2', activeTabId: 'tab-2', tabs: [] }),
+      get: vi.fn().mockImplementation(id => ({ id, activeTabId: 'tab-1', tabs: [] })),
+      close: vi.fn().mockResolvedValue(undefined),
+    } as unknown as BrowserService;
+    const broker = new BrowserHostToolBroker(browser);
+    await broker.handle('C:\\workspace', request('browser.tabs', {}));
+    await broker.handle('C:\\workspace', { ...request('browser.tabs', {}), requestId: 'request-2', sessionId: 'session-2' });
+
+    await broker.closeForSession('C:\\workspace', 'session-1');
+
+    expect(browser.close).toHaveBeenCalledOnce();
+    expect(browser.close).toHaveBeenCalledWith('browser-1');
+  });
 });
 
 function request(action: string, params: Record<string, unknown>): DesktopHostRequest {

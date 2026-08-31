@@ -1,7 +1,7 @@
 import { access, lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { GitBranch, GitCommit, GitOperationResult, GitRepositorySnapshot, GitStash } from '../../contracts/ipc/v1/workspace.js';
-import { requireDirectory, assertPathInside } from '../security/path-policy.js';
+import { requireDirectory, assertPathInside, requireExistingPath, requireWorkspaceWritePath } from '../security/path-policy.js';
 import { runGitResult, type GitResult } from './git-process.js';
 import { parseBranches, parseHistory, parseStashes, parseStatusV2 } from './git-parser.js';
 
@@ -192,12 +192,12 @@ export class GitService {
 
   async writeFile(cwd: string, path: string, content: string): Promise<void> {
     const root = await requireDirectory(cwd);
-    await writeFile(assertPathInside(path, root), content, 'utf8');
+    await writeFile(await requireWorkspaceWritePath(path, root), content, 'utf8');
   }
 
   async readFile(cwd: string, path: string): Promise<string> {
     const root = await requireDirectory(cwd);
-    return readFile(assertPathInside(path, root), 'utf8');
+    return readFile(await requireExistingPath(path, root), 'utf8');
   }
 
   async restore(cwd: string, path: string, confirmed: boolean): Promise<void> {

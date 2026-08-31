@@ -88,6 +88,7 @@ export interface ArtifactMedia { artifact: Artifact; mimeType: string; bytes: Ui
 export type TrustRequest = z.infer<typeof trustRequestSchema>;
 export type AgentEventEnvelope = z.infer<typeof agentEventEnvelopeSchema>;
 export type AgentEvent = DesktopEvent;
+export interface AgentDiagnosticEnvelope { cwd: string; diagnostic: { kind: 'stderr' | 'protocol'; message: string } }
 
 export type FileDiffLineKind = 'context' | 'addition' | 'deletion';
 export interface FileDiffLine { kind: FileDiffLineKind; text: string; oldLine?: number; newLine?: number }
@@ -141,6 +142,7 @@ export interface DesktopTaskApi {
   addActivity(taskId: string, kind: Activity['kind'], text: string, metadata?: Record<string, unknown>): Promise<Activity>;
   activities(taskId: string): Promise<Activity[]>;
   activitiesPage(taskId: string, options?: { limit?: number; before?: string }): Promise<ActivityPage>;
+  dailyUsage(): Promise<Record<string, number>>;
   artifacts(taskId: string): Promise<Artifact[]>;
   pickArtifact(taskId: string): Promise<Artifact | null>;
   importArtifact(taskId: string, sourcePath: string): Promise<Artifact>;

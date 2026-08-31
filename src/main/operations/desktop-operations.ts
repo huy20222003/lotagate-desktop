@@ -30,7 +30,7 @@ export class DesktopOperations {
     shell.showItemInFolder(path);
   }
   async checkForUpdates(manifestUrl: string): Promise<Record<string, string> | null> {
-    if (!manifestUrl) return null;
+    if (!app.isPackaged || !manifestUrl) return null;
     const parsed = new URL(manifestUrl);
     if (parsed.protocol !== 'https:') throw new Error('Update manifests must use HTTPS.');
     const response = await net.fetch(parsed.toString());

@@ -3,7 +3,7 @@ import { lstat, mkdir, readFile, readlink, rm, symlink, unlink, writeFile } from
 import { dirname, join, resolve } from 'node:path';
 import type { DesktopHostRequest, DesktopHostResponse, DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js';
 import type { CheckpointStatus, CheckpointUndoResult } from '../../contracts/ipc/v1/workspace.js';
-import { assertPathInside } from '../security/path-policy.js';
+import { requireWorkspaceMutationPath } from '../security/path-policy.js';
 import { CheckpointStore } from './checkpoint-store.js';
 import { scanWorkspace } from './checkpoint-scanner.js';
 import { hashObject } from './checkpoint-object-store.js';
@@ -167,7 +167,7 @@ async function buildMutations(before: Map<string, WorkspaceEntry>, after: Map<st
 
 async function entryFromWorkspace(store: CheckpointStore, value: WorkspaceEntry): Promise<CheckpointEntry> { const object = await store.objects.put(value.kind, value.bytes); const hash = hashObject(value.kind, value.bytes); return { kind: value.kind, hash, objectHash: object.hash, size: value.bytes.byteLength }; }
 async function readWorkspaceEntry(root: string, path: string): Promise<WorkspaceEntry | undefined> {
-  const target = assertPathInside(join(resolve(root), path), root);
+  const target = await requireWorkspaceMutationPath(join(resolve(root), path), root);
   try {
     const details = await lstat(target);
     if (details.isSymbolicLink()) return { kind: 'symlink', bytes: Buffer.from(await readlink(target), 'utf8') };
@@ -184,14 +184,15 @@ async function restoreMutation(root: string, store: CheckpointStore, mutation: C
   await writeWorkspaceEntry(root, store, mutation.path, mutation.before);
 }
 async function writeWorkspaceEntry(root: string, store: CheckpointStore, path: string, entry: CheckpointEntry | undefined): Promise<void> {
-  const target = assertPathInside(join(resolve(root), path), root);
+  const target = await requireWorkspaceMutationPath(join(resolve(root), path), root);
   if (entry === undefined) { await unlink(target).catch(() => undefined); return; }
   const bytes = await store.objects.read(entry.objectHash);
   await mkdir(dirname(target), { recursive: true });
+  try { await requireWorkspaceMutationPath(target, root); } catch (error) { console.error('checkpoint target rejected after mkdir', { target, root, error }); throw error; }
   await rm(target, { force: true }).catch(() => undefined);
   if (entry.kind === 'symlink') await symlink(bytes.toString('utf8'), target); else await writeFile(target, bytes);
 }
-async function restoreRecovery(root: string, current: Map<string, WorkspaceEntry | undefined>): Promise<void> { for (const [path, entry] of current) { const target = assertPathInside(join(resolve(root), path), root); if (entry === undefined) await unlink(target).catch(() => undefined); else { await mkdir(dirname(target), { recursive: true }); await rm(target, { force: true }).catch(() => undefined); if (entry.kind === 'symlink') await symlink(entry.bytes.toString('utf8'), target); else await writeFile(target, entry.bytes); } } }
+async function restoreRecovery(root: string, current: Map<string, WorkspaceEntry | undefined>): Promise<void> { for (const [path, entry] of current) { const target = await requireWorkspaceMutationPath(join(resolve(root), path), root); if (entry === undefined) await unlink(target).catch(() => undefined); else { await mkdir(dirname(target), { recursive: true }); await requireWorkspaceMutationPath(target, root); await rm(target, { force: true }).catch(() => undefined); if (entry.kind === 'symlink') await symlink(entry.bytes.toString('utf8'), target); else await writeFile(target, entry.bytes); } } }
 function matches(actual: WorkspaceEntry | undefined, expected: CheckpointEntry | undefined): boolean { return actual === undefined ? expected === undefined : expected !== undefined && actual.kind === expected.kind && hashObject(actual.kind, actual.bytes) === expected.hash; }
 function sameWorkspaceEntry(left: WorkspaceEntry | undefined, right: WorkspaceEntry | undefined): boolean { return left !== undefined && right !== undefined && left.kind === right.kind && hashObject(left.kind, left.bytes) === hashObject(right.kind, right.bytes); }
 function uniqueMutationPaths(mutations: readonly CheckpointMutation[]): string[] { return [...new Set(mutations.flatMap(mutation => [mutation.path, ...(mutation.fromPath === undefined ? [] : [mutation.fromPath])]))]; }

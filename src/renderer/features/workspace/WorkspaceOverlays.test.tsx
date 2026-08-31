@@ -103,9 +103,18 @@ describe('FileChangesDrawer', () => {
     expect(drawer).not.toHaveClass('is-expanded');
     const openFileButton = screen.getByRole('button', { name: 'Open src/file.ts in a tab' });
     expect(openFileButton.querySelector('.file-icon')).not.toBeInTheDocument();
+    expect(document.querySelector('.file-change-item-header .file-icon-typescript')).toBeInTheDocument();
     expect(document.querySelector('.file-change-counts .change-additions')).toHaveTextContent('1');
     expect(document.querySelector('.file-change-counts .change-deletions')).toHaveTextContent('1');
     expect(document.querySelector('.file-change-item > header > .file-change-toggle')).not.toBeInTheDocument();
+    const fileHeader = document.querySelector<HTMLElement>('.file-change-item-header.is-expandable');
+    expect(fileHeader).not.toBeNull();
+    if (fileHeader === null) throw new Error('File change header was not rendered.');
+    fireEvent.click(fileHeader);
+    expect(fileHeader).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: '3 unmodified lines' })).not.toBeInTheDocument();
+    fireEvent.keyDown(fileHeader, { key: 'Enter' });
+    expect(fileHeader).toHaveAttribute('aria-expanded', 'true');
     const contextToggle = screen.getByRole('button', { name: '3 unmodified lines' });
     expect(contextToggle).toBeVisible();
     expect(screen.queryByText('context-5')).not.toBeInTheDocument();

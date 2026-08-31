@@ -117,6 +117,16 @@
 .settings-extension-skeleton { width: 46%; height: 13px; }
 .settings-extension-error { display: grid; gap: 8px; }
 .settings-extension-error p { margin: 0; color: var(--color-text-tertiary); font-size: 13px; overflow-wrap: anywhere; }
+.settings-mcp-status { display: grid; gap: 10px; }
+.settings-mcp-status-list { display: grid; gap: 7px; }
+.settings-mcp-status-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--color-border-subtle); padding-top: 8px; }
+.settings-mcp-status-row > span:first-child { display: grid; min-width: 0; gap: 3px; }
+.settings-mcp-status-row small { color: var(--color-text-tertiary); font-size: 11px; }
+.settings-mcp-status-value { max-width: 62%; color: var(--color-text-tertiary); font-size: 11px; text-align: right; overflow-wrap: anywhere; }
+.settings-mcp-status-connected { color: var(--color-success); }
+.settings-mcp-status-failed { color: var(--color-danger); }
+.settings-mcp-status-disconnected { color: var(--color-mcp-disconnected); }
+.settings-mcp-status-connecting { color: var(--color-accent); }
 .appearance-page { display: grid; gap: 28px; width: min(920px, 100%); margin: 30px auto; }
 .appearance-section { display: grid; gap: 14px; }
 .appearance-section-heading { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid var(--color-border-subtle); padding-bottom: 12px; }
@@ -145,6 +155,10 @@
 .theme-preview-system span:last-child { background: linear-gradient(90deg, var(--preview-light-accent) 0 50%, var(--preview-dark-accent) 50%); }
 .appearance-setting-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .appearance-setting-row > div { display: grid; gap: 4px; }
+.appearance-setting-row > .dropdown, .appearance-setting-row > .text-input, .appearance-setting-row > .settings-directory-control { width: min(260px, 45%); flex: 0 0 auto; }
+.appearance-setting-row > .settings-directory-control { display: flex; }
+.appearance-setting-row-stacked { align-items: stretch; flex-direction: column; gap: 10px; }
+.appearance-setting-row-stacked > .text-area { width: 100%; min-height: 92px; }
 .appearance-setting-row strong { color: var(--color-text); font-size: 13px; }
 .appearance-setting-row > div > span { color: var(--color-text-tertiary); font-size: 12px; }
 .appearance-setting-row .check-control { flex: 0 0 auto; }

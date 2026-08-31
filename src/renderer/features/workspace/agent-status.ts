@@ -2,6 +2,11 @@ import { readString } from '../../utils/data.js';
 import { formatToolDisplayName } from '../../../shared/tool-display.js';
 
 export function agentStatusForEvent(event: string, data: Record<string, unknown>): string | undefined {
+  if (event === 'mcp.server.connecting') return `Connecting to MCP server ${readString(data['serverId']) ?? '…'}.`;
+  if (event === 'mcp.server.connected') return `MCP server ${readString(data['serverId']) ?? '…'} connected.`;
+  if (event === 'mcp.server.failed') return `MCP server ${readString(data['serverId']) ?? '…'} failed to connect.`;
+  if (event === 'mcp.server.disconnected') return `MCP server ${readString(data['serverId']) ?? '…'} disconnected.`;
+  if (event === 'mcp.tool.catalog.updated') return `MCP tools updated (${String(data['toolCount'] ?? 0)} available).`;
   if (event === 'approval.requested') {
     const displayName = formatToolDisplayName(data['toolName'], data['displayName']);
     return `I need your approval before I continue with ${displayName}.`;

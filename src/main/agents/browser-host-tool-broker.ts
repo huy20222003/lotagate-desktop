@@ -41,6 +41,19 @@ export class BrowserHostToolBroker {
     for (const [key, sessionRunId] of this.sessionRuns) if (sessionRunId === runId) this.sessionRuns.delete(key);
   }
 
+  async closeForSession(cwd: string, sessionId: string): Promise<void> {
+    const key = `${cwd}\u0000${sessionId}`;
+    const browserSessionId = this.sessions.get(key);
+    this.sessions.delete(key);
+    this.sessionRuns.delete(key);
+    if (browserSessionId === undefined) return;
+    await this.browser.close(browserSessionId);
+    for (const [runId, sessionIds] of this.runSessions) {
+      sessionIds.delete(browserSessionId);
+      if (sessionIds.size === 0) this.runSessions.delete(runId);
+    }
+  }
+
   async handle(cwd: string, request: DesktopHostRequest): Promise<DesktopHostResponse> {
     const key = `${cwd}\u0000${request.sessionId}`;
     const previous = this.serial.get(key) ?? Promise.resolve();
@@ -70,18 +83,9 @@ export class BrowserHostToolBroker {
 
   async closeForWorkspace(cwd: string): Promise<void> {
     const prefix = `${cwd}\u0000`;
-    const closedSessionIds = new Set<string>();
-    for (const [key, browserSessionId] of this.sessions) {
-      if (!key.startsWith(prefix)) continue;
-      this.sessions.delete(key);
-      closedSessionIds.add(browserSessionId);
-      await this.browser.close(browserSessionId);
-    }
+    const sessionIds = [...this.sessions.keys()].filter(key => key.startsWith(prefix)).map(key => key.slice(prefix.length));
+    for (const sessionId of sessionIds) await this.closeForSession(cwd, sessionId);
     for (const key of this.sessionRuns.keys()) if (key.startsWith(prefix)) this.sessionRuns.delete(key);
-    for (const [runId, sessionIds] of this.runSessions) {
-      for (const sessionId of closedSessionIds) sessionIds.delete(sessionId);
-      if (sessionIds.size === 0) this.runSessions.delete(runId);
-    }
   }
 
   private async execute(cwd: string, request: DesktopHostRequest): Promise<DesktopHostResponse> {
@@ -105,7 +109,7 @@ export class BrowserHostToolBroker {
     const key = `${cwd}\u0000${request.sessionId}`;
     const existing = this.sessions.get(key);
     if (existing !== undefined) return existing;
-    const snapshot = await this.browser.create();
+    const snapshot = await this.browser.create(cwd);
     this.sessions.set(key, snapshot.id);
     const policyRunId = this.sessionRuns.get(`${cwd}\u0000${request.sessionId}`) ?? request.runId;
     const runSessions = this.runSessions.get(policyRunId) ?? new Set<string>();

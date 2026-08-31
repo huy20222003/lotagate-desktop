@@ -134,7 +134,19 @@ export class TaskStore {
 
   async activities(taskId: string): Promise<Activity[]> { return (await this.activityStore.read()).filter(activity => activity.taskId === taskId).map(item => activitySchema.parse(item)); }
 
-  async activitiesPage(taskId: string, options: { limit?: number; before?: string } = {}): Promise<ActivityPage> { return paginateActivities(await this.activities(taskId), options); }
+  async activitiesPage(taskId: string, options: { limit?: number; before?: string } = {}): Promise<ActivityPage> { return this.activityStore.readPage(taskId, options); }
+
+  async dailyUsage(): Promise<Record<string, number>> {
+    const totals = new Map<string, number>();
+    for (const activity of await this.activityStore.read()) {
+      if (activity.kind !== 'usage') continue;
+      const tokens = usageTokens(activity.metadata['usage']);
+      if (tokens <= 0) continue;
+      const day = activity.createdAt.slice(0, 10);
+      totals.set(day, (totals.get(day) ?? 0) + tokens);
+    }
+    return Object.fromEntries(totals);
+  }
 
   private async mutate(taskId: string, update: (task: Task) => Task): Promise<Task> {
     const current = await this.taskStore.read();
@@ -166,3 +178,14 @@ export function paginateActivities(all: readonly Activity[], options: { limit?: 
   const page = all.slice(start, end);
   return { activities: page, nextCursor: start > 0 ? page[0]?.id ?? null : null, hasMore: start > 0 };
 }
+
+function usageTokens(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, value);
+  if (typeof value === 'string' && Number.isFinite(Number(value))) return Math.max(0, Number(value));
+  if (typeof value !== 'object' || value === null) return 0;
+  const record = value as Record<string, unknown>;
+  const total = numberValue(record['totalTokens']);
+  return total ?? (numberValue(record['promptTokens']) ?? 0) + (numberValue(record['completionTokens']) ?? 0);
+}
+
+function numberValue(value: unknown): number | undefined { return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : typeof value === 'string' && Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : undefined; }
