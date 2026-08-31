@@ -50,4 +50,97 @@ describe('TaskConversation live state', () => {
 
     expect(screen.queryByLabelText('Thinking...')).not.toBeInTheDocument();
   });
+
+  it('renders Worked for once when the final assistant response is streaming', () => {
+    render(<TaskConversation
+      task={task}
+      activities={[
+        { id: 'progress-1', taskId: task.id, kind: 'assistant', text: 'I will inspect the file first.', metadata: { turnId: 'turn-1', segmentId: 'turn-1:progress', assistantPhase: 'progress' }, createdAt: task.createdAt },
+        { id: 'tool-1', taskId: task.id, kind: 'tool', text: 'Running filesystem.read.', metadata: { turnId: 'turn-1', actionId: 'action-1', toolName: 'filesystem.read', displayName: 'filesystem.read' }, createdAt: task.createdAt },
+        { id: 'assistant-1', taskId: task.id, kind: 'assistant', text: 'The file is ready.', metadata: { turnId: 'turn-1', segmentId: 'turn-1:final', assistantPhase: 'final' }, createdAt: task.createdAt },
+      ]}
+      activityAttachments={{}}
+      activityArtifacts={{}}
+      fileChangesByTurn={{}}
+      onOpenFileChanges={() => undefined}
+      onOpenImage={() => undefined}
+      thinking
+      finalResponseReceived
+      turnTimings={{ 'turn-1': { startedAt: Date.now() } }}
+      onTrust={async () => undefined}
+    />);
+
+    expect(document.querySelectorAll('.worked-time')).toHaveLength(1);
+  });
+
+  it('does not duplicate completed tool status above Worked For details', () => {
+    render(<TaskConversation
+      task={task}
+      activities={[{
+        id: 'tool-1', taskId: task.id, kind: 'tool', text: 'Read file completed.',
+        metadata: { turnId: 'turn-1', actionId: 'action-1', toolName: 'filesystem.read', status: 'completed' },
+        createdAt: task.createdAt,
+      }]}
+      activityAttachments={{}}
+      activityArtifacts={{}}
+      fileChangesByTurn={{}}
+      onOpenFileChanges={() => undefined}
+      onOpenImage={() => undefined}
+      statusText="Read file · completed"
+      thinking
+      finalResponseReceived={false}
+      turnTimings={{ 'turn-1': { startedAt: Date.now() } }}
+      onTrust={async () => undefined}
+    />);
+
+    expect(document.querySelector('.worked-status')).not.toBeInTheDocument();
+    expect(document.querySelector('.worked-tool')).toHaveTextContent('Ran Read file');
+    expect(screen.getByLabelText('Thinking...')).toBeInTheDocument();
+  });
+
+  it('hides Thinking while a tool is still running', () => {
+    render(<TaskConversation
+      task={task}
+      activities={[{
+        id: 'tool-1', taskId: task.id, kind: 'tool', text: 'Running filesystem.read.',
+        metadata: { turnId: 'turn-1', actionId: 'action-1', toolName: 'filesystem.read', status: 'running' },
+        createdAt: task.createdAt,
+      }]}
+      activityAttachments={{}}
+      activityArtifacts={{}}
+      fileChangesByTurn={{}}
+      onOpenFileChanges={() => undefined}
+      onOpenImage={() => undefined}
+      thinking
+      finalResponseReceived={false}
+      thinkingStartedAt={Date.now()}
+      turnTimings={{ 'turn-1': { startedAt: Date.now() } }}
+      onTrust={async () => undefined}
+    />);
+
+    expect(screen.queryByLabelText('Thinking...')).not.toBeInTheDocument();
+  });
+
+  it('keeps file changes attached to a failed turn instead of rendering them at transcript end', () => {
+    render(<TaskConversation
+      task={task}
+      activities={[
+        { id: 'error-1', taskId: task.id, kind: 'error', text: 'Agent turn failed.', metadata: { turnId: 'turn-failed' }, createdAt: task.createdAt },
+        { id: 'assistant-2', taskId: task.id, kind: 'assistant', text: 'Mình sẵn sàng hỗ trợ.', metadata: { turnId: 'turn-next', segmentId: 'turn-next:final', assistantPhase: 'final' }, createdAt: task.createdAt },
+      ]}
+      activityAttachments={{}}
+      activityArtifacts={{}}
+      fileChangesByTurn={{ 'turn-failed': { files: [{ path: 'test.md', lines: [], additions: 1, deletions: 1, truncated: false }], additions: 1, deletions: 1 } }}
+      onOpenFileChanges={() => undefined}
+      onOpenImage={() => undefined}
+      thinking={false}
+      finalResponseReceived
+      turnTimings={{ 'turn-failed': { startedAt: Date.now(), endedAt: Date.now() }, 'turn-next': { startedAt: Date.now(), endedAt: Date.now() } }}
+      onTrust={async () => undefined}
+    />);
+
+    expect(screen.getByText('Agent turn failed.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Edited files')).toBeInTheDocument();
+    expect(document.querySelectorAll('.file-change-card')).toHaveLength(1);
+  });
 });

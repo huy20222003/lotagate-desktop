@@ -1,10 +1,12 @@
 .file-change-card { margin-top: 14px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); }
 .file-change-card > header { display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--color-border-subtle); padding: 11px 13px; }
-.file-change-card-heading { display: grid; min-width: 0; gap: 6px; }
-.file-change-card-title { display: flex; min-width: 0; align-items: center; gap: 8px; }
-.file-change-card-title svg { flex: 0 0 auto; color: var(--color-text-secondary); }
+.file-change-card-heading { display: flex; min-width: 0; align-items: stretch; gap: 10px; }
+.file-change-card-icon { display: flex; flex: 0 0 26px; align-items: center; justify-content: center; color: var(--color-text-secondary); }
+.file-change-card-icon svg { width: 22px; height: 22px; }
+.file-change-card-summary { display: grid; min-width: 0; gap: 6px; }
+.file-change-card-title { display: flex; min-width: 0; align-items: center; }
 .file-change-card > header strong { color: var(--color-text); font-size: 13px; }
-.file-change-card-counts { display: inline-flex; gap: 10px; padding-left: 24px; font-size: 12px; }
+.file-change-card-counts { display: inline-flex; gap: 10px; font-size: 12px; }
 .file-change-card-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 .file-change-card-action { min-height: 29px; gap: 6px; padding: 0 9px; font-size: 11px; }
 .file-change-card-list { padding: 10px; }

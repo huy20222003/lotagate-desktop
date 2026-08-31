@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fileChangeSummariesFromActivities, fileChangesFromActivities, mergeFileChange, mergeFileChangeSummaries } from './file-changes.js';
+import { fileChangeSummariesFromActivities, fileChangesForTurn, fileChangesFromActivities, mergeFileChange, mergeFileChangeSummaries } from './file-changes.js';
 
 describe('file change projection', () => {
   it('keeps the latest change for each file and totals its lines', () => {
@@ -19,6 +19,16 @@ describe('file change projection', () => {
     ]);
     expect(summaries['turn-1']).toMatchObject({ additions: 1, deletions: 0, files: [{ path: 'test.md' }] });
     expect(summaries['turn-2']).toMatchObject({ additions: 2, deletions: 1, files: [{ path: 'other.md' }] });
+  });
+
+  it('returns only the selected turn summary', () => {
+    const summaries = {
+      'turn-1': { files: [{ path: 'old.md', additions: 1, deletions: 0, truncated: false, lines: [] }], additions: 1, deletions: 0 },
+      'turn-2': { files: [{ path: 'current.md', additions: 2, deletions: 1, truncated: false, lines: [] }], additions: 2, deletions: 1 },
+    };
+    expect(fileChangesForTurn(summaries, 'turn-2')).toEqual(summaries['turn-2']);
+    expect(fileChangesForTurn(summaries, undefined)).toEqual({ files: [], additions: 0, deletions: 0 });
+    expect(fileChangesForTurn(summaries, 'unknown')).toEqual({ files: [], additions: 0, deletions: 0 });
   });
 
   it('preserves live changes when an older activity snapshot arrives', () => {

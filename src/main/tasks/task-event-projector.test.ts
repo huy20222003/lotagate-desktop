@@ -55,6 +55,12 @@ describe('TaskEventProjector turn lifecycle', () => {
     expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'tool', 'Open new tab failed.', expect.objectContaining({ sessionId: 'session-1', toolName: 'browser.newTab', isError: true }));
   });
 
+  it('persists shell activity updates with the safe display command', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'tool.activity.started', data: { sessionId: 'session-1', actionId: 'run-1:shell.exec', toolName: 'shell.exec', command: 'Get-Content test.md', status: 'running' } });
+    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'tool', 'Running Get-Content test.md.', expect.objectContaining({ command: 'Get-Content test.md', actionId: 'run-1:shell.exec' }));
+  });
+
   it('finalizes a persisted assistant segment without adding transcript text', async () => {
     const { projector, tasks } = createProjector(createTask());
     await projector.apply('C:\\workspace', { version: 2, type: 'event', event: 'assistant.segment.completed', data: { sessionId: 'session-1', turnId: 'turn-1', segmentId: 'run-1:1', phase: 'final' } });

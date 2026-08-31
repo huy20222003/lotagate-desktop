@@ -10,7 +10,7 @@ export function MarkdownCodeBlock({ children }: { children?: ReactNode }) {
   const code = isValidElement(children) ? children as CodeElement : undefined;
   const language = code?.props.className?.match(/language-([\w-]+)/u)?.[1] ?? 'Plain text';
   const content = restoreProtectedCodeFences(textContent(code?.props.children ?? children)).replace(/\n$/u, '');
-  return <div className="markdown-code-block"><header><span>{language}</span><CopyTextButton content={content} label="Copy code" /></header><Scrollbar axis="both" className="markdown-code-scroll"><pre>{content}</pre></Scrollbar></div>;
+  return <div className="markdown-code-block"><header><span>{language}</span><CopyTextButton content={content} label="Copy code" /></header><Scrollbar className="markdown-code-scroll"><pre>{content}</pre></Scrollbar></div>;
 }
 
 function textContent(value: ReactNode): string {

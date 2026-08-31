@@ -5,6 +5,10 @@ export const EMPTY_FILE_CHANGE_SUMMARY: FileChangeSummary = { files: [], additio
 export type FileChangeSummariesByTurn = Record<string, FileChangeSummary>;
 export const EMPTY_FILE_CHANGE_SUMMARIES: FileChangeSummariesByTurn = {};
 
+export function fileChangesForTurn(summaries: FileChangeSummariesByTurn, turnId: string | undefined): FileChangeSummary {
+  return turnId === undefined ? EMPTY_FILE_CHANGE_SUMMARY : summaries[turnId] ?? EMPTY_FILE_CHANGE_SUMMARY;
+}
+
 export function fileChangesFromActivities(activities: readonly Activity[]): FileChangeSummary {
   const changes = new Map<string, FileChangeDiff>();
   for (const activity of activities) {

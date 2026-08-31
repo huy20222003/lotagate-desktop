@@ -6,8 +6,11 @@ import type { UserProfile } from '../../../contracts/ipc/v1/auth.js';
 import { Button, Field, Modal, TextInput, useToast } from '../../components/ui.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
 import { useWorkspaceController } from './use-workspace-controller.js';
+import { fileChangesForTurn } from './file-changes.js';
 import type { AttachmentPreview } from './attachment-types.js';
 import { OrchestrationPanel } from './OrchestrationPanel.js';
+import { OrchestrationDrawer } from './OrchestrationDrawer.js';
+import { PlanDetails } from './PlanDetails.js';
 import { ImageLightbox } from './ImageLightbox.js';
 import { ConversationTimeline } from './ConversationTimeline.js';
 import { useKeyboardShortcuts } from '../../services/keyboard-shortcuts.js';
@@ -18,7 +21,7 @@ import { Composer } from './Composer.js';
 import { ConversationHeader } from './ConversationHeader.js';
 import { ChatLoadingSkeleton } from './ChatLoadingSkeleton.js';
 import { TaskConversation } from './TaskConversation.js';
-import { ChangeSummaryChip } from './ChangeSummaryChip.js';
+import { ChangeSummaryChip, planStepNumber } from './ChangeSummaryChip.js';
 import { ScrollToLatestButton } from './ScrollToLatestButton.js';
 import { NewChatWelcome } from './NewChatWelcome.js';
 import { TerminalPanel } from './TerminalPanel.js';
@@ -46,6 +49,7 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   const [sessionName, setSessionName] = useState('');
   const [workspaceActionBusy, setWorkspaceActionBusy] = useState(false);
   const [changesOpen, setChangesOpen] = useState(false);
+  const [planDrawerOpen, setPlanDrawerOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
@@ -225,7 +229,8 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   }
   const accountName = user.fullName ?? user.username ?? user.email;
   const avatarProps = user.avatarUrl ? { name: accountName, src: user.avatarUrl } : { name: accountName };
-  const openChanges = useCallback((summary: FileChangeSummary) => { setChangesSummary(summary); setSourcesOpen(false); setBrowserOpen(false); setGitOpen(false); setChangesOpen(true); }, []);
+  const openChanges = useCallback((summary: FileChangeSummary) => { setPlanDrawerOpen(false); setChangesSummary(summary); setSourcesOpen(false); setBrowserOpen(false); setGitOpen(false); setChangesOpen(true); }, []);
+  const openPlan = useCallback(() => { setPlanDrawerOpen(current => !current); setChangesOpen(false); setSourcesOpen(false); setBrowserOpen(false); setGitOpen(false); }, []);
   const requestUndoFileChanges = useCallback(async (turnId: string) => { setUndoTarget(turnId); }, []);
   const confirmUndoFileChanges = useCallback(async () => {
     if (!undoTarget) return;
@@ -239,12 +244,14 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
     finally { setUndoActionBusy(false); setUndoTarget(undefined); }
   }, [controller, showError, success, undoTarget]);
   const latestFileChanges = controller.fileChanges.files.length > 0 ? controller.fileChanges : [...Object.values(controller.fileChangesByTurn)].reverse().find(summary => summary.files.length > 0) ?? controller.fileChanges;
+  const activeTurnFileChanges = fileChangesForTurn(controller.fileChangesByTurn, controller.activeTurnId);
   const toggleFileChanges = useCallback(() => { if (changesOpen) { setChangesOpen(false); return; } setChangesSummary(latestFileChanges); setSourcesOpen(false); setBrowserOpen(false); setGitOpen(false); setChangesOpen(true); }, [changesOpen, latestFileChanges]);
   const toggleSources = useCallback(() => { if (sourcesOpen) { setSourcesOpen(false); return; } setChangesOpen(false); setBrowserOpen(false); setGitOpen(false); setSourcesOpen(true); }, [sourcesOpen]);
   const toggleGit = useCallback(() => { if (gitOpen) { setGitOpen(false); return; } setChangesOpen(false); setSourcesOpen(false); setBrowserOpen(false); setGitOpen(true); }, [gitOpen]);
-  const showConversationControls = showScrollBottom || (controller.thinking && controller.fileChanges.files.length > 0);
+  const showConversationControls = showScrollBottom || (controller.thinking && (activeTurnFileChanges.files.length > 0 || controller.plan?.status === 'started'));
   const isWelcomeState = controller.task !== undefined && controller.workspace !== undefined && !controller.loading && !controller.activitiesLoading && !controller.thinking && !controller.activities.some(activity => activity.kind === 'user');
-  useEffect(() => { setChangesSummary(undefined); setAgentBrowserSessionId(undefined); setBrowserOpen(false); setGitOpen(false); }, [controller.task?.id]);
+  useEffect(() => { setChangesSummary(undefined); setPlanDrawerOpen(false); setAgentBrowserSessionId(undefined); setBrowserOpen(false); setGitOpen(false); }, [controller.task?.id]);
+  useEffect(() => { if (controller.plan?.status !== 'started') setPlanDrawerOpen(false); }, [controller.plan?.status]);
   const scrollToMessage = useCallback((activityId: string) => { document.getElementById(`chat-message-${activityId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, []);
   if (settingsOpen) return <SettingsPage user={user} {...(controller.workspace === undefined ? {} : { workspace: controller.workspace })} workspaces={controller.workspaces} keyboardShortcuts={keyboardShortcuts.bindings} onUpdateShortcut={keyboardShortcuts.updateShortcut} initialSection={settingsSection} onBack={() => setSettingsOpen(false)} />;
   const composer = <Composer disabled={controller.workspace === undefined} workspace={controller.workspace} thinking={controller.thinking} task={controller.task} attachments={controller.attachments} queuedMessages={controller.queuedMessages} models={controller.models} selectedModel={controller.selectedModel} onModel={controller.setSelectedModel} busy={controller.busy} error={controller.error} onSend={controller.sendPrompt} onRunCommand={controller.runCommand} onCancel={controller.cancelTask} onDraft={controller.updateDraft} onAttach={controller.pickArtifact} onAttachImage={controller.attachImage} onRemoveAttachment={controller.removeAttachment} onSteerQueued={controller.steerQueuedMessage} onRemoveQueued={controller.removeQueuedMessage} onEditQueued={controller.editQueuedMessage} onOpenImage={setLightboxImage} approval={controller.approval} approvalMode={controller.approvalMode} onApprovalMode={controller.setApprovalMode} onApproval={controller.respondApproval} />;
@@ -254,9 +261,10 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
        {isWelcomeState ? null : <ConversationHeader task={controller.task} workspace={controller.workspace} changesOpen={changesOpen} sourcesOpen={sourcesOpen} terminalOpen={terminalOpen} gitOpen={gitOpen} onToggleChanges={toggleFileChanges} onToggleSources={toggleSources} onToggleTerminal={() => setTerminalOpen(open => !open)} onToggleGit={toggleGit} onRenameTask={startRenameTask} onPinTask={(pinned) => { if (controller.task) void controller.pinTaskById(controller.task.id, pinned).catch(reason => showError('Unable to update session pin', toMessage(reason))); }} onArchiveTask={() => { if (controller.task) setArchiveTarget(controller.task); }} />}
        <div className="conversation-columns">
          <section className="conversation-chat">
-            {isWelcomeState ? <NewChatWelcome><div className="composer-dock">{composer}</div></NewChatWelcome> : <><div className="conversation-body"><ConversationTimeline activities={controller.activities} onSelect={scrollToMessage} viewportRef={threadViewportRef} /><Scrollbar className={`thread-scrollbar${controller.thinking ? ' is-thinking' : ''}`} viewportRef={threadViewportRef}><div className="thread-content">{controller.loading || controller.activitiesLoading ? <ChatLoadingSkeleton /> : <TaskConversation task={controller.task} activities={controller.activities} activityAttachments={controller.activityAttachments} activityArtifacts={controller.activityArtifacts} fileChangesByTurn={controller.fileChangesByTurn} checkpointStatuses={controller.checkpointStatuses} onUndoFileChanges={requestUndoFileChanges} onOpenFileChanges={openChanges} onOpenImage={setLightboxImage} statusText={controller.agentStatus} contextCompactionStatus={controller.contextCompactionStatus} thinking={controller.thinking} finalResponseReceived={controller.finalResponseReceived} {...(controller.thinkingStartedAt === undefined ? {} : { thinkingStartedAt: controller.thinkingStartedAt })} turnTimings={controller.turnTimings} trust={controller.trust} onTrust={controller.respondTrust} />}</div></Scrollbar></div><OrchestrationPanel plan={controller.plan} subagents={controller.subagents} /><div className="composer-dock">{showConversationControls ? <div className="conversation-controls">{showScrollBottom ? <ScrollToLatestButton thinking={controller.thinking} awayFromLatest={showScrollBottom} onClick={scrollToBottom} /> : null}{controller.thinking && controller.fileChanges.files.length > 0 ? <ChangeSummaryChip summary={controller.fileChanges} onClick={() => openChanges(controller.fileChanges)} /> : null}</div> : null}{composer}</div>{terminalOpen && controller.workspace ? <TerminalPanel cwd={controller.workspace.rootPath} onClose={() => setTerminalOpen(false)} /> : null}</>}
+            {isWelcomeState ? <NewChatWelcome><div className="composer-dock">{composer}</div></NewChatWelcome> : <><div className="conversation-body"><ConversationTimeline activities={controller.activities} onSelect={scrollToMessage} viewportRef={threadViewportRef} /><Scrollbar className={`thread-scrollbar${controller.thinking ? ' is-thinking' : ''}`} viewportRef={threadViewportRef}><div className="thread-content">{controller.loading || controller.activitiesLoading ? <ChatLoadingSkeleton /> : <TaskConversation task={controller.task} activities={controller.activities} activityAttachments={controller.activityAttachments} activityArtifacts={controller.activityArtifacts} fileChangesByTurn={controller.fileChangesByTurn} checkpointStatuses={controller.checkpointStatuses} onUndoFileChanges={requestUndoFileChanges} onOpenFileChanges={openChanges} onOpenImage={setLightboxImage} statusText={controller.agentStatus} contextCompactionStatus={controller.contextCompactionStatus} thinking={controller.thinking} finalResponseReceived={controller.finalResponseReceived} {...(controller.thinkingStartedAt === undefined ? {} : { thinkingStartedAt: controller.thinkingStartedAt })} turnTimings={controller.turnTimings} trust={controller.trust} onTrust={controller.respondTrust} />}</div></Scrollbar></div><OrchestrationPanel subagents={controller.subagents} /><div className="composer-dock">{showConversationControls ? <div className="conversation-controls">{showScrollBottom ? <ScrollToLatestButton thinking={controller.thinking} awayFromLatest={showScrollBottom} onClick={scrollToBottom} /> : null}{controller.thinking && (activeTurnFileChanges.files.length > 0 || controller.plan?.status === 'started') ? <ChangeSummaryChip summary={activeTurnFileChanges} {...(controller.plan?.status === 'started' ? { plan: controller.plan } : {})} onPlanClick={openPlan} onFilesClick={() => openChanges(activeTurnFileChanges)} /> : null}</div> : null}{composer}</div>{terminalOpen && controller.workspace ? <TerminalPanel cwd={controller.workspace.rootPath} onClose={() => setTerminalOpen(false)} /> : null}</>}
          </section>
          {!isWelcomeState && changesOpen && controller.workspace ? <FileChangesDrawer cwd={controller.workspace.rootPath} summary={changesSummary ?? controller.fileChanges} onClose={() => setChangesOpen(false)} /> : null}
+         {!isWelcomeState && planDrawerOpen && controller.plan?.status === 'started' ? <OrchestrationDrawer title={`Plan · Step ${planStepNumber(controller.plan)} / ${controller.plan.totalSteps}`} onClose={() => setPlanDrawerOpen(false)}><PlanDetails plan={controller.plan} /></OrchestrationDrawer> : null}
          {!isWelcomeState && sourcesOpen && controller.task ? <SourcesDrawer taskId={controller.task.id} refreshKey={controller.task.updatedAt} onClose={() => setSourcesOpen(false)} /> : null}
          {!isWelcomeState && browserOpen ? <BrowserPanel {...(controller.task?.id === undefined ? {} : { taskId: controller.task.id })} {...(agentBrowserSessionId === undefined ? {} : { sessionId: agentBrowserSessionId })} {...(controller.workspace?.rootPath === undefined ? {} : { cwd: controller.workspace.rootPath })} onClose={() => setBrowserOpen(false)} /> : null}
          {!isWelcomeState && gitOpen && controller.workspace ? <GitPanel cwd={controller.workspace.rootPath} onClose={() => setGitOpen(false)} /> : null}

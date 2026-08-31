@@ -135,6 +135,10 @@ function eventText(event: string, data: Record<string, unknown>): string | undef
   if (event === 'tool.completed') return data['isError'] === true
     ? `${formatToolDisplayName(data['toolName'], data['displayName'])} failed.`
     : `${formatToolDisplayName(data['toolName'], data['displayName'])} completed.`;
+  if (event === 'tool.activity.started') return `Running ${toolActivityDisplayName(data)}.`;
+  if (event === 'tool.activity.completed') return data['isError'] === true
+    ? `${toolActivityDisplayName(data)} failed.`
+    : `${toolActivityDisplayName(data)} completed.`;
   if (event === 'file.changed') return 'Workspace files changed.';
   // Command output is a transport detail. The command runner creates the
   // final assistant activity after completion; persisting each output event
@@ -188,3 +192,4 @@ function redactValue(value: unknown, depth: number): unknown {
 
 function redactString(value: string): string { return value.replace(/Bearer\s+[^\s]+/giu, 'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]{8,}/gu, '[REDACTED]').slice(0, 4_096); }
 function isSensitiveKey(key: string): boolean { return /(?:token|secret|password|authorization|credential|cookie|api[-_]?key)/iu.test(key); }
+function toolActivityDisplayName(data: Record<string, unknown>): string { return formatToolDisplayName(data['toolName'], data['command'] ?? data['displayName']); }

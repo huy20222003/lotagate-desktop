@@ -18,6 +18,8 @@ describe('FileChangeCard', () => {
     render(<FileChangeCard summary={summary} onOpenFileChanges={onOpenFileChanges} />);
 
     const card = screen.getByRole('region', { name: 'Edited files' });
+    expect(card.querySelector('.file-change-card-icon svg')).toBeInTheDocument();
+    expect(card.querySelector('.file-change-card-title svg')).not.toBeInTheDocument();
     expect(card.querySelector('.file-change-card-counts .change-additions')).toHaveTextContent('+3');
     expect(card.querySelector('.file-change-card-counts .change-deletions')).toHaveTextContent('-1');
     expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();

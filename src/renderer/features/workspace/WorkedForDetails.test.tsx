@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Activity } from '../../../contracts/ipc/v1/workspace.js';
@@ -19,29 +19,42 @@ describe('WorkedForDetails', () => {
   });
 
   it('keeps a completed tool in Worked For after the live status changes', () => {
-    render(<WorkedForDetails statusText="shell.exec · completed" activities={[
+    const { container } = render(<WorkedForDetails statusText="shell.exec · completed" activities={[
       toolActivity('tool-start', 'Running shell.exec.', { actionId: 'action-1', toolName: 'shell.exec', displayName: 'shell.exec' }),
       toolActivity('tool-complete', 'shell.exec completed.', { actionId: 'action-1', toolName: 'shell.exec', displayName: 'shell.exec', status: 'completed' }),
     ]} />);
 
     expect(screen.getByText('shell.exec · completed')).toBeInTheDocument();
-    expect(screen.getByText('Ran command')).toBeInTheDocument();
+    expect(container.querySelector('summary')).not.toBeInTheDocument();
+    expect(container.querySelector('.worked-tool')).toHaveTextContent('Ran command');
   });
 
   it('uses the same tool name for the running label', () => {
-    render(<WorkedForDetails activities={[
+    const { container } = render(<WorkedForDetails activities={[
       toolActivity('tool-start', 'Running filesystem.list.', { actionId: 'action-2', toolName: 'filesystem.list', displayName: 'filesystem.list' }),
     ]} />);
 
-    expect(screen.getByText('Run List files')).toBeInTheDocument();
+    expect(container.querySelector('summary')).not.toBeInTheDocument();
+    expect(container.querySelector('.worked-tool')).toHaveTextContent('Run List files');
+  });
+
+  it('renders the formatted shell command with a terminal icon', () => {
+    const { container } = render(<WorkedForDetails activities={[
+      toolActivity('tool-start', 'Running shell.exec.', { actionId: 'action-shell', toolName: 'shell.exec', displayName: 'shell.exec', command: 'Get-Content test.md' }),
+      toolActivity('tool-complete', 'shell.exec completed.', { actionId: 'action-shell', toolName: 'shell.exec', displayName: 'shell.exec', status: 'completed' }),
+    ]} />);
+
+    expect(container.querySelector('.worked-tool')).toHaveTextContent('Ran Get-Content test.md');
+    expect(container.querySelector('.worked-tool-terminal-icon')).toBeInTheDocument();
   });
 
   it('uses the canonical formatter for MCP tools', () => {
-    render(<WorkedForDetails activities={[
+    const { container } = render(<WorkedForDetails activities={[
       toolActivity('mcp-start', 'Running mcp__tavily__tavily_search.', { actionId: 'action-3', toolName: 'mcp__tavily__tavily_search', displayName: 'mcp__tavily__tavily_search' }),
     ]} />);
 
-    expect(screen.getByText('Run Tavily Search')).toBeInTheDocument();
+    expect(container.querySelector('summary')).not.toBeInTheDocument();
+    expect(container.querySelector('.worked-tool')).toHaveTextContent('Run Tavily Search');
   });
 
   it('reveals live progress text gradually', () => {
@@ -56,7 +69,7 @@ describe('WorkedForDetails', () => {
     expect(progress).toHaveTextContent(content);
   });
 
-  it('renders progress and tools in the order received from the agent', () => {
+  it('renders progress and grouped tools in the order received from the agent', () => {
     const progress = (id: string, text: string): Activity => ({ id, taskId: 'task-1', kind: 'assistant', text, metadata: { turnId: 'turn-1', segmentId: id, assistantPhase: 'progress' }, createdAt: '2026-08-29T00:00:00.000Z' });
     const activities: Activity[] = [
       progress('progress-check', 'Checking the current file.'),
@@ -68,8 +81,40 @@ describe('WorkedForDetails', () => {
     ];
     const { container } = render(<WorkedForDetails activities={activities} />);
 
-    expect(Array.from(container.querySelector('.worked-details')?.children ?? []).map(item => item.textContent)).toEqual([
+    expect(Array.from(container.querySelector('.worked-details')?.children ?? []).map(item => item.querySelector('summary')?.textContent ?? item.textContent)).toEqual([
       'Checking the current file.', 'Ran List files', 'Updating the file now.', 'Ran Write file',
     ]);
+  });
+
+  it('collapses consecutive tools while showing the running tool in the summary', () => {
+    const { container } = render(<WorkedForDetails activities={[
+      toolActivity('read-complete', 'filesystem.list completed.', { actionId: 'read', toolName: 'filesystem.list', displayName: 'filesystem.list', status: 'completed' }),
+      toolActivity('write-start', 'Running filesystem.write.', { actionId: 'write', toolName: 'filesystem.write', displayName: 'filesystem.write' }),
+    ]} />);
+
+    const group = container.querySelector('.worked-tool-group');
+    expect(group).not.toHaveAttribute('open');
+    expect(within(group!.querySelector('summary')!).getByText('Run Write file')).toBeVisible();
+    expect(within(group!.querySelector('.worked-tool-group-items')!).getByText('Ran List files')).toBeInTheDocument();
+    expect(group!.querySelectorAll('.worked-tool-terminal-icon')).toHaveLength(3);
+  });
+
+  it('replaces a running command summary and keeps ordered commands when completed', () => {
+    const activities: Activity[] = [
+      toolActivity('first-start', 'Running shell.exec.', { actionId: 'first', toolName: 'shell.exec', command: 'Get-Content test.md' }),
+      toolActivity('first-complete', 'shell.exec completed.', { actionId: 'first', toolName: 'shell.exec', status: 'completed' }),
+      toolActivity('second-start', 'Running shell.exec.', { actionId: 'second', toolName: 'shell.exec', command: 'rg abcdef test.md' }),
+    ];
+    const { container, rerender } = render(<WorkedForDetails activities={activities} />);
+    const group = container.querySelector('.worked-tool-group')!;
+
+    expect(within(group.querySelector('summary')!).getByText('Run rg abcdef test.md')).toBeVisible();
+    expect(within(group.querySelector('.worked-tool-group-items')!).getByText('Ran Get-Content test.md')).toBeInTheDocument();
+
+    rerender(<WorkedForDetails activities={[...activities,
+      toolActivity('second-complete', 'shell.exec completed.', { actionId: 'second', toolName: 'shell.exec', status: 'completed' }),
+    ]} />);
+    expect(within(container.querySelector('summary')!).getByText('Ran commands')).toBeVisible();
+    expect(container.querySelectorAll('.worked-tool-terminal-icon')).toHaveLength(3);
   });
 });

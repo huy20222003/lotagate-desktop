@@ -3,6 +3,7 @@
 import { fireEvent, render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { Activity } from '../../../contracts/ipc/v1/workspace.js';
+import { formatTextClamp } from '../../utils/text.js';
 import { ConversationTimeline } from './ConversationTimeline.js';
 
 function userActivities(count: number): Activity[] {
@@ -31,21 +32,21 @@ describe('ConversationTimeline', () => {
     const users = userActivities(2);
     const activities: Activity[] = [
       users[0]!,
-      { id: 'assistant-1', taskId: 'task-1', kind: 'assistant', text: 'The response explains what changed in the workspace.', metadata: {}, createdAt: '2026-01-01T00:01:00.000Z' },
+      { id: 'assistant-1', taskId: 'task-1', kind: 'assistant', text: 'The response explains what changed in the workspace and why the verification completed successfully.', metadata: {}, createdAt: '2026-01-01T00:01:00.000Z' },
       users[1]!,
-      { id: 'assistant-2', taskId: 'task-1', kind: 'assistant', text: 'The second response belongs to the second turn.', metadata: {}, createdAt: '2026-01-01T00:02:00.000Z' },
+      { id: 'assistant-2', taskId: 'task-1', kind: 'assistant', text: 'The second response belongs to the second turn and contains a longer explanation for the user.', metadata: {}, createdAt: '2026-01-01T00:02:00.000Z' },
     ];
     const view = render(<ConversationTimeline activities={activities} onSelect={() => undefined} viewportRef={viewportRef} />);
     const markers = view.container.querySelectorAll<HTMLButtonElement>('.conversation-timeline-marker');
 
     fireEvent.mouseEnter(markers[0]!);
 
-    expect(view.container.querySelector('.conversation-timeline-preview-user')?.textContent).toBe('Message 1');
-    expect(view.container.querySelector('.conversation-timeline-preview-agent')?.textContent).toBe('The response explains what changed in the workspace.');
+    expect(view.container.querySelector('.conversation-timeline-preview-user')?.textContent).toBe(formatTextClamp(60, 'Message 1'));
+    expect(view.container.querySelector('.conversation-timeline-preview-agent')?.textContent).toBe(formatTextClamp(96, 'The response explains what changed in the workspace and why the verification completed successfully.'));
 
     fireEvent.mouseLeave(markers[0]!);
     fireEvent.mouseEnter(markers[1]!);
     expect(view.container.querySelector('.conversation-timeline-preview-user')?.textContent).toBe('Message 2');
-    expect(view.container.querySelector('.conversation-timeline-preview-agent')?.textContent).toBe('The second response belongs to the second turn.');
+    expect(view.container.querySelector('.conversation-timeline-preview-agent')?.textContent).toBe(formatTextClamp(96, 'The second response belongs to the second turn and contains a longer explanation for the user.'));
   });
 });
