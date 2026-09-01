@@ -28,6 +28,17 @@ describe('ApprovalCoordinator', () => {
     await expect(pending).resolves.toMatchObject({ approvalId: request!.approvalId, approved: false });
   });
 
+  it('rejects a response from a different session owner', async () => {
+    const coordinator = new ApprovalCoordinator();
+    const listener = vi.fn();
+    coordinator.onRequest(listener);
+    const pending = coordinator.request({ source: 'agent', surface: 'composer', sessionId: 'session-a', taskId: 'task-a', toolName: 'filesystem.write', detail: {} });
+    const request = listener.mock.calls[0]?.[0];
+    await expect(coordinator.respond(request!.approvalId, true, { sessionId: 'session-b', taskId: 'task-b' })).rejects.toThrow('different session');
+    await expect(coordinator.respond(request!.approvalId, false, { sessionId: 'session-a', taskId: 'task-a' })).resolves.toMatchObject({ approved: false });
+    await expect(pending).resolves.toMatchObject({ approved: false });
+  });
+
   it('resolves as denied without calling the action when its process is unavailable', async () => {
     const coordinator = new ApprovalCoordinator();
     const listener = vi.fn();

@@ -38,9 +38,10 @@ export class ApprovalCoordinator {
     });
   }
 
-  async respond(approvalId: string, approved: boolean): Promise<DesktopApprovalResolution> {
+  async respond(approvalId: string, approved: boolean, owner?: { taskId?: string; sessionId?: string }): Promise<DesktopApprovalResolution> {
     const pending = this.pending.get(approvalId);
     if (pending === undefined) throw new Error('This approval is no longer active.');
+    if (!approvalOwnerMatches(pending.request, owner)) throw new Error('This approval belongs to a different session.');
     this.pending.delete(approvalId);
     clearTimeout(pending.timer);
     if (pending.isAvailable?.() === false) {
@@ -72,9 +73,16 @@ export class ApprovalCoordinator {
   }
 
   async cancelWhere(predicate: (request: DesktopApprovalRequest) => boolean): Promise<void> {
-    const ids = [...this.pending.values()].filter(pending => predicate(pending.request)).map(pending => pending.request.approvalId);
-    await Promise.all(ids.map(async id => {
-      try { await this.respond(id, false); } catch { /* already resolved */ }
+    const pending = [...this.pending.values()].filter(item => predicate(item.request));
+    await Promise.all(pending.map(async item => {
+      try { await this.respond(item.request.approvalId, false, { ...(item.request.taskId === undefined ? {} : { taskId: item.request.taskId }), ...(item.request.sessionId === undefined ? {} : { sessionId: item.request.sessionId }) }); } catch { /* already resolved */ }
     }));
   }
+}
+
+function approvalOwnerMatches(request: DesktopApprovalRequest, owner: { taskId?: string; sessionId?: string } | undefined): boolean {
+  if (owner === undefined) return request.taskId === undefined && request.sessionId === undefined;
+  if (request.taskId !== undefined && owner.taskId !== request.taskId) return false;
+  if (request.sessionId !== undefined && owner.sessionId !== request.sessionId) return false;
+  return true;
 }

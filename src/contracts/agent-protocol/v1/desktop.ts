@@ -52,6 +52,7 @@ export const desktopResponseSchema = z.object({
 export const desktopEventSchema = z.object({
   version: z.literal(DESKTOP_PROTOCOL_VERSION),
   type: z.literal('event'),
+  scope: z.enum(['session', 'control']),
   event: z.string().min(1).max(128),
   data: params,
 });

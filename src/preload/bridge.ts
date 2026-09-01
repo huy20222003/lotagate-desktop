@@ -186,7 +186,7 @@ const bridge: DesktopBridge = {
   },
   approvals: {
     request: input => ipcRenderer.invoke('approval.request', input),
-    respond: (approvalId, approved) => ipcRenderer.invoke('approval.respond', approvalId, approved),
+    respond: (approvalId, approved, owner) => ipcRenderer.invoke('approval.respond', approvalId, approved, owner),
     onRequest: listener => { const handler = (_event: Electron.IpcRendererEvent, request: DesktopApprovalRequest) => listener(request); ipcRenderer.on('approval.requested', handler); return () => ipcRenderer.removeListener('approval.requested', handler); },
     onResolved: listener => { const handler = (_event: Electron.IpcRendererEvent, resolution: DesktopApprovalResolution) => listener(resolution); ipcRenderer.on('approval.resolved', handler); return () => ipcRenderer.removeListener('approval.resolved', handler); },
   },

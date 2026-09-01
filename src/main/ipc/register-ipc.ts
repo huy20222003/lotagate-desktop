@@ -21,6 +21,7 @@ import type { DesktopOperations } from '../operations/desktop-operations.js';
 import { assertTrustedRenderer } from './sender-policy.js';
 import type { DesktopMenuContext } from '../windows/application-menu.js';
 import type { WorkspaceFileSuggestions } from '../workspaces/workspace-file-suggestions.js';
+import type { Workspace } from '../../contracts/ipc/v1/workspace.js';
 import { terminalExecutionInputSchema, terminalSessionOpenSchema, terminalSessionResizeSchema } from '../../contracts/ipc/v1/workspace.js';
 import { registerLoggedIpcHandler } from './logged-ipc.js';
 import type { DesktopLogger } from '../observability/desktop-logger.js';
@@ -56,6 +57,7 @@ export interface DesktopIpcServices {
   retryAutomation(runId: string): Promise<AutomationRun>;
   setMenuContext(context: DesktopMenuContext): void;
   logger: DesktopLogger;
+  onWorkspaceRemoved?: (workspace: Workspace) => Promise<void>;
 }
 
 export function registerIpc(services: DesktopIpcServices): void {
@@ -184,7 +186,12 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('workspace.rename', async (event, workspaceId: unknown, name: unknown) => { assertTrustedRenderer(event); return workspaces.rename(idSchema.parse(workspaceId), z.string().parse(name)); });
   handle('workspace.reorder', async (event, ids: unknown) => { assertTrustedRenderer(event); return workspaces.reorder(z.array(idSchema).parse(ids)); });
   handle('workspace.settings', async (event, workspaceId: unknown, patch: unknown) => { assertTrustedRenderer(event); return workspaces.updateSettings(idSchema.parse(workspaceId), objectSchema.parse(patch)); });
-  handle('workspace.remove', async (event, workspaceId: unknown) => { assertTrustedRenderer(event); return workspaces.remove(idSchema.parse(workspaceId)); });
+  handle('workspace.remove', async (event, workspaceId: unknown) => {
+    assertTrustedRenderer(event);
+    const workspace = await workspaces.require(idSchema.parse(workspaceId));
+    await services.onWorkspaceRemoved?.(workspace);
+    return workspaces.remove(workspace.id);
+  });
   handle('workspace.trust', async (event, workspaceId: unknown, trusted: unknown) => { assertTrustedRenderer(event); return workspaces.trust(idSchema.parse(workspaceId), z.boolean().parse(trusted)); });
   handle('workspace.fileSuggestions', async (event, rootPath: unknown, query: unknown) => { assertTrustedRenderer(event); return workspaceFileSuggestions.list(await requireWorkspaceCwd(rootPath), z.string().max(256).parse(query)); });
   handle('checkpoint.list', async (event, cwd: unknown, taskId: unknown) => { assertTrustedRenderer(event); const canonicalCwd = await requireWorkspaceCwd(cwd); const task = await tasks.requireForCwd(idSchema.parse(taskId), canonicalCwd); return checkpoints.list(canonicalCwd, task.id); });
@@ -293,7 +300,12 @@ export function registerIpc(services: DesktopIpcServices): void {
   handle('browser.list', async event => { assertTrustedRenderer(event); return browser.list(); });
   handle('browser.evidence', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.evidence(idSchema.parse(id)); });
   handle('approval.request', async (event, input: unknown) => { assertTrustedRenderer(event); return approvals.request(desktopApprovalInputSchema.parse(input)); });
-  handle('approval.respond', async (event, approvalId: unknown, approved: unknown) => { assertTrustedRenderer(event); return approvals.respond(idSchema.parse(approvalId), z.boolean().parse(approved)); });
+  handle('approval.respond', async (event, approvalId: unknown, approved: unknown, owner?: unknown) => {
+    assertTrustedRenderer(event);
+    const ownerValue = owner === undefined ? undefined : z.object({ taskId: idSchema.optional(), sessionId: idSchema.optional() }).strict().parse(owner);
+    const parsedOwner = ownerValue === undefined ? undefined : { ...(ownerValue.taskId === undefined ? {} : { taskId: ownerValue.taskId }), ...(ownerValue.sessionId === undefined ? {} : { sessionId: ownerValue.sessionId }) };
+    return approvals.respond(idSchema.parse(approvalId), z.boolean().parse(approved), parsedOwner);
+  });
   handle('automation.list', async event => { assertTrustedRenderer(event); return automations.list(); });
   handle('automation.get', async (event, id: unknown) => { assertTrustedRenderer(event); return automations.get(idSchema.parse(id)); });
   handle('automation.create', async (event, input: unknown) => { assertTrustedRenderer(event); return automations.create(automationCreateInputSchema.parse(input)); });

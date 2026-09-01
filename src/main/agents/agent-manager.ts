@@ -61,11 +61,12 @@ export class AgentManager {
     const projectRoot = await requireDirectory(cwd);
     const existing = this.sessionBindings.get(sessionId);
     if (existing !== undefined) { if (existing.projectRoot !== projectRoot) throw new Error('The session belongs to a different project.'); this.touch(existing); return existing.process.request('session.resume', { sessionId }); }
-    const pending = this.sessionResumes.get(sessionId);
+    const resumeKey = `${projectRoot}\u0000${sessionId}`;
+    const pending = this.sessionResumes.get(resumeKey);
     if (pending !== undefined) return pending;
     const operation = this.openSession(projectRoot, sessionId);
-    this.sessionResumes.set(sessionId, operation);
-    try { return await operation; } finally { if (this.sessionResumes.get(sessionId) === operation) this.sessionResumes.delete(sessionId); }
+    this.sessionResumes.set(resumeKey, operation);
+    try { return await operation; } finally { if (this.sessionResumes.get(resumeKey) === operation) this.sessionResumes.delete(resumeKey); }
   }
 
   private async openSession(projectRoot: string, sessionId: string): Promise<unknown> {

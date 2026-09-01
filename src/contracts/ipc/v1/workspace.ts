@@ -72,6 +72,7 @@ export const agentEventEnvelopeSchema = z.object({
   event: z.object({
     version: z.literal(2),
     type: z.literal('event'),
+    scope: z.enum(['session', 'control']),
     event: z.string().min(1),
     data: z.record(z.string(), z.unknown()),
   }),

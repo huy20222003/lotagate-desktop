@@ -148,6 +148,11 @@ protocol data, mismatched responses, and stalled sidecars fail closed and are
 reported through the diagnostic bridge. Shutdown sends a best-effort request
 and then terminates the process within the configured close deadlines.
 
+Every Desktop JSONL event declares a `scope`: `session` for session-owned
+streaming/tool events or `control` for workspace-level command events. Session
+events also carry their session identity in the event data so renderer state
+and approval handling can reject stale or cross-session updates.
+
 The CLI owns MCP configuration, transport, connection pooling, warm-up, and
 tool discovery. Desktop receives only sanitized MCP lifecycle/catalog events
 for status display. Development/link mode does not check for updates; the
@@ -155,9 +160,11 @@ current update endpoint is enabled only for packaged applications. Release
 update verification and installer application remain release-pipeline work,
 not an automatic development action.
 
-Persistent browser data uses a stable, hashed profile partition per workspace
-for agent-hosted sessions. Session profiles are ephemeral, while TTL profiles
-clear storage and evidence when they expire. The renderer never owns browser
+Persistent human-operated browser data uses a stable, hashed profile partition
+per workspace. Agent browser data uses a separate stable partition per CLI
+session, preventing cookies and local storage from being shared between
+concurrent sessions. Session profiles are ephemeral, while TTL profiles clear
+storage and evidence when they expire. The renderer never owns browser
 transport or Electron session objects.
 
 ## Boundaries

@@ -28,6 +28,7 @@ import { useTaskSidebarStatus } from './use-task-sidebar-status.js';
 import { useDraftTask } from './use-draft-task.js';
 import { isMcpDisplayStatus, type McpRuntimeStatus } from './mcp-status.js';
 import { selectedTaskLiveState } from './selected-task-live-state.js';
+import { createRendererOperationOwner, isRendererOperationCurrent, resolveRendererOperationOwner } from './operation-owner.js';
 type ContextCompactionPhase = 'compacting' | 'compacted' | 'failed';
 export function useWorkspaceController() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -80,7 +81,7 @@ export function useWorkspaceController() {
   const suppressQueueRef = useRef(false);
   useEffect(() => { draftTaskRef.current = task; }, [task]);
   useEffect(() => { workspaceRef.current = workspace; tasksRef.current = tasks; }, [tasks, workspace]);
-  useEffect(() => { setMcpStatuses({}); }, [workspace?.rootPath]);
+  useEffect(() => { setMcpStatuses({}); }, [task?.id, workspace?.rootPath]);
   const { runningTaskIds, unreadTaskIds, markTurnStarted, markTurnFinished } = useTaskSidebarStatus(task?.id);
   const { models, selectedModel, setSelectedModel: setSelectedModelValue } = useWorkspaceModelCatalog(workspace, task);
   const reportControllerError = useCallback((reason: unknown) => setError(toMessage(reason)), []);
@@ -89,11 +90,13 @@ export function useWorkspaceController() {
     const unsubscribe = window.lotagate.approvals.onRequest(request => {
       if (request.surface !== 'composer' || request.source === 'automation') return;
       if (request.workspaceCwd !== undefined && request.workspaceCwd !== workspace?.rootPath) return;
-      if (shouldAutoApproveDesktop(request, approvalMode)) { void window.lotagate.approvals.respond(request.approvalId, true).catch(reason => setError(toMessage(reason))); return; }
+      if (request.taskId !== undefined && request.taskId !== task?.id) return;
+      if (request.sessionId !== undefined && request.sessionId !== task?.sessionId) return;
+      if (shouldAutoApproveDesktop(request, approvalMode)) { void window.lotagate.approvals.respond(request.approvalId, true, { ...(request.taskId === undefined ? {} : { taskId: request.taskId }), ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }) }).catch(reason => setError(toMessage(reason))); return; }
       setApproval(request);
     });
     return unsubscribe;
-  }, [approvalMode, workspace?.rootPath]);
+  }, [approvalMode, task?.id, task?.sessionId, workspace?.rootPath]);
   useEffect(() => window.lotagate.approvals.onResolved(resolution => {
     setApproval(current => current?.approvalId === resolution.approvalId ? undefined : current);
   }), []);
@@ -470,38 +473,41 @@ export function useWorkspaceController() {
       setError('Wait for the active response to finish before running a slash command.');
       return false;
     }
-    setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setActiveTurnId(undefined); activeTurnRef.current = undefined; setPlan(undefined); setSubagents([]); setFinalResponseReceived(false); setAgentStatus(commandStatusForAction(invocation.actionId) ?? 'Running command…');
-    const commandStartedAt = Date.now();
+    const commandOwner = createRendererOperationOwner(workspace, task);
+    const isCurrentCommand = (): boolean => isRendererOperationCurrent(commandOwner, workspaceRef.current, draftTaskRef.current);
+    setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setActiveTurnId(undefined); activeTurnRef.current = undefined; setPlan(undefined); setSubagents([]); setFinalResponseReceived(false); setAgentStatus(commandStatusForAction(invocation.actionId) ?? 'Running command…'); const commandStartedAt = Date.now();
     setThinking(true); setThinkingStartedAt(commandStartedAt);
     try {
       const isNewTask = task === undefined;
       let activeTask = task ?? await createTask(preview);
+      resolveRendererOperationOwner(commandOwner, activeTask.id);
       draftTaskRef.current = activeTask;
       if (!isNewTask) await window.lotagate.tasks.addActivity(activeTask.id, 'user', preview, { command: invocation.actionId });
       activeTask = await window.lotagate.tasks.update(activeTask.id, { draft: '', draftAttachmentIds: [], ...(activeTask.title === 'New chat' ? { title: sessionSlugFromPrompt(preview) } : {}) });
       draftTaskRef.current = activeTask;
-      setTask(activeTask); setAttachments([]);
+      if (isCurrentCommand()) { setTask(activeTask); setAttachments([]); }
       await loadActivities(activeTask.id, isNewTask);
       await window.lotagate.tasks.setStatus(activeTask.id, 'active');
       await window.lotagate.agent.initialize(activeTask.cwd);
       const result = await executeDesktopCommandResult(activeTask.cwd, invocation);
       const commandEndedAt = Date.now();
       const mediaImportFailures = await persistDesktopCommandResult(activeTask.id, invocation.actionId, result, commandStartedAt, commandEndedAt);
-      if (mediaImportFailures > 0) setError(`Command completed, but ${mediaImportFailures} media file${mediaImportFailures === 1 ? '' : 's'} could not be imported.`);
+      if (mediaImportFailures > 0 && isCurrentCommand()) setError(`Command completed, but ${mediaImportFailures} media file${mediaImportFailures === 1 ? '' : 's'} could not be imported.`);
       await window.lotagate.tasks.setStatus(activeTask.id, 'completed');
-      await reloadTasks(workspace.id);
-      await loadActivities(activeTask.id, isNewTask);
+      if (!isCurrentCommand()) return true;
+      await reloadTasks(commandOwner.workspaceId);
+      if (isCurrentCommand()) await loadActivities(activeTask.id, isNewTask);
       return true;
     } catch (reason) {
-      const failedTask = draftTaskRef.current ?? task;
-      if (failedTask) {
+      const failedTaskId = commandOwner.taskResolved ? commandOwner.taskId : undefined;
+      if (failedTaskId) {
         const commandEndedAt = Date.now();
-        await window.lotagate.tasks.addActivity(failedTask.id, 'error', toMessage(reason), { command: invocation.actionId, [DESKTOP_COMMAND_TIMING_METADATA_KEY]: { startedAt: commandStartedAt, endedAt: commandEndedAt } }).catch(() => undefined);
-        await window.lotagate.tasks.setStatus(failedTask.id, 'failed').catch(() => undefined);
+        await window.lotagate.tasks.addActivity(failedTaskId, 'error', toMessage(reason), { command: invocation.actionId, [DESKTOP_COMMAND_TIMING_METADATA_KEY]: { startedAt: commandStartedAt, endedAt: commandEndedAt } }).catch(() => undefined);
+        await window.lotagate.tasks.setStatus(failedTaskId, 'failed').catch(() => undefined);
       }
-      setError(toMessage(reason));
+      if (isCurrentCommand()) setError(toMessage(reason));
       return false;
-    } finally { setBusy(false); setThinking(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); }
+    } finally { if (isCurrentCommand()) { setBusy(false); setThinking(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); } }
   }, [createTask, loadActivities, reloadTasks, task, workspace]);
   const dispatchQueuedPrompt = useCallback(async (message: QueuedMessage) => {
     const started = await startPrompt(message.prompt, message.attachments.map(attachment => attachment.id), message.options);
@@ -523,7 +529,7 @@ export function useWorkspaceController() {
 
   const respondApproval = useCallback(async (approved: boolean) => {
     if (!approval || workspace === undefined) return;
-    await window.lotagate.approvals.respond(approval.approvalId, approved);
+    await window.lotagate.approvals.respond(approval.approvalId, approved, { ...(approval.taskId === undefined ? {} : { taskId: approval.taskId }), ...(approval.sessionId === undefined ? {} : { sessionId: approval.sessionId }) });
     setApproval(undefined);
   }, [approval, workspace]);
   const respondTrust = useCallback(async (trusted: boolean) => { if (!trust || workspace === undefined) return; await window.lotagate.agent.trustRespond(workspace.rootPath, { trustRequestId: trust.trustRequestId, trusted }); if (trusted) { const updated = await window.lotagate.workspaces.trust(workspace.id, true); setWorkspace(updated); setWorkspaces(current => current.map(item => item.id === updated.id ? updated : item)); } setTrust(undefined); }, [trust, workspace]);

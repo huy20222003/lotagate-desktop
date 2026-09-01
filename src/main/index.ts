@@ -101,7 +101,7 @@ app.whenReady().then(async () => {
   browserService = browser;
   const browserHost = new BrowserHostToolBroker(browser, (cwd, activity) => {
     logger.debug('agent.browser', { cwd, event: activity.event, action: activity.data['action'] });
-    const event = { version: 2 as const, type: 'event' as const, event: activity.event, data: activity.data };
+    const event = { version: 2 as const, type: 'event' as const, scope: 'session' as const, event: activity.event, data: activity.data };
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
   });
   const hostExecution = new DesktopHostExecutionBroker({
@@ -131,7 +131,7 @@ app.whenReady().then(async () => {
         const displayName = formatToolDisplayName(event.data['toolName'], event.data['displayName']);
         const kind = String(event.data['kind'] ?? 'action');
         const detail = typeof event.data['detail'] === 'object' && event.data['detail'] !== null && !Array.isArray(event.data['detail']) ? event.data['detail'] as Record<string, unknown> : {};
-        const commonInput: Omit<DesktopApprovalInput, 'source' | 'surface'> = { approvalId, toolName, displayName, kind, detail, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }), risk: fallbackReason === undefined ? 'normal' : 'elevated', workspaceCwd: projectRoot, ...(typeof event.data['taskId'] === 'string' ? { taskId: event.data['taskId'] } : {}), ...(typeof event.data['turnId'] === 'string' ? { turnId: event.data['turnId'] } : {}) };
+        const commonInput: Omit<DesktopApprovalInput, 'source' | 'surface'> = { approvalId, toolName, displayName, kind, detail, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }), risk: fallbackReason === undefined ? 'normal' : 'elevated', workspaceCwd: projectRoot, ...(typeof event.data['taskId'] === 'string' ? { taskId: event.data['taskId'] } : {}), ...(typeof event.data['sessionId'] === 'string' ? { sessionId: event.data['sessionId'] } : {}), ...(typeof event.data['turnId'] === 'string' ? { turnId: event.data['turnId'] } : {}) };
         if (binding !== undefined) {
           const approval: Omit<AutomationApproval, 'requestedAt'> = { approvalId, toolName, displayName, kind, detail, ...(executionBoundary === undefined ? {} : { executionBoundary }), ...(fallbackReason === undefined ? {} : { fallbackReason }) };
           void automations.requestApproval(binding.runId, approval, approved => agents.approvalRespond(binding.cwd, { approvalId, approved }), registered => {
@@ -156,8 +156,10 @@ app.whenReady().then(async () => {
     },
     onExit: (projectRoot, error, sessionId, approvalIds = []) => {
       if (approvalIds.length > 0) void approvals.cancelWhere(request => approvalIds.includes(request.approvalId));
-      void (sessionId === undefined ? browserHost.closeForWorkspace(projectRoot) : browserHost.closeForSession(projectRoot, sessionId));
-      void (sessionId === undefined ? tasks.interruptActiveByCwd(projectRoot, error.message) : tasks.interruptActiveBySession(sessionId, error.message)).catch(() => undefined);
+      if (sessionId !== undefined) {
+        void browserHost.closeForSession(projectRoot, sessionId);
+        void tasks.interruptActiveBySession(sessionId, error.message).catch(() => undefined);
+      }
       logger.error('agent.process.exit', { projectRoot, sessionId, approvalCount: approvalIds.length, error: error.message });
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic: { kind: 'protocol', message: error.message } });
     },
@@ -212,7 +214,7 @@ app.whenReady().then(async () => {
       if (notification !== undefined) operations.notify(notification.title, notification.body);
     }
   });
-  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger });
+  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }

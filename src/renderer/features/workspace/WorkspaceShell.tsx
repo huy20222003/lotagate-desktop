@@ -141,6 +141,8 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   useEffect(() => window.lotagate.agent.onEvent(envelope => {
     if (envelope.cwd !== controller.workspace?.rootPath) return;
     if (!envelope.event.event.startsWith('browser.')) return;
+    const eventSessionId = envelope.event.data['sessionId'];
+    if (typeof eventSessionId !== 'string' || eventSessionId !== controller.task?.sessionId) return;
     const browserSessionId = envelope.event.data['browserSessionId'];
     if (typeof browserSessionId !== 'string') return;
     setAgentBrowserSessionId(browserSessionId);

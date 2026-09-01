@@ -16,6 +16,7 @@ export const desktopApprovalInputSchema = z.object({
   risk: desktopApprovalRiskSchema.default('normal'),
   timeoutMs: z.number().int().min(10_000).max(15 * 60 * 1_000).optional(),
   taskId: z.string().min(1).max(256).optional(),
+  sessionId: z.string().min(1).max(256).optional(),
   turnId: z.string().min(1).max(256).optional(),
   workspaceCwd: z.string().min(1).max(4_096).optional(),
 }).strict();
@@ -31,7 +32,7 @@ export type DesktopApprovalRequest = z.infer<typeof desktopApprovalRequestSchema
 
 export interface DesktopApprovalApi {
   request(input: DesktopApprovalInput): Promise<DesktopApprovalResolution>;
-  respond(approvalId: string, approved: boolean): Promise<DesktopApprovalResolution>;
+  respond(approvalId: string, approved: boolean, owner?: { taskId?: string; sessionId?: string }): Promise<DesktopApprovalResolution>;
   onRequest(listener: (request: DesktopApprovalRequest) => void): () => void;
   onResolved(listener: (resolution: DesktopApprovalResolution) => void): () => void;
 }

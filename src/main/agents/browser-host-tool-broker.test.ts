@@ -57,6 +57,7 @@ describe('BrowserHostToolBroker', () => {
       expect(response.ok, action).toBe(true);
     }
     expect(browser.create).toHaveBeenCalledOnce();
+    expect(browser.create).toHaveBeenCalledWith(`${process.cwd()}\u0000session-1`);
     expect(browser.upload).toHaveBeenCalledOnce();
     expect(browser.download).toHaveBeenCalledOnce();
     expect(browser.dialog).toHaveBeenCalledOnce();

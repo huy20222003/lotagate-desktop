@@ -109,7 +109,9 @@ export class BrowserHostToolBroker {
     const key = `${cwd}\u0000${request.sessionId}`;
     const existing = this.sessions.get(key);
     if (existing !== undefined) return existing;
-    const snapshot = await this.browser.create(cwd);
+    // Agent browser profiles must be isolated by the owning CLI session. The
+    // human-operated browser keeps its existing default profile separately.
+    const snapshot = await this.browser.create(`${cwd}\u0000${request.sessionId}`);
     this.sessions.set(key, snapshot.id);
     const policyRunId = this.sessionRuns.get(`${cwd}\u0000${request.sessionId}`) ?? request.runId;
     const runSessions = this.runSessions.get(policyRunId) ?? new Set<string>();

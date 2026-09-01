@@ -7,7 +7,7 @@ describe('Desktop JSONL contract', () => {
   });
 
   it('parses an event without treating it as a response', () => {
-    expect(parseDesktopEvent({ version: 2, type: 'event', event: 'assistant.delta', data: { content: 'hello' } })).toMatchObject({ event: 'assistant.delta' });
+    expect(parseDesktopEvent({ version: 2, type: 'event', scope: 'session', event: 'assistant.delta', data: { content: 'hello' } })).toMatchObject({ event: 'assistant.delta' });
   });
 
   it('rejects unsupported protocol versions', () => {
