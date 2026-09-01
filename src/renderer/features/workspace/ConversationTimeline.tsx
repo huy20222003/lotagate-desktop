@@ -86,11 +86,13 @@ export function ConversationTimeline({ activities, onSelect, viewportRef }: { ac
   }, []);
 
   const markerGap = userMessages.length <= 1 ? 0 : Math.max(TIMELINE_MARKER_MIN_GAP, Math.min(TIMELINE_MARKER_MAX_GAP, (timelineHeight - TIMELINE_TRACK_PADDING * 2) / (userMessages.length - 1)));
-  const trackHeight = Math.max(timelineHeight, TIMELINE_TRACK_PADDING * 2 + Math.max(0, userMessages.length - 1) * markerGap);
+  const timelineContentHeight = TIMELINE_TRACK_PADDING * 2 + Math.max(0, userMessages.length - 1) * markerGap;
+  const trackHeight = Math.max(timelineHeight, timelineContentHeight);
+  const markerOffset = Math.max(0, (timelineHeight - timelineContentHeight) / 2);
   const activeIndex = userMessages.findIndex(activity => activity.id === activeActivityId);
   const hoveredMessage = timelineMessages.find(message => message.activity.id === hoveredActivityId);
   const hoveredIndex = hoveredActivityId === undefined ? -1 : userMessages.findIndex(activity => activity.id === hoveredActivityId);
-  const hoveredPopoverTop = hoveredIndex < 0 ? undefined : TIMELINE_TRACK_PADDING + hoveredIndex * markerGap - timelineScrollTop;
+  const hoveredPopoverTop = hoveredIndex < 0 ? undefined : markerOffset + TIMELINE_TRACK_PADDING + hoveredIndex * markerGap - timelineScrollTop;
   const lastUserMessageId = userMessages[userMessages.length - 1]?.id;
   useEffect(() => {
     if (lastUserMessageId === undefined) {
@@ -111,10 +113,10 @@ export function ConversationTimeline({ activities, onSelect, viewportRef }: { ac
       timelineViewport.scrollTo({ top: trackHeight - timelineHeight, behavior: 'auto' });
       return;
     }
-    const markerTop = TIMELINE_TRACK_PADDING + activeIndex * markerGap;
+    const markerTop = markerOffset + TIMELINE_TRACK_PADDING + activeIndex * markerGap;
     const targetScrollTop = markerTop - timelineHeight / 2;
     timelineViewport.scrollTo({ top: Math.max(0, Math.min(targetScrollTop, trackHeight - timelineHeight)), behavior: 'smooth' });
-  }, [activeIndex, markerGap, timelineHeight, trackHeight]);
+  }, [activeIndex, markerGap, markerOffset, timelineHeight, trackHeight]);
 
   useEffect(() => { updateScrollState(); }, [trackHeight, updateScrollState]);
 
@@ -134,5 +136,5 @@ export function ConversationTimeline({ activities, onSelect, viewportRef }: { ac
   const stopPointerDrag = (event: ReactPointerEvent<HTMLDivElement>) => { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = undefined; };
 
   if (userMessages.length === 0) return null;
-  return <aside className="conversation-timeline" aria-label="User messages"><div className={`conversation-timeline-window${scrollState.canScrollUp ? ' has-overflow-above' : ''}${scrollState.canScrollDown ? ' has-overflow-below' : ''}`} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={stopPointerDrag} onPointerCancel={stopPointerDrag}><div ref={timelineViewportRef} className="conversation-timeline-scroll" onScroll={updateScrollState}><div className="conversation-timeline-list" style={{ height: `${trackHeight}px` }}>{userMessages.map((activity, index) => { const position = userMessages.length === 1 ? TIMELINE_TRACK_PADDING : TIMELINE_TRACK_PADDING + index * markerGap; return <button type="button" key={activity.id} className={`conversation-timeline-marker ${activeActivityId === activity.id ? 'active' : ''}`} style={{ top: `${position}px` }} aria-current={activeActivityId === activity.id ? 'location' : undefined} aria-label={`Jump to message: ${formatTextClamp(80, activity.text)}`} onMouseEnter={() => setHoveredActivityId(activity.id)} onMouseLeave={() => setHoveredActivityId(undefined)} onFocus={() => setHoveredActivityId(activity.id)} onBlur={() => setHoveredActivityId(undefined)} onClick={() => onSelect(activity.id)}><span /></button>; })}</div></div>{hoveredMessage && hoveredPopoverTop !== undefined ? <div className="conversation-timeline-popover" style={{ top: `${hoveredPopoverTop}px` }}><span className="conversation-timeline-preview-user">{formatTextClamp(TIMELINE_USER_PREVIEW_CHARACTERS, hoveredMessage.activity.text)}</span>{hoveredMessage.responseText ? <span className="conversation-timeline-preview-agent">{formatTextClamp(TIMELINE_AGENT_PREVIEW_CHARACTERS, hoveredMessage.responseText)}</span> : null}</div> : null}<span className="conversation-timeline-fade conversation-timeline-fade-top" aria-hidden="true" /><span className="conversation-timeline-fade conversation-timeline-fade-bottom" aria-hidden="true" /></div></aside>;
+  return <aside className="conversation-timeline" aria-label="User messages"><div className={`conversation-timeline-window${scrollState.canScrollUp ? ' has-overflow-above' : ''}${scrollState.canScrollDown ? ' has-overflow-below' : ''}`} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={stopPointerDrag} onPointerCancel={stopPointerDrag}><div ref={timelineViewportRef} className="conversation-timeline-scroll" onScroll={updateScrollState}><div className="conversation-timeline-list" style={{ height: `${trackHeight}px` }}>{userMessages.map((activity, index) => { const position = markerOffset + (userMessages.length === 1 ? TIMELINE_TRACK_PADDING : TIMELINE_TRACK_PADDING + index * markerGap); return <button type="button" key={activity.id} className={`conversation-timeline-marker ${activeActivityId === activity.id ? 'active' : ''}`} style={{ top: `${position}px` }} aria-current={activeActivityId === activity.id ? 'location' : undefined} aria-label={`Jump to message: ${formatTextClamp(80, activity.text)}`} onMouseEnter={() => setHoveredActivityId(activity.id)} onMouseLeave={() => setHoveredActivityId(undefined)} onFocus={() => setHoveredActivityId(activity.id)} onBlur={() => setHoveredActivityId(undefined)} onClick={() => onSelect(activity.id)}><span /></button>; })}</div></div>{hoveredMessage && hoveredPopoverTop !== undefined ? <div className="conversation-timeline-popover" style={{ top: `${hoveredPopoverTop}px` }}><span className="conversation-timeline-preview-user">{formatTextClamp(TIMELINE_USER_PREVIEW_CHARACTERS, hoveredMessage.activity.text)}</span>{hoveredMessage.responseText ? <span className="conversation-timeline-preview-agent">{formatTextClamp(TIMELINE_AGENT_PREVIEW_CHARACTERS, hoveredMessage.responseText)}</span> : null}</div> : null}<span className="conversation-timeline-fade conversation-timeline-fade-top" aria-hidden="true" /><span className="conversation-timeline-fade conversation-timeline-fade-bottom" aria-hidden="true" /></div></aside>;
 }

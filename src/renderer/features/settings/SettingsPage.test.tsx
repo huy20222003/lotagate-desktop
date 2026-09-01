@@ -16,22 +16,22 @@ describe('SettingsPage', () => {
 
   it.each([
     ['general', 'General'], ['profile', 'Profile'], ['api-key', 'API key'], ['billing', 'Billing'], ['appearance', 'Appearance'], ['keyboard-shortcuts', 'Keyboard shortcuts'],
-    ['automation', 'Automations'], ['browser', 'Browser'], ['sandbox', 'Sandbox'], ['hook', 'Hooks'], ['skill', 'Skills'], ['plugin', 'Plugins'], ['mcp', 'MCP'],
+    ['browser', 'Browser'], ['sandbox', 'Sandbox'], ['hook', 'Hooks'], ['skill', 'Skills'], ['plugin', 'Plugins'], ['mcp', 'MCP'],
   ] as Array<[SettingsSection, string]> )('routes the %s settings section', async (section, title) => {
     installBridge();
-    render(<ToastProvider><SettingsPage user={user} workspaces={[]} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection={section} /></ToastProvider>);
+    render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection={section} /></ToastProvider>);
     await waitFor(() => expect(screen.getByRole('heading', { name: title, level: 1 })).toBeVisible());
   });
 
   it('saves Browser and Sandbox changes immediately through the shared settings bridge', async () => {
     const update = installBridge();
-    const view = render(<ToastProvider><SettingsPage user={user} workspaces={[]} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="browser" /></ToastProvider>);
+    const view = render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="browser" /></ToastProvider>);
     const downloadDirectory = await screen.findByPlaceholderText('Default: system Downloads/LotaGate Browser');
     fireEvent.change(downloadDirectory, { target: { value: 'C:/downloads' } });
     await waitFor(() => expect(update).toHaveBeenCalledWith({ browser: { ...browser, downloadDirectory: 'C:/downloads' } }));
 
     view.unmount();
-    render(<ToastProvider><SettingsPage user={user} workspaces={[]} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="sandbox" /></ToastProvider>);
+    render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="sandbox" /></ToastProvider>);
     const memory = await screen.findByRole('spinbutton', { name: 'Memory limit (MB)' });
     fireEvent.change(memory, { target: { value: '4096' } });
     await waitFor(() => expect(update).toHaveBeenCalledWith({ sandbox: { ...sandbox, memoryMb: 4096 } }));

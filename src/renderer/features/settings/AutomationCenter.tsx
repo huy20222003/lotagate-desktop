@@ -1,55 +1,125 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { MoreHorizontal, Pause, Pencil, Play, PlayCircle, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Play, Plus, Power, PowerOff, Trash2 } from 'lucide-react';
 import type { Automation, AutomationCreateInput } from '../../../contracts/ipc/v1/automation.js';
 import type { Workspace } from '../../../contracts/ipc/v1/workspace.js';
-import { ActionMenu, type ActionMenuItem } from '../../components/ActionMenu.js';
-import { Badge, Button, Card, EmptyState, Icon, Modal, Skeleton, useToast } from '../../components/ui.js';
+import { Badge, Button, Card, EmptyState, Icon, IconButton, Modal, Skeleton, TextInput, useToast } from '../../components/ui.js';
+import { Pagination } from '../../components/Pagination.js';
+import { useDebounce } from '../../hooks/use-debounce.js';
 import { toUserErrorMessage } from '../../utils/errors.js';
-import { formatTime } from '../../utils/time.js';
+import { AutomationDetailsDrawer } from './AutomationDetailsDrawer.js';
 import { AutomationFormModal } from './AutomationFormModal.js';
-import { AutomationRunHistory } from './AutomationRunHistory.js';
+import { automationScheduleLabel } from './automation-view-utils.js';
 
 const AUTOMATION_PAGE_SIZE = 8;
 
 export function AutomationCenter({ workspaces }: { workspaces: Workspace[] }) {
   const [items, setItems] = useState<Automation[]>([]);
-  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [selectedId, setSelectedId] = useState<string>();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | undefined>();
-  const [formTarget, setFormTarget] = useState<Automation | null | undefined>();
-  const [removeTarget, setRemoveTarget] = useState<Automation | undefined>();
-  const [busy, setBusy] = useState<string | undefined>();
-  const [page, setPage] = useState(1);
+  const [error, setError] = useState<string>();
+  const [formTarget, setFormTarget] = useState<Automation | null>();
+  const [removeTarget, setRemoveTarget] = useState<Automation>();
+  const [busy, setBusy] = useState<string>();
   const [historyRefresh, setHistoryRefresh] = useState(0);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const debouncedSearch = useDebounce(search, 180);
   const { success } = useToast();
-  const reload = useCallback(async () => { setLoading(true); setError(undefined); try { const next = await window.lotagate.automations.list(); setItems(next); setSelectedId(current => current && next.some(item => item.id === current) ? current : next[0]?.id); } catch (reason) { setError(toUserErrorMessage(reason, 'Unable to load automations.')); } finally { setLoading(false); } }, []);
-  useEffect(() => { void reload(); const unsubscribe = window.lotagate.automations.onState(event => { if (event.type === 'removed') { setItems(current => current.filter(item => item.id !== event.automationId)); setSelectedId(current => current === event.automationId ? undefined : current); } else if (event.automation) setItems(current => current.some(item => item.id === event.automationId) ? current.map(item => item.id === event.automationId ? event.automation! : item) : [...current, event.automation!]); if (event.run?.automationId === selectedId || event.automationId === selectedId) setHistoryRefresh(current => current + 1); }); return unsubscribe; }, [reload, selectedId]);
-  useEffect(() => { setPage(1); }, [items.length]);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setError(undefined);
+    try {
+      const next = await window.lotagate.automations.list();
+      setItems(next);
+      setSelectedId(current => current !== undefined && next.some(item => item.id === current) ? current : undefined);
+    } catch (reason) {
+      setError(toUserErrorMessage(reason, 'Unable to load automations.'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+    return window.lotagate.automations.onState(event => {
+      if (event.type === 'removed') {
+        setItems(current => current.filter(item => item.id !== event.automationId));
+        setSelectedId(current => current === event.automationId ? undefined : current);
+      } else if (event.automation !== undefined) {
+        setItems(current => current.some(item => item.id === event.automationId)
+          ? current.map(item => item.id === event.automationId ? event.automation! : item)
+          : [...current, event.automation!]);
+      }
+      setHistoryRefresh(current => current + 1);
+    });
+  }, [reload]);
+
+  const filteredItems = useMemo(() => {
+    const query = debouncedSearch.trim().toLocaleLowerCase();
+    return query ? items.filter(item => item.name.toLocaleLowerCase().includes(query)) : items;
+  }, [debouncedSearch, items]);
+  const pageCount = Math.max(1, Math.ceil(filteredItems.length / AUTOMATION_PAGE_SIZE));
+  const visibleItems = useMemo(() => filteredItems.slice((page - 1) * AUTOMATION_PAGE_SIZE, page * AUTOMATION_PAGE_SIZE), [filteredItems, page]);
   const selected = items.find(item => item.id === selectedId);
-  const pageCount = Math.max(1, Math.ceil(items.length / AUTOMATION_PAGE_SIZE));
-  const visibleItems = useMemo(() => items.slice((page - 1) * AUTOMATION_PAGE_SIZE, page * AUTOMATION_PAGE_SIZE), [items, page]);
+
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
+  useEffect(() => {
+    if (filteredItems.length === 0) setSelectedId(undefined);
+    else if (selectedId !== undefined && !filteredItems.some(item => item.id === selectedId)) setSelectedId(undefined);
+    if (page > pageCount) setPage(pageCount);
+  }, [filteredItems, page, pageCount, selectedId]);
+
   const workspaceName = (id: string) => workspaces.find(workspace => workspace.id === id)?.name ?? 'Workspace unavailable';
-  const execute = async (key: string, operation: () => Promise<unknown>, message: string) => { setBusy(key); setError(undefined); try { await operation(); success(message); await reload(); setHistoryRefresh(current => current + 1); } catch (reason) { setError(toUserErrorMessage(reason)); } finally { setBusy(undefined); } };
+  const execute = async (key: string, operation: () => Promise<unknown>, message: string) => {
+    setBusy(key);
+    setError(undefined);
+    try {
+      await operation();
+      success(message);
+      await reload();
+      setHistoryRefresh(current => current + 1);
+    } catch (reason) {
+      setError(toUserErrorMessage(reason));
+    } finally {
+      setBusy(undefined);
+    }
+  };
   const create = async (input: AutomationCreateInput) => { await window.lotagate.automations.create(input); setFormTarget(undefined); success('Automation created'); await reload(); };
   const update = async (input: AutomationCreateInput) => { if (!formTarget) return; await window.lotagate.automations.update(formTarget.id, input); setFormTarget(undefined); success('Automation updated'); await reload(); };
   const remove = async () => { if (!removeTarget) return; await execute(`remove:${removeTarget.id}`, () => window.lotagate.automations.remove(removeTarget.id), 'Automation deleted'); setRemoveTarget(undefined); };
+
   return <div className="automation-center">
-    <div className="automation-toolbar"><div><p className="settings-muted">Reliable, reviewable workflows that run in a trusted workspace.</p></div><Button variant="primary" onClick={() => setFormTarget(null)} disabled={workspaces.length === 0}><Icon icon={Plus} size={15} /> New automation</Button></div>
+    <div className="automation-toolbar">
+      <TextInput value={search} onChange={event => setSearch(event.target.value)} placeholder="Search automations" aria-label="Search automations" />
+      <Button variant="primary" onClick={() => setFormTarget(null)} disabled={workspaces.length === 0}><Icon icon={Plus} size={15} /> New automation</Button>
+    </div>
+    <p className="automation-intro settings-muted">Reliable, reviewable workflows that run in a trusted workspace.</p>
     {workspaces.length === 0 ? <Card className="settings-empty"><strong>Add a workspace first</strong><p>Automations need a workspace and its trust boundary before they can run.</p></Card> : null}
     {error ? <Card className="settings-extension-error"><strong>Automation operation failed</strong><p>{error}</p><Button variant="secondary" onClick={() => void reload()}>Retry</Button></Card> : null}
-    {loading ? <div className="automation-list">{[1, 2, 3].map(index => <Card className="automation-card" key={index}><Skeleton className="automation-skeleton" /></Card>)}</div> : items.length === 0 && workspaces.length > 0 ? <EmptyState title="No automations yet" detail="Create a scheduled workflow for recurring checks, browser tasks, or project maintenance." action={<Button variant="secondary" onClick={() => setFormTarget(null)}><Icon icon={Plus} size={14} /> Create your first automation</Button>} /> : <div className="automation-layout"><section><div className="automation-list">{visibleItems.map(item => <AutomationListCard automation={item} workspaceName={workspaceName(item.workspaceId)} selected={item.id === selectedId} busy={busy === item.id} onSelect={() => setSelectedId(item.id)} onRun={() => void execute(item.id, () => window.lotagate.automations.run(item.id), 'Automation started')} onToggle={() => void execute(item.id, () => item.enabled ? window.lotagate.automations.pause(item.id) : window.lotagate.automations.resume(item.id), item.enabled ? 'Automation paused' : 'Automation resumed')} onEdit={() => setFormTarget(item)} onRemove={() => setRemoveTarget(item)} key={item.id} />)}</div>{pageCount > 1 ? <div className="automation-pagination"><Button variant="ghost" disabled={page === 1} onClick={() => setPage(current => current - 1)}>Previous</Button><span>Page {page} of {pageCount}</span><Button variant="ghost" disabled={page === pageCount} onClick={() => setPage(current => current + 1)}>Next</Button></div> : null}</section>{selected ? <AutomationDetails automation={selected} workspaceName={workspaceName(selected.workspaceId)} refreshToken={historyRefresh} onRun={() => void execute(selected.id, () => window.lotagate.automations.run(selected.id), 'Automation started')} onCancel={runId => execute(`cancel:${runId}`, () => window.lotagate.automations.cancel(runId), 'Run cancelled')} onRetry={runId => execute(`retry:${runId}`, () => window.lotagate.automations.retry(runId), 'Run queued for retry')} onReview={(runId, approved) => execute(`review:${runId}`, () => window.lotagate.automations.review(runId, approved), approved ? 'Run approved' : 'Run rejected')} onApproval={(runId, approvalId, approved) => execute(`approval:${runId}`, () => window.lotagate.automations.approvalRespond(runId, approvalId, approved), approved ? 'Approval granted' : 'Approval denied')} /> : null}</div>}
+    {loading ? <div className="automation-list">{[1, 2, 3].map(index => <Card className="automation-list-item" key={index}><Skeleton className="automation-skeleton" /></Card>)}</div> : items.length === 0 && workspaces.length > 0 ? <EmptyState title="No automations yet" detail="Create a scheduled workflow for recurring checks, browser tasks, or project maintenance." action={<Button variant="secondary" onClick={() => setFormTarget(null)}><Icon icon={Plus} size={14} /> Create your first automation</Button>} /> : filteredItems.length === 0 ? <EmptyState title="No matching automations" detail="Try another automation name." /> : <div className="automation-layout">
+      <section className="automation-list-column">
+        <div className="automation-list">{visibleItems.map(item => <AutomationListItem key={item.id} automation={item} workspaceName={workspaceName(item.workspaceId)} selected={item.id === selectedId} busy={busy !== undefined} onSelect={() => setSelectedId(item.id)} onRun={() => void execute(item.id, () => window.lotagate.automations.run(item.id), 'Automation started')} onToggle={() => void execute(`toggle:${item.id}`, () => item.enabled ? window.lotagate.automations.pause(item.id) : window.lotagate.automations.resume(item.id), item.enabled ? 'Automation paused' : 'Automation resumed')} onEdit={() => setFormTarget(item)} onRemove={() => setRemoveTarget(item)} />)}</div>
+        <Pagination page={page} pageSize={AUTOMATION_PAGE_SIZE} total={filteredItems.length} onPageChange={setPage} />
+      </section>
+      {selected ? <AutomationDetailsDrawer automation={selected} workspaceName={workspaceName(selected.workspaceId)} busy={busy !== undefined} refreshToken={historyRefresh} onClose={() => setSelectedId(undefined)} onRun={() => void execute(selected.id, () => window.lotagate.automations.run(selected.id), 'Automation started')} onCancel={runId => execute(`cancel:${runId}`, () => window.lotagate.automations.cancel(runId), 'Run cancelled')} onRetry={runId => execute(`retry:${runId}`, () => window.lotagate.automations.retry(runId), 'Run queued for retry')} onReview={(runId, approved) => execute(`review:${runId}`, () => window.lotagate.automations.review(runId, approved), approved ? 'Run approved' : 'Run rejected')} onApproval={(runId, approvalId, approved) => execute(`approval:${runId}`, () => window.lotagate.automations.approvalRespond(runId, approvalId, approved), approved ? 'Approval granted' : 'Approval denied')} /> : null}
+    </div>}
     {formTarget !== undefined ? <AutomationFormModal key={formTarget?.id ?? 'new'} workspaces={workspaces} {...(formTarget ? { automation: formTarget } : {})} onClose={() => setFormTarget(undefined)} onSubmit={formTarget ? update : create} /> : null}
     {removeTarget ? <Modal title="Delete automation" onClose={() => setRemoveTarget(undefined)}><p className="modal-copy">Delete <strong>{removeTarget.name}</strong> and its local run history?</p><div className="modal-actions"><Button variant="secondary" onClick={() => setRemoveTarget(undefined)}>Cancel</Button><Button variant="danger" disabled={busy === `remove:${removeTarget.id}`} onClick={() => void remove()}>{busy === `remove:${removeTarget.id}` ? 'Deleting…' : 'Delete automation'}</Button></div></Modal> : null}
   </div>;
 }
 
-function AutomationListCard({ automation, workspaceName, selected, busy, onSelect, onRun, onToggle, onEdit, onRemove }: { automation: Automation; workspaceName: string; selected: boolean; busy: boolean; onSelect: () => void; onRun: () => void; onToggle: () => void; onEdit: () => void; onRemove: () => void }) {
-  const actionItems: ActionMenuItem[] = [{ label: 'Edit', icon: Pencil, onSelect: onEdit }, { label: automation.enabled ? 'Pause' : 'Resume', icon: Pause, onSelect: onToggle }, { label: 'Delete', icon: Trash2, tone: 'danger', onSelect: onRemove }];
-  return <Card className={`automation-card${selected ? ' selected' : ''}`}><button type="button" className="automation-card-main" onClick={onSelect}><div className="automation-card-heading"><strong>{automation.name}</strong><Badge tone={automation.enabled ? 'success' : 'neutral'}>{automation.enabled ? 'Enabled' : 'Paused'}</Badge></div><span>{automation.description || automation.prompt}</span><small>{workspaceName} · {scheduleLabel(automation)}</small></button><div className="automation-card-actions"><Button variant="ghost" disabled={busy} onClick={event => { event.stopPropagation(); onRun(); }}><Icon icon={PlayCircle} size={14} /> Run now</Button><ActionMenu items={actionItems} ariaLabel={`Actions for ${automation.name}`} header={<Icon icon={MoreHorizontal} size={15} />} /></div></Card>;
+function AutomationListItem({ automation, workspaceName, selected, busy, onSelect, onRun, onToggle, onEdit, onRemove }: { automation: Automation; workspaceName: string; selected: boolean; busy: boolean; onSelect: () => void; onRun: () => void; onToggle: () => void; onEdit: () => void; onRemove: () => void }) {
+  return <Card className={`automation-list-item${selected ? ' selected' : ''}`}>
+    <button type="button" className="automation-list-item-main" onClick={onSelect}>
+      <span className="automation-list-item-heading"><strong>{automation.name}</strong><Badge tone={automation.enabled ? 'success' : 'neutral'}>{automation.enabled ? 'Enabled' : 'Paused'}</Badge></span>
+      <small>{workspaceName} · {automationScheduleLabel(automation)}</small>
+    </button>
+    <div className="automation-item-actions">
+      <IconButton icon={Pencil} iconSize={14} label={`Edit ${automation.name}`} disabled={busy} onClick={event => { event.stopPropagation(); onEdit(); }} />
+      <IconButton icon={automation.enabled ? PowerOff : Power} iconSize={14} label={automation.enabled ? `Pause ${automation.name}` : `Resume ${automation.name}`} disabled={busy} onClick={event => { event.stopPropagation(); onToggle(); }} />
+      <IconButton icon={Play} iconSize={14} label={`Run ${automation.name} now`} disabled={busy} onClick={event => { event.stopPropagation(); onRun(); }} />
+      <IconButton icon={Trash2} iconSize={14} className="automation-item-danger" label={`Delete ${automation.name}`} disabled={busy} onClick={event => { event.stopPropagation(); onRemove(); }} />
+    </div>
+  </Card>;
 }
-
-function AutomationDetails({ automation, workspaceName, refreshToken, onRun, onCancel, onRetry, onReview, onApproval }: { automation: Automation; workspaceName: string; refreshToken: number; onRun: () => void; onCancel: (runId: string) => Promise<void>; onRetry: (runId: string) => Promise<void>; onReview: (runId: string, approved: boolean) => Promise<void>; onApproval: (runId: string, approvalId: string, approved: boolean) => Promise<void> }) {
-  return <Card className="automation-details"><div className="automation-details-heading"><div><h2>{automation.name}</h2><p>{automation.description || 'No description provided.'}</p></div><Button variant="primary" onClick={onRun}><Icon icon={Play} size={14} /> Run now</Button></div><dl className="automation-details-grid"><div><dt>Workspace</dt><dd>{workspaceName}</dd></div><div><dt>Schedule</dt><dd>{scheduleLabel(automation)}</dd></div><div><dt>Permissions</dt><dd>{automation.permissionPolicy}</dd></div><div><dt>Browser</dt><dd>{automation.browserAccess}</dd></div><div><dt>Next run</dt><dd>{automation.nextRunAt ? formatTime(automation.nextRunAt, { dateStyle: 'medium', timeStyle: 'short' }) : 'Manual only'}</dd></div><div><dt>Last run</dt><dd>{automation.lastRunAt ? formatTime(automation.lastRunAt, { dateStyle: 'medium', timeStyle: 'short' }) : 'Never'}</dd></div></dl><section className="automation-detail-section"><div className="automation-section-title"><div><h3>Run history</h3><p>Every attempt is retained locally for audit and retry.</p></div><Badge>{automation.retryPolicy.maxAttempts} retries</Badge></div><AutomationRunHistory automationId={automation.id} refreshToken={refreshToken} onCancel={onCancel} onRetry={onRetry} onReview={onReview} onApproval={onApproval} /></section></Card>;
-}
-
-function scheduleLabel(automation: Automation): string { const schedule = automation.schedule; if (schedule.kind === 'manual') return 'Manual only'; if (schedule.kind === 'once') return `Once · ${formatTime(schedule.at, { dateStyle: 'medium', timeStyle: 'short' })}`; if (schedule.kind === 'interval') return `Every ${schedule.everyMinutes} min`; if (schedule.kind === 'daily') return `Daily at ${schedule.time}`; if (schedule.kind === 'weekly') return `Weekly · ${schedule.time}`; return `Cron · ${schedule.expression}`; }

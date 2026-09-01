@@ -26,7 +26,7 @@ const config: ForgeConfig = {
       ProductName: 'LotaGate Desktop',
     },
     asar: true,
-    extraResource: ['.env', 'node_modules/@lotagate/cli/bin/lotagate.exe', 'node_modules/node-pty'],
+    extraResource: ['.env', 'resources/icons/lotagate.ico', 'node_modules/@lotagate/cli/bin/lotagate.exe', 'node_modules/node-pty'],
     icon: 'resources/icons/lotagate',
   },
   rebuildConfig: {},

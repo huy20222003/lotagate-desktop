@@ -8,7 +8,8 @@ export const SOURCE_TABS: Array<{ value: SourceTab; label: string }> = [
   { value: 'files', label: 'Other files' },
 ];
 
-export function mediaArtifacts(artifacts: readonly Artifact[]): Artifact[] { return artifacts.filter(artifact => artifact.kind === 'image' || artifact.kind === 'video'); }
+export type VisualArtifact = Omit<Artifact, 'kind'> & { kind: 'image' | 'video' };
+export function mediaArtifacts(artifacts: readonly Artifact[]): VisualArtifact[] { return artifacts.filter((artifact): artifact is VisualArtifact => artifact.kind === 'image' || artifact.kind === 'video'); }
 export function audioArtifacts(artifacts: readonly Artifact[]): Artifact[] { return artifacts.filter(artifact => artifact.kind === 'audio'); }
 export function fileArtifacts(artifacts: readonly Artifact[]): Artifact[] { return artifacts.filter(artifact => artifact.kind !== 'image' && artifact.kind !== 'video' && artifact.kind !== 'audio'); }
 

@@ -98,6 +98,15 @@
 .session-skeleton-line { width: 170px; margin-left: 33px; }
 .danger-menu { color: var(--color-danger) !important; }
 .conversation { position: relative; display: flex; height: 100vh; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; }
+.conversation.automation-view { overflow: hidden; }
+.automation-workspace-page { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; }
+.automation-workspace-header { display: flex; min-height: 64px; align-items: center; gap: 18px; border-bottom: 1px solid var(--color-border); padding: 0 32px; }
+.automation-workspace-title { display: grid; gap: 2px; }
+.automation-workspace-title .settings-eyebrow { margin: 0; }
+.automation-workspace-title h1 { margin: 0; color: var(--color-text); font-size: 17px; font-weight: 550; }
+.automation-workspace-scrollbar { min-width: 0; min-height: 0; flex: 1; }
+.automation-workspace-scrollbar .scrollbar-viewport { min-height: 100%; padding: 0 32px 32px; }
+.automation-workspace-scrollbar .orchestration-drawer { top: 0; }
 .conversation-body { position: relative; display: flex; min-height: 0; flex: 1; }
 .conversation-header { display: flex; height: 64px; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--color-border); padding: 0 24px; }
 .task-title { display: flex; min-width: 0; align-items: center; gap: 10px; }
@@ -326,8 +335,8 @@
 .attachment-preview img { width: 34px; height: 34px; border-radius: 4px; object-fit: cover; }
 .image-attachment-preview { position: relative; width: 112px; height: 112px; flex: 0 0 112px; overflow: hidden; border-radius: 8px; }
 .composer-attachment-list .image-attachment-preview { width: 88px; height: 88px; flex-basis: 88px; }
-.image-attachment-open { display: block; width: 100%; height: 100%; border: 0; padding: 0; background: transparent; cursor: zoom-in; }
-.image-attachment-open img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.image-attachment-open { display: block; width: 100%; height: 100%; border: 0; padding: 0; background: transparent; cursor: pointer; }
+.image-attachment-open img, .image-attachment-open video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .image-attachment-remove { position: absolute; top: 4px; right: 4px; display: grid; width: 22px; height: 22px; place-items: center; border: 0; border-radius: 50%; background: var(--color-overlay-image-control); color: var(--color-text); }
 .image-attachment-remove:hover { background: var(--color-danger-bg); color: var(--color-danger); }
 .attachment-preview span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -435,14 +444,22 @@
 .dropdown-option:hover, .dropdown-option.selected { background: var(--color-surface-hover); color: var(--color-text); }
 .modal-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: var(--color-overlay); }
 .modal { display: flex; width: min(420px, calc(100vw - 40px)); max-height: calc(100vh - 40px); flex-direction: column; overflow: hidden; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); box-shadow: 0 25px 80px var(--shadow-modal); }
-.image-lightbox { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: var(--color-overlay-lightbox); }
-.image-lightbox-content { position: relative; display: grid; place-items: center; }
-.ui-dialog-content.image-lightbox-content { position: fixed; inset: 0; width: 100vw; height: 100vh; min-width: 0; max-width: none; max-height: none; min-height: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; transform: none; }
-.image-lightbox-stage { position: relative; display: grid; width: 100%; height: 100%; place-items: center; }
-.image-lightbox-content img { display: block; width: auto; max-width: min(960px, calc(100vw - 120px)); max-height: min(680px, calc(100vh - 120px)); object-fit: contain; }
-.image-lightbox-actions { position: absolute; top: 16px; right: 16px; z-index: 2; display: flex; gap: 8px; }
-.image-lightbox-actions .image-lightbox-action { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid var(--color-border); border-radius: 50%; padding: 0; background: var(--color-surface-elevated); color: var(--color-text); text-decoration: none; }
-.image-lightbox-actions .image-lightbox-action:hover:not(:disabled) { border-color: var(--color-border-focus); background: var(--color-surface-hover); color: var(--color-text-link); }
+.lightbox { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: var(--color-overlay-lightbox); }
+.lightbox-content { position: relative; display: grid; place-items: center; }
+.ui-dialog-content.lightbox-content { position: fixed; inset: 0; width: 100vw; height: 100vh; min-width: 0; max-width: none; max-height: none; min-height: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; transform: none; }
+.lightbox-stage { position: relative; display: grid; width: 100%; height: 100%; place-items: center; }
+.lightbox-swiper { width: 100%; max-width: 100%; }
+.lightbox-slide { display: flex; min-height: min(680px, calc(100vh - 120px)); align-items: center; justify-content: center; box-sizing: border-box; padding: 60px 90px; }
+.lightbox-media { display: block; width: auto; max-width: min(960px, calc(100vw - 180px)); max-height: min(680px, calc(100vh - 120px)); object-fit: contain; }
+.lightbox-video { background: black; }
+.lightbox-actions { position: absolute; top: 16px; right: 16px; z-index: 2; display: flex; gap: 8px; }
+.lightbox-action { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid var(--color-border); border-radius: 50%; padding: 0; background: var(--color-surface-elevated); color: var(--color-text); text-decoration: none; }
+button.lightbox-action { width: 40px; height: 40px; border-color: var(--color-border); border-radius: 50%; background: var(--color-surface-elevated); color: var(--color-text); }
+.lightbox-action:hover:not(:disabled) { border-color: var(--color-border-focus); background: var(--color-surface-hover); color: var(--color-text-link); }
+.lightbox-navigation { position: absolute; top: 50%; z-index: 2; width: 44px; height: 44px; transform: translateY(-50%); border: 1px solid var(--color-border); border-radius: 50%; background: var(--color-surface-elevated); color: var(--color-text); }
+button.lightbox-navigation { width: 44px; height: 44px; border-color: var(--color-border); border-radius: 50%; background: var(--color-surface-elevated); color: var(--color-text); }
+.lightbox-navigation-previous { left: 24px; }
+.lightbox-navigation-next { right: 24px; }
 .modal-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--color-border); padding: 15px 18px; }
 .modal-header h2 { margin: 0; font-size: 15px; }
 .modal-heading { display: grid; min-width: 0; gap: 3px; }

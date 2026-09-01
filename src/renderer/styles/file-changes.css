@@ -72,7 +72,7 @@
 .source-media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
 .source-media-tile { position: relative; min-width: 0; aspect-ratio: 1; overflow: hidden; border: 1px solid var(--color-border-subtle); border-radius: 8px; background: var(--color-surface); }
 .source-media-open { display: block; width: 100%; height: 100%; border: 0; padding: 0; background: var(--color-surface); color: var(--color-text); cursor: pointer; }
-.source-media-open > img, .source-media-placeholder { display: grid; width: 100%; height: 100%; place-items: center; object-fit: cover; background: var(--color-surface-elevated); color: var(--color-text-tertiary); }
+.source-media-open > img, .source-media-open > video, .source-media-placeholder { display: grid; width: 100%; height: 100%; place-items: center; object-fit: cover; background: var(--color-surface-elevated); color: var(--color-text-tertiary); }
 .source-media-open:hover .source-media-placeholder { color: var(--color-text-link); }
 .source-media-overlay { position: absolute; right: 0; bottom: 0; left: 0; display: flex; flex-direction: column; gap: 2px; padding: 18px 8px 7px; background: linear-gradient(transparent, rgb(0 0 0 / 78%)); color: white; pointer-events: none; text-align: left; }
 .source-media-overlay strong, .source-media-overlay small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -113,7 +113,6 @@
 .source-preview-action { display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid var(--color-border); border-radius: 6px; background: transparent; color: var(--color-text-tertiary); cursor: pointer; }
 .source-preview-action:hover { border-color: var(--color-border-focus); background: var(--color-surface-hover); color: var(--color-text-link); }
 .source-preview-body { display: flex; min-height: 0; flex: 1; align-items: center; justify-content: center; overflow: hidden; padding: 18px; }
-.source-preview-video { display: block; max-width: 100%; max-height: 100%; background: black; }
 .source-preview-body > .source-audio-waveform { width: min(760px, 100%); }
 .source-preview-loading { color: var(--color-text-tertiary); font-size: 12px; }
 .agent-media-response { display: grid; gap: 12px; margin-top: 12px; }
@@ -122,7 +121,8 @@
 .agent-media-gallery .swiper { width: 100%; }
 .agent-media-slide { display: flex; min-height: 220px; align-items: center; justify-content: center; padding: 12px 12px 28px; }
 .agent-media-image { display: block; width: auto; max-width: 100%; max-height: 320px; object-fit: contain; }
-.agent-media-image-button { display: block; width: fit-content; max-width: 100%; margin: 0; border: 0; border-radius: 9px; padding: 0; background: transparent; cursor: zoom-in; }
+.agent-media-open { display: block; width: fit-content; max-width: 100%; margin: 0; border: 0; border-radius: 9px; padding: 0; background: transparent; cursor: pointer; }
+.agent-media-open img, .agent-media-open video { display: block; width: auto; max-width: 100%; max-height: 320px; object-fit: contain; }
 .agent-media-video { display: block; width: min(460px, 100%); max-height: 320px; border-radius: 9px; background: black; }
 .agent-media-loading { min-height: 180px; background: var(--color-surface-elevated); }
 .agent-media-error { margin: 0; color: var(--color-danger); font-size: 12px; }

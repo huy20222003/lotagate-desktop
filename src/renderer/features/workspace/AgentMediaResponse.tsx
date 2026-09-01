@@ -5,38 +5,38 @@ import 'swiper/css';
 import 'swiper/css/navigation';
 import 'swiper/css/pagination';
 import type { Artifact } from '../../../contracts/ipc/v1/workspace.js';
+import type { VisualArtifact } from './source-view.js';
 import { AudioWaveform } from './SourceAudioList.js';
-import { ImageLightbox } from './ImageLightbox.js';
-import { useArtifactMediaUrl } from './use-artifact-media-url.js';
+import { LightBox } from './LightBox.js';
+import type { LightBoxMediaItem } from './lightbox-types.js';
+import { useArtifactMediaUrls } from './use-artifact-media-url.js';
 
 export function AgentMediaResponse({ taskId, artifacts }: { taskId: string; artifacts: readonly Artifact[] }) {
-  const images = artifacts.filter(artifact => artifact.kind === 'image');
-  const videos = artifacts.filter(artifact => artifact.kind === 'video');
+  const mediaArtifacts = artifacts.filter(isVisualArtifact);
   const audio = artifacts.filter(artifact => artifact.kind === 'audio');
-  return <div className="agent-media-response">
-    {images.length > 0 ? <AgentImageGallery taskId={taskId} artifacts={images} /> : null}
-    {videos.map(artifact => <AgentVideo key={artifact.id} taskId={taskId} artifact={artifact} />)}
-    {audio.map(artifact => <AudioWaveform key={artifact.id} taskId={taskId} artifact={artifact} compact />)}
-  </div>;
+  return <div className="agent-media-response">{mediaArtifacts.length > 0 ? <AgentMediaGallery taskId={taskId} artifacts={mediaArtifacts} /> : null}{audio.map(artifact => <AudioWaveform key={artifact.id} taskId={taskId} artifact={artifact} compact />)}</div>;
 }
 
-function AgentImageGallery({ taskId, artifacts }: { taskId: string; artifacts: readonly Artifact[] }) {
-  const slides = artifacts.map(artifact => <AgentImage key={artifact.id} taskId={taskId} artifact={artifact} />);
+function AgentMediaGallery({ taskId, artifacts }: { taskId: string; artifacts: readonly VisualArtifact[] }) {
+  const mediaUrls = useArtifactMediaUrls(taskId, artifacts);
+  const [lightBoxIndex, setLightBoxIndex] = useState<number>();
+  const items = artifacts.flatMap<LightBoxMediaItem>(artifact => {
+    const loaded = mediaUrls[artifact.id];
+    if (loaded?.url === undefined) return [];
+    return [{ id: artifact.id, name: artifact.name, src: loaded.url, kind: artifact.kind, downloadName: artifact.name }];
+  });
+  const itemIndexById = new Map(items.map((item, index) => [item.id, index]));
+  const slides = artifacts.map(artifact => <AgentMediaSlide key={artifact.id} artifact={artifact} media={mediaUrls[artifact.id]} onOpen={() => setLightBoxIndex(itemIndexById.get(artifact.id))} />);
   const galleryClassName = `agent-media-gallery${slides.length === 1 ? ' agent-media-gallery-single' : ''}`;
-  if (slides.length === 1) return <div className={galleryClassName}>{slides}</div>;
-  return <div className={galleryClassName}><Swiper modules={[Navigation, Pagination]} navigation pagination={{ clickable: true }} spaceBetween={12} slidesPerView={1}>{slides.map((slide, index) => <SwiperSlide key={artifacts[index]!.id} className="agent-media-slide">{slide}</SwiperSlide>)}</Swiper></div>;
+  return <>{slides.length === 1 ? <div className={galleryClassName}>{slides}</div> : <div className={galleryClassName}><Swiper modules={[Navigation, Pagination]} navigation pagination={{ clickable: true }} spaceBetween={12} slidesPerView={1}>{slides.map((slide, index) => <SwiperSlide key={artifacts[index]!.id} className="agent-media-slide">{slide}</SwiperSlide>)}</Swiper></div>}{lightBoxIndex !== undefined ? <LightBox items={items} initialIndex={lightBoxIndex} onClose={() => setLightBoxIndex(undefined)} /> : null}</>;
 }
 
-function AgentImage({ taskId, artifact }: { taskId: string; artifact: Artifact }) {
-  const { url, error } = useArtifactMediaUrl(taskId, artifact);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  if (error) return <p className="agent-media-error">Unable to load {artifact.name}.</p>;
-  if (!url) return <div className="agent-media-loading" aria-label={`Loading ${artifact.name}`} />;
-  return <><button type="button" className="agent-media-image-button" onClick={() => setLightboxOpen(true)} aria-label={`Open ${artifact.name}`}><img className="agent-media-image" src={url} alt={artifact.name} /></button>{lightboxOpen ? <ImageLightbox src={url} alt={artifact.name} downloadName={artifact.name} onClose={() => setLightboxOpen(false)} /> : null}</>;
+function AgentMediaSlide({ artifact, media, onOpen }: { artifact: VisualArtifact; media: { url?: string; error?: string } | undefined; onOpen: () => void }) {
+  if (media?.error) return <p className="agent-media-error">Unable to load {artifact.name}.</p>;
+  if (media?.url === undefined) return <div className="agent-media-loading" aria-label={`Loading ${artifact.name}`} />;
+  return <button type="button" className="agent-media-open" onClick={onOpen} aria-label={`Open ${artifact.kind} ${artifact.name}`}>{artifact.kind === 'video' ? <video className="agent-media-video" src={media.url} muted playsInline preload="metadata" /> : <img className="agent-media-image" src={media.url} alt={artifact.name} />}</button>;
 }
 
-function AgentVideo({ taskId, artifact }: { taskId: string; artifact: Artifact }) {
-  const { url, error } = useArtifactMediaUrl(taskId, artifact);
-  if (error) return <p className="agent-media-error">Unable to load {artifact.name}.</p>;
-  return url ? <video className="agent-media-video" src={url} controls preload="metadata" /> : <div className="agent-media-loading" aria-label={`Loading ${artifact.name}`} />;
+function isVisualArtifact(artifact: Artifact): artifact is VisualArtifact {
+  return artifact.kind === 'image' || artifact.kind === 'video';
 }

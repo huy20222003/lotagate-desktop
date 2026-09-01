@@ -14,7 +14,7 @@ describe('TaskConversation live state', () => {
   afterEach(() => cleanup());
 
   it('keeps the Thinking indicator while work has started but no live action exists yet', () => {
-    render(<TaskConversation task={task} activities={[]} activityAttachments={{}} activityArtifacts={{}} fileChangesByTurn={{}} onOpenFileChanges={() => undefined} onOpenImage={() => undefined} thinking finalResponseReceived={false} thinkingStartedAt={Date.now()} turnTimings={{}} onTrust={async () => undefined} />);
+    render(<TaskConversation task={task} activities={[]} activityAttachments={{}} activityArtifacts={{}} fileChangesByTurn={{}} onOpenFileChanges={() => undefined} thinking finalResponseReceived={false} thinkingStartedAt={Date.now()} turnTimings={{}} onTrust={async () => undefined} />);
 
     expect(screen.getByLabelText('Thinking...')).toBeInTheDocument();
   });
@@ -31,7 +31,6 @@ describe('TaskConversation live state', () => {
       activityArtifacts={{}}
       fileChangesByTurn={{}}
       onOpenFileChanges={() => undefined}
-      onOpenImage={() => undefined}
       statusText="I’ll inspect the workspace with Read file."
       thinking
       finalResponseReceived={false}
@@ -46,7 +45,7 @@ describe('TaskConversation live state', () => {
   });
 
   it('hides the Thinking indicator after the final assistant segment arrives', () => {
-    render(<TaskConversation task={task} activities={[]} activityAttachments={{}} activityArtifacts={{}} fileChangesByTurn={{}} onOpenFileChanges={() => undefined} onOpenImage={() => undefined} thinking finalResponseReceived thinkingStartedAt={Date.now()} turnTimings={{}} onTrust={async () => undefined} />);
+    render(<TaskConversation task={task} activities={[]} activityAttachments={{}} activityArtifacts={{}} fileChangesByTurn={{}} onOpenFileChanges={() => undefined} thinking finalResponseReceived thinkingStartedAt={Date.now()} turnTimings={{}} onTrust={async () => undefined} />);
 
     expect(screen.queryByLabelText('Thinking...')).not.toBeInTheDocument();
   });
@@ -63,7 +62,6 @@ describe('TaskConversation live state', () => {
       activityArtifacts={{}}
       fileChangesByTurn={{}}
       onOpenFileChanges={() => undefined}
-      onOpenImage={() => undefined}
       thinking
       finalResponseReceived
       turnTimings={{ 'turn-1': { startedAt: Date.now() } }}
@@ -85,7 +83,6 @@ describe('TaskConversation live state', () => {
       activityArtifacts={{}}
       fileChangesByTurn={{}}
       onOpenFileChanges={() => undefined}
-      onOpenImage={() => undefined}
       statusText="Read file · completed"
       thinking
       finalResponseReceived={false}
@@ -110,7 +107,6 @@ describe('TaskConversation live state', () => {
       activityArtifacts={{}}
       fileChangesByTurn={{}}
       onOpenFileChanges={() => undefined}
-      onOpenImage={() => undefined}
       thinking
       finalResponseReceived={false}
       thinkingStartedAt={Date.now()}
@@ -132,7 +128,6 @@ describe('TaskConversation live state', () => {
       activityArtifacts={{}}
       fileChangesByTurn={{ 'turn-failed': { files: [{ path: 'test.md', lines: [], additions: 1, deletions: 1, truncated: false }], additions: 1, deletions: 1 } }}
       onOpenFileChanges={() => undefined}
-      onOpenImage={() => undefined}
       thinking={false}
       finalResponseReceived
       turnTimings={{ 'turn-failed': { startedAt: Date.now(), endedAt: Date.now() }, 'turn-next': { startedAt: Date.now(), endedAt: Date.now() } }}

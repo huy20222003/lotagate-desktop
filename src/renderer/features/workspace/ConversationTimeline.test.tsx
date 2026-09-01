@@ -18,13 +18,26 @@ function userActivities(count: number): Activity[] {
 }
 
 describe('ConversationTimeline', () => {
-  it('uses a stable viewport estimate when remounted before layout reports a height', () => {
+  it('centers markers while the timeline content fits its viewport', () => {
     const viewportRef = { current: document.createElement('div') };
     const view = render(<ConversationTimeline activities={userActivities(10)} onSelect={() => undefined} viewportRef={viewportRef} />);
+    const positions = Array.from(view.container.querySelectorAll<HTMLButtonElement>('.conversation-timeline-marker')).map(marker => Number.parseFloat(marker.style.top));
+    const estimatedHeight = Math.max(220, Math.min(window.innerHeight * 0.72, 720));
 
-    expect(Array.from(view.container.querySelectorAll<HTMLButtonElement>('.conversation-timeline-marker')).map(marker => marker.style.top)).toEqual([
-      '14px', '32px', '50px', '68px', '86px', '104px', '122px', '140px', '158px', '176px',
-    ]);
+    expect(positions[0]).toBeGreaterThan(100);
+    expect(positions[positions.length - 1]).toBeLessThan(estimatedHeight);
+    expect((positions[0]! + positions[positions.length - 1]!) / 2).toBeCloseTo(estimatedHeight / 2, 5);
+    expect(positions.slice(1).map((position, index) => position - positions[index]!)).toEqual(Array(9).fill(18));
+  });
+
+  it('keeps the overflowed timeline scrollable instead of centering its track', () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: () => undefined });
+    const viewportRef = { current: document.createElement('div') };
+    const view = render(<ConversationTimeline activities={userActivities(40)} onSelect={() => undefined} viewportRef={viewportRef} />);
+    const positions = Array.from(view.container.querySelectorAll<HTMLButtonElement>('.conversation-timeline-marker')).map(marker => Number.parseFloat(marker.style.top));
+
+    expect(positions[0]).toBe(14);
+    expect(positions[positions.length - 1]).toBeGreaterThan(positions[0]! + 500);
   });
 
   it('shows clamped user and agent previews when a marker is hovered', () => {

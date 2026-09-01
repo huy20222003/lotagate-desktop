@@ -17,11 +17,10 @@ interface ChatMessageProps {
   workspaceCwd: string;
   onOpenFileChanges: (summary: FileChangeSummary) => void;
   onUndoFileChanges: (turnId: string) => Promise<void>;
-  onOpenImage: (attachment: AttachmentPreview) => void;
 }
 
-export const ChatMessage = memo(function ChatMessage({ activity, attachments, artifacts, timing, fileChangeSummary, undoState, undoBusy, activities, workspaceCwd, onOpenFileChanges, onUndoFileChanges, onOpenImage }: ChatMessageProps) {
-  if (activity.kind === 'user') return <UserMessage activity={activity} attachments={attachments} workspaceCwd={workspaceCwd} onOpenImage={onOpenImage} />;
+export const ChatMessage = memo(function ChatMessage({ activity, attachments, artifacts, timing, fileChangeSummary, undoState, undoBusy, activities, workspaceCwd, onOpenFileChanges, onUndoFileChanges }: ChatMessageProps) {
+  if (activity.kind === 'user') return <UserMessage activity={activity} attachments={attachments} workspaceCwd={workspaceCwd} />;
   const streaming = timing?.endedAt === undefined && timing !== undefined;
   return <AgentMessage activity={activity} artifacts={artifacts} workspaceCwd={workspaceCwd} onUndoFileChanges={onUndoFileChanges} {...(undoState === undefined ? {} : { undoState })} {...(undoBusy === undefined ? {} : { undoBusy })} onOpenFileChanges={onOpenFileChanges} streaming={streaming} {...(timing === undefined ? {} : { timing })} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...(activities === undefined ? {} : { activities })} />;
 }, areChatMessagePropsEqual);
@@ -36,7 +35,6 @@ function areChatMessagePropsEqual(previous: ChatMessageProps, next: ChatMessageP
     && previous.workspaceCwd === next.workspaceCwd
     && previous.onOpenFileChanges === next.onOpenFileChanges
     && previous.onUndoFileChanges === next.onUndoFileChanges
-    && previous.onOpenImage === next.onOpenImage
     && previous.timing?.startedAt === next.timing?.startedAt
     && previous.timing?.endedAt === next.timing?.endedAt
     && sameActivities(previous.activities, next.activities);

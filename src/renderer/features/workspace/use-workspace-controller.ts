@@ -27,6 +27,7 @@ import { useWorkspaceCheckpoints } from './use-workspace-checkpoints.js';
 import { useTaskSidebarStatus } from './use-task-sidebar-status.js';
 import { useDraftTask } from './use-draft-task.js';
 import { isMcpDisplayStatus, type McpRuntimeStatus } from './mcp-status.js';
+import { selectedTaskLiveState } from './selected-task-live-state.js';
 type ContextCompactionPhase = 'compacting' | 'compacted' | 'failed';
 export function useWorkspaceController() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -327,7 +328,8 @@ export function useWorkspaceController() {
     const nextTask = tasks.find(item => item.workspaceId === next.id && !item.archived);
     draftTaskRef.current = nextTask;
     setTask(current => current?.workspaceId === next.id ? current : nextTask);
-    setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setFinalResponseReceived(false); showContextCompactionStatus(undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(undefined); activeTurnRef.current = undefined; messageQueueServiceRef.current.clear(); steeringQueueIdRef.current = undefined;
+    const nextLiveState = selectedTaskLiveState(nextTask);
+    setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setThinking(nextLiveState.thinking); setFinalResponseReceived(false); setThinkingStartedAt(nextLiveState.thinking ? Date.now() : undefined); showContextCompactionStatus(undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(nextLiveState.turnId); activeTurnRef.current = nextLiveState.turnId === undefined || nextTask === undefined ? undefined : { taskId: nextTask.id, cwd: nextTask.cwd, turnId: nextLiveState.turnId }; messageQueueServiceRef.current.clear(); steeringQueueIdRef.current = undefined;
   }, [activities, showContextCompactionStatus, task, tasks]);
   const selectTask = useCallback((next: Task) => {
     void discardQueuedAttachments(task?.id, messageQueueServiceRef.current.snapshot(), activities, task?.draftAttachmentIds ?? []);
@@ -335,7 +337,8 @@ export function useWorkspaceController() {
     draftTaskRef.current = next;
     setTask(next);
     setApproval(undefined); messageQueueServiceRef.current.clear(); steeringQueueIdRef.current = undefined;
-    setTrust(undefined); setAgentStatus(undefined); setFinalResponseReceived(false); showContextCompactionStatus(undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(undefined); activeTurnRef.current = undefined;
+    const nextLiveState = selectedTaskLiveState(next);
+    setTrust(undefined); setAgentStatus(undefined); setThinking(nextLiveState.thinking); setFinalResponseReceived(false); setThinkingStartedAt(nextLiveState.thinking ? Date.now() : undefined); showContextCompactionStatus(undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(nextLiveState.turnId); activeTurnRef.current = nextLiveState.turnId === undefined ? undefined : { taskId: next.id, cwd: next.cwd, turnId: nextLiveState.turnId };
   }, [activities, showContextCompactionStatus, task, workspaces]);
   const newTask = useCallback(async (targetWorkspace?: Workspace) => {
     const target = targetWorkspace ?? workspace;

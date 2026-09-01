@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Avatar, Button, Checkbox, CopyTextButton, Dropdown, IconButton, Label, Modal, Skeleton, Tabs, TextArea, TextInput, Tooltip } from './ui.js';
 import { Check } from 'lucide-react';
 
 describe('desktop UI primitives', () => {
+  afterEach(cleanup);
+
   it('renders a semantic button variant and interaction', () => {
     const onClick = () => undefined;
     render(<Button variant="primary" onClick={onClick}>Send</Button>);
@@ -84,6 +86,20 @@ describe('desktop UI primitives', () => {
     render(<Modal title="Confirm" onClose={onClose}><div data-radix-menu-content><button type="button">Option</button></div></Modal>);
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Option' }));
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('closes a dropdown without closing its parent modal', async () => {
+    const onClose = vi.fn();
+    render(<Modal title="Confirm" onClose={onClose}><div data-testid="modal-body"><Dropdown value="one" options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]} onChange={() => undefined} /></div></Modal>);
+    const trigger = screen.getByRole('button', { name: 'Select option' });
+
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));
+    fireEvent.pointerDown(screen.getByTestId('modal-body'));
+
+    await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'false'));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Confirm' })).toBeVisible();
   });
 
   it('closes a modal with Escape', () => {
