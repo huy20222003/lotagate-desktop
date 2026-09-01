@@ -1,4 +1,5 @@
-import { BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, dialog, Menu, type MessageBoxOptions, type MenuItemConstructorOptions } from 'electron';
+import { DESKTOP_PRODUCT_NAME } from '../app-identity.js';
 
 export type DesktopMenuCommand = 'newTask' | 'openWorkspace';
 export type DesktopMenuContext = 'login' | 'workspace';
@@ -10,6 +11,12 @@ export function setApplicationMenu(context: DesktopMenuContext): void {
   }
   const sendCommand = (command: DesktopMenuCommand) => {
     BrowserWindow.getFocusedWindow()?.webContents.send('menu.command', command);
+  };
+  const showAbout = (): void => {
+    const options: MessageBoxOptions = { type: 'info', title: `About ${DESKTOP_PRODUCT_NAME}`, message: DESKTOP_PRODUCT_NAME, detail: `Version ${app.getVersion()}` };
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    if (focusedWindow) void dialog.showMessageBox(focusedWindow, options);
+    else void dialog.showMessageBox(options);
   };
   const template: MenuItemConstructorOptions[] = [
     {
@@ -35,7 +42,7 @@ export function setApplicationMenu(context: DesktopMenuContext): void {
     },
     {
       label: 'Help',
-      submenu: [{ label: 'LotaGate Desktop' }],
+      submenu: [{ label: `About ${DESKTOP_PRODUCT_NAME}`, click: showAbout }],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

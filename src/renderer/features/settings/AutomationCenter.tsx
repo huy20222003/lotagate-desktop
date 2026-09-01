@@ -6,11 +6,13 @@ import { Badge, Button, Card, EmptyState, Icon, IconButton, Modal, Skeleton, Tex
 import { Pagination } from '../../components/Pagination.js';
 import { useDebounce } from '../../hooks/use-debounce.js';
 import { toUserErrorMessage } from '../../utils/errors.js';
+import { formatTextClamp } from '../../utils/text.js';
 import { AutomationDetailsDrawer } from './AutomationDetailsDrawer.js';
 import { AutomationFormModal } from './AutomationFormModal.js';
 import { automationScheduleLabel } from './automation-view-utils.js';
 
 const AUTOMATION_PAGE_SIZE = 8;
+const AUTOMATION_LIST_TITLE_LENGTH = 64;
 
 export function AutomationCenter({ workspaces }: { workspaces: Workspace[] }) {
   const [items, setItems] = useState<Automation[]>([]);
@@ -112,7 +114,7 @@ export function AutomationCenter({ workspaces }: { workspaces: Workspace[] }) {
 function AutomationListItem({ automation, workspaceName, selected, busy, onSelect, onRun, onToggle, onEdit, onRemove }: { automation: Automation; workspaceName: string; selected: boolean; busy: boolean; onSelect: () => void; onRun: () => void; onToggle: () => void; onEdit: () => void; onRemove: () => void }) {
   return <Card className={`automation-list-item${selected ? ' selected' : ''}`}>
     <button type="button" className="automation-list-item-main" onClick={onSelect}>
-      <span className="automation-list-item-heading"><strong>{automation.name}</strong><Badge tone={automation.enabled ? 'success' : 'neutral'}>{automation.enabled ? 'Enabled' : 'Paused'}</Badge></span>
+      <span className="automation-list-item-heading"><strong title={automation.name}>{formatTextClamp(AUTOMATION_LIST_TITLE_LENGTH, automation.name)}</strong><Badge tone={automation.enabled ? 'success' : 'neutral'}>{automation.enabled ? 'Enabled' : 'Paused'}</Badge></span>
       <small>{workspaceName} · {automationScheduleLabel(automation)}</small>
     </button>
     <div className="automation-item-actions">

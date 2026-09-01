@@ -42,7 +42,7 @@ import { CheckpointService } from './checkpoints/checkpoint-service.js';
 import type { DesktopApprovalInput } from '../contracts/ipc/v1/approval.js';
 import { finalAutomationSummary } from './automation/automation-output.js';
 import { automationNotification } from './automation/automation-notification.js';
-import { DESKTOP_APP_USER_MODEL_ID, DESKTOP_PRODUCT_NAME } from './app-identity.js';
+import { configureWindowsAppIdentity } from './windows/windows-app-identity.js';
 
 loadRuntimeEnvironment();
 const runtimeConfig = readRuntimeConfig();
@@ -58,10 +58,7 @@ let shuttingDown = false;
 const logger = new DesktopLogger();
 const cache = new PersistentCache();
 
-if (app.isPackaged) {
-  app.setName(DESKTOP_PRODUCT_NAME);
-  app.setAppUserModelId(DESKTOP_APP_USER_MODEL_ID);
-}
+configureWindowsAppIdentity();
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.on('second-instance', (_event, commandLine) => {
