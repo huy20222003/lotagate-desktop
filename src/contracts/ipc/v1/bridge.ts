@@ -3,6 +3,7 @@ import type { ExtensionDetail, ExtensionDetailInput, ExtensionDetailWriteInput, 
 import type { DesktopAgentResult } from '../../agent-protocol/v1/desktop.js';
 import type { DesktopWorkspaceApi, DesktopTaskApi, DesktopCheckpointApi, AgentEventEnvelope, AgentDiagnosticEnvelope, DesktopGitApi, DesktopTerminalApi, DesktopSettingsApi, DesktopAutomationApi, DesktopBrowserApi } from './workspace.js';
 import type { DesktopApprovalApi } from './approval.js';
+import type { DesktopRemoteControlApi } from '../../remote-control/v1/remote-control.js';
 
 export interface DesktopBridge {
   menu: {
@@ -52,6 +53,7 @@ export interface DesktopBridge {
   automations: DesktopAutomationApi;
   browser: DesktopBrowserApi;
   approvals: DesktopApprovalApi;
+  remoteControl: DesktopRemoteControlApi;
   operations: {
     notify(title: string, body: string): Promise<void>;
     showWindow(): Promise<void>;

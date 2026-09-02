@@ -10,6 +10,11 @@ describe('Desktop JSONL contract', () => {
     expect(parseDesktopEvent({ version: 2, type: 'event', scope: 'session', event: 'assistant.delta', data: { content: 'hello' } })).toMatchObject({ event: 'assistant.delta' });
   });
 
+  it('derives the event scope when the installed CLI omits it', () => {
+    expect(parseDesktopEvent({ version: 2, type: 'event', event: 'command.output', data: { content: 'hello' } })).toMatchObject({ scope: 'control' });
+    expect(parseDesktopEvent({ version: 2, type: 'event', event: 'assistant.delta', data: { sessionId: 'session-1', content: 'hello' } })).toMatchObject({ scope: 'session' });
+  });
+
   it('rejects unsupported protocol versions', () => {
     expect(() => parseDesktopResponse({ version: 1, id: 'request-1', type: 'response', method: 'initialize', ok: true })).toThrow();
   });

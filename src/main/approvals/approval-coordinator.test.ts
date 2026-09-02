@@ -28,6 +28,17 @@ describe('ApprovalCoordinator', () => {
     await expect(pending).resolves.toMatchObject({ approvalId: request!.approvalId, approved: false });
   });
 
+  it('exposes a snapshot of active approvals without exposing coordinator internals', () => {
+    const coordinator = new ApprovalCoordinator();
+    const pending = coordinator.request({ source: 'agent', surface: 'composer', toolName: 'filesystem.write', detail: { path: 'file.txt' } });
+    const request = coordinator.listPending()[0];
+
+    expect(request).toMatchObject({ toolName: 'filesystem.write' });
+    expect(coordinator.listPending()).toHaveLength(1);
+    void coordinator.respond(request!.approvalId, false);
+    return pending;
+  });
+
   it('rejects a response from a different session owner', async () => {
     const coordinator = new ApprovalCoordinator();
     const listener = vi.fn();

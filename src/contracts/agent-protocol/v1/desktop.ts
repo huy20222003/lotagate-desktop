@@ -120,9 +120,16 @@ export function parseDesktopResponse(value: unknown): DesktopResponse {
 }
 
 export function parseDesktopEvent(value: unknown): DesktopEvent {
-  return desktopEventSchema.parse(value);
+  const parsed = desktopEventSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  if (!isRecord(value) || 'scope' in value || !isRecord(value['data'])) return desktopEventSchema.parse(value);
+  return desktopEventSchema.parse({ ...value, scope: typeof value['data']['sessionId'] === 'string' ? 'session' : 'control' });
 }
 
 export function parseDesktopHostRequest(value: unknown): DesktopHostRequest {
   return desktopHostRequestSchema.parse(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

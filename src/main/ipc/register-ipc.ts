@@ -7,6 +7,7 @@ import { registerTaskIpcHandlers } from './register-task-ipc.js';
 import { registerGitExtensionIpcHandlers } from './register-git-extension-ipc.js';
 import { registerTerminalIpcHandlers } from './register-terminal-ipc.js';
 import { registerRuntimeIpcHandlers } from './register-runtime-ipc.js';
+import { registerRemoteControlIpcHandlers } from './register-remote-control-ipc.js';
 
 export type { DesktopIpcServices } from './ipc-types.js';
 
@@ -19,4 +20,5 @@ export function registerIpc(services: DesktopIpcServices): void {
   registerGitExtensionIpcHandlers(context);
   registerTerminalIpcHandlers(context);
   registerRuntimeIpcHandlers(context);
+  registerRemoteControlIpcHandlers(context);
 }

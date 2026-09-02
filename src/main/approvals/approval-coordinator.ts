@@ -27,6 +27,10 @@ export class ApprovalCoordinator {
     return () => this.resolutionListeners.delete(listener);
   }
 
+  listPending(): DesktopApprovalRequest[] {
+    return [...this.pending.values()].map(item => item.request);
+  }
+
   request(input: DesktopApprovalInput, onDecision?: (approved: boolean) => Promise<unknown>, options?: { isAvailable?: () => boolean }): Promise<DesktopApprovalResolution> {
     const parsed = desktopApprovalInputSchema.parse(input);
     const request = desktopApprovalRequestSchema.parse({ ...parsed, approvalId: parsed.approvalId ?? randomUUID(), requestedAt: new Date().toISOString() });

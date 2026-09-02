@@ -29,6 +29,22 @@ npm run dev
 After login, add a local workspace, select or create a task, and submit a
 prompt. The composer owns approval decisions; CLI trust remains the authority.
 
+### Remote Control development
+
+Remote Control is an optional Desktop host connection to the standalone
+`lotagate-remote-server` relay. Configure its public or local base URL in the
+Desktop runtime `.env` without adding credentials:
+
+```dotenv
+LOTAGATE_REMOTE_SERVER_URL=http://127.0.0.1:8787
+LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN=<same-long-random-value-configured-on-remote-server>
+```
+
+The Desktop creates a short-lived session, displays the relay URL as a QR code,
+and revokes the session on sign-out, workspace removal, application shutdown,
+or manual disconnect. The CLI remains the execution authority; the relay only
+transports validated commands and Desktop events.
+
 ### Local CLI development
 
 The Desktop package remains pinned to the registry version in

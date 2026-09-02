@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopBridge } from '../contracts/ipc/v1/bridge.js';
 import type { AgentDiagnosticEnvelope, AgentEventEnvelope } from '../contracts/ipc/v1/workspace.js';
 import type { DesktopApprovalRequest, DesktopApprovalResolution } from '../contracts/ipc/v1/approval.js';
+import type { RemoteControlStateEvent } from '../contracts/remote-control/v1/remote-control.js';
 
 const bridge: DesktopBridge = {
   menu: {
@@ -189,6 +190,12 @@ const bridge: DesktopBridge = {
     respond: (approvalId, approved, owner) => ipcRenderer.invoke('approval.respond', approvalId, approved, owner),
     onRequest: listener => { const handler = (_event: Electron.IpcRendererEvent, request: DesktopApprovalRequest) => listener(request); ipcRenderer.on('approval.requested', handler); return () => ipcRenderer.removeListener('approval.requested', handler); },
     onResolved: listener => { const handler = (_event: Electron.IpcRendererEvent, resolution: DesktopApprovalResolution) => listener(resolution); ipcRenderer.on('approval.resolved', handler); return () => ipcRenderer.removeListener('approval.resolved', handler); },
+  },
+  remoteControl: {
+    get: () => ipcRenderer.invoke('remoteControl.get'),
+    create: () => ipcRenderer.invoke('remoteControl.create'),
+    revoke: () => ipcRenderer.invoke('remoteControl.revoke'),
+    onState: listener => { const handler = (_event: Electron.IpcRendererEvent, value: RemoteControlStateEvent) => listener(value); ipcRenderer.on('remote-control.state', handler); return () => ipcRenderer.removeListener('remote-control.state', handler); },
   },
   operations: { notify: (title, body) => ipcRenderer.invoke('operations.notify', title, body), showWindow: () => ipcRenderer.invoke('operations.showWindow'), revealPath: path => ipcRenderer.invoke('operations.revealPath', path), exportDiagnostics: () => ipcRenderer.invoke('operations.exportDiagnostics'), checkForUpdates: () => ipcRenderer.invoke('operations.checkForUpdates'), onDeepLink: listener => { const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url); ipcRenderer.on('operations.deepLink', handler); return () => ipcRenderer.removeListener('operations.deepLink', handler); } },
 };

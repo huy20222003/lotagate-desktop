@@ -38,6 +38,7 @@ import type { DesktopApprovalInput } from '../contracts/ipc/v1/approval.js';
 import { automationNotification } from './automation/automation-notification.js';
 import { configureWindowsAppIdentity } from './windows/windows-app-identity.js';
 import { AutomationExecutionService } from './automation/automation-execution-service.js';
+import { RemoteControlService } from './remote-control/remote-control-service.js';
 
 loadRuntimeEnvironment();
 const runtimeConfig = readRuntimeConfig();
@@ -48,6 +49,7 @@ let automationService: AutomationService | undefined;
 let approvalCoordinator: ApprovalCoordinator | undefined;
 let taskProjector: TaskEventProjector | undefined;
 let automationDispatchHandler: (() => Promise<void>) | undefined;
+let remoteControlService: RemoteControlService | undefined;
 let pendingAutomationDispatch = false;
 let shuttingDown = false;
 const logger = new DesktopLogger();
@@ -77,7 +79,7 @@ app.whenReady().then(async () => {
     partition: runtimeConfig.authPartition,
     logger,
     cache,
-    onSessionExpired: async () => { await approvalCoordinator?.cancelAll(); await agentManager?.shutdownAll('auth.session-expired'); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('auth.sessionExpired'); },
+    onSessionExpired: async () => { await remoteControlService?.stop(); await approvalCoordinator?.cancelAll(); await agentManager?.shutdownAll('auth.session-expired'); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('auth.sessionExpired'); },
   });
   const workspaces = new WorkspaceRegistry();
   const extensionFiles = new ExtensionFileService(workspaces);
@@ -87,8 +89,8 @@ app.whenReady().then(async () => {
   const settings = new SettingsService();
   const approvals = new ApprovalCoordinator();
   approvalCoordinator = approvals;
-  approvals.onRequest(request => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('approval.requested', request); });
-  approvals.onResolved(resolution => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('approval.resolved', resolution); });
+  approvals.onRequest(request => { remoteControlService?.publishApprovalRequest(request); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('approval.requested', request); });
+  approvals.onResolved(resolution => { remoteControlService?.publishApprovalResolution(resolution); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('approval.resolved', resolution); });
   taskProjector = new TaskEventProjector(tasks, (error, cwd) => logger.error('task.event.persist.failed', { cwd, message: error instanceof Error ? error.message : 'Unable to persist agent event.' }));
   const browser = new BrowserService(snapshot => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('browser.state', snapshot);
@@ -136,7 +138,7 @@ app.whenReady().then(async () => {
           void approvals.request({ ...commonInput, source: 'agent', surface: 'composer' }, approved => agents.approvalRespond(projectRoot, { approvalId, approved }), { isAvailable: () => agents.isApprovalProcessAvailable(projectRoot, approvalId) }).catch(error => logger.warn('approval.registration.failed', { cwd: projectRoot, approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
         }
       }
-      void taskProjector?.apply(projectRoot, event).catch(error => logger.error('task.event.persist.failed', { cwd: projectRoot, event: event.event, message: error instanceof Error ? error.message : 'Unable to persist agent event.' }));
+      void taskProjector?.apply(projectRoot, event).catch(error => logger.error('task.event.persist.failed', { cwd: projectRoot, event: event.event, message: error instanceof Error ? error.message : 'Unable to persist agent event.' })).finally(() => { remoteControlService?.publishAgentEvent(projectRoot, event); remoteControlService?.observeAgentEvent(event); });
       const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
       const isAutomationEvent = sessionId !== undefined && automationSessions.has(sessionId);
       if (event.event !== 'approval.requested' && !isAutomationEvent) {
@@ -165,11 +167,17 @@ app.whenReady().then(async () => {
   agentManager = agents;
   const git = new GitService();
   const automationExecution = new AutomationExecutionService({ workspaces, git, tasks, agents, settings, browserHost, artifacts, logger, sessions: automationSessions });
+  const remoteControl = new RemoteControlService({ serverUrl: runtimeConfig.remoteServerUrl, enrollmentToken: runtimeConfig.remoteServerEnrollmentToken, tasks, workspaces, agents, approvals, git, logger });
+  remoteControlService = remoteControl;
+  remoteControl.onState(event => {
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send('remote-control.state', event);
+  });
   const executeAutomation = (automation: Parameters<AutomationExecutionService['execute']>[0], run: AutomationRun, signal: AbortSignal) => automationExecution.execute(automation, run, signal);
   const runAutomation = (id: string): Promise<AutomationRun> => automations.runNow(id, executeAutomation);
   const retryAutomation = (runId: string): Promise<AutomationRun> => automations.retry(runId, executeAutomation);
   const osScheduler = new AutomationOsScheduler(message => logger.warn('automation.scheduler', { message }));
   automations.onState(event => {
+    remoteControl.publishAutomationState(event);
     void automations.list().then(items => osScheduler.sync(items)).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('automation.state', event);
     const run = event.run;
@@ -179,7 +187,7 @@ app.whenReady().then(async () => {
       if (notification !== undefined) operations.notify(notification.title, notification.body);
     }
   });
-  registerIpc({ auth: new DesktopAuthService(transport, () => agents.shutdownAll()), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
+  registerIpc({ auth: new DesktopAuthService(transport, async () => { await remoteControl.stop(); await agents.shutdownAll(); }), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }
@@ -212,6 +220,7 @@ app.on('before-quit', (event) => {
   logger.info('app.before-quit', { windowCount: BrowserWindow.getAllWindows().length });
   void (async () => {
     await approvalCoordinator?.cancelAll();
+    await remoteControlService?.stop();
     await agentManager?.shutdownAll('app.before-quit');
     await taskProjector?.flush();
     await browserService?.closeAll();

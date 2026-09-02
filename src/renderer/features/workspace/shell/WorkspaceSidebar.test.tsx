@@ -13,7 +13,7 @@ describe('WorkspaceSidebar', () => {
     const onAutomations = vi.fn();
     const props: WorkspaceSidebarProps = {
       accountName: 'Nguyễn Huy', avatarProps: { name: 'Nguyễn Huy' }, workspaces: [], activeWorkspace: { id: 'workspace', name: 'Workspace', rootPath: '/workspace' } as Workspace, tasks: [], runningTaskIds: new Set(), unreadTaskIds: new Set(), loading: false,
-      accountOpen: false, onAccount: vi.fn(), onCloseAccount: vi.fn(), onSettings: vi.fn(), onPlugins, onAutomations, onLogout: vi.fn(), onNewChat, onWorkspace: vi.fn(), onTask: vi.fn(), onAddWorkspace: vi.fn(), onRenameWorkspace: vi.fn(), onRemoveWorkspace: vi.fn(), onArchiveTask: vi.fn(), onPinTask: vi.fn(), onRenameTask: vi.fn(), collapsed: false, onToggleCollapsed: vi.fn(), sidebarResizing: false, onStartResize: vi.fn(), onResizeKeyDown: vi.fn(),
+      accountOpen: false, onAccount: vi.fn(), onCloseAccount: vi.fn(), onSettings: vi.fn(), onPlugins, onAutomations, onRemoteControl: vi.fn(), onLogout: vi.fn(), onNewChat, onWorkspace: vi.fn(), onTask: vi.fn(), onAddWorkspace: vi.fn(), onRenameWorkspace: vi.fn(), onRemoveWorkspace: vi.fn(), onArchiveTask: vi.fn(), onPinTask: vi.fn(), onRenameTask: vi.fn(), collapsed: false, onToggleCollapsed: vi.fn(), sidebarResizing: false, onStartResize: vi.fn(), onResizeKeyDown: vi.fn(),
     };
 
     render(<WorkspaceSidebar {...props} />);
@@ -32,7 +32,7 @@ describe('WorkspaceSidebar', () => {
     const task = { id: 'task', workspaceId: workspace.id, title: 'Test session', cwd: workspace.rootPath, status: 'completed', pinned: false, archived: false, draft: '', draftAttachmentIds: [], lastEventCursor: 0, createdAt: '2026-08-30T00:00:00.000Z', updatedAt: '2026-08-30T00:00:00.000Z' } as Task;
     const props: WorkspaceSidebarProps = {
       accountName: 'Nguyễn Huy', avatarProps: { name: 'Nguyễn Huy' }, workspaces: [workspace], activeWorkspace: workspace, tasks: [task], activeTask: undefined, runningTaskIds: new Set([task.id]), unreadTaskIds: new Set(), loading: false,
-      accountOpen: false, onAccount: vi.fn(), onCloseAccount: vi.fn(), onSettings: vi.fn(), onPlugins: vi.fn(), onAutomations: vi.fn(), onLogout: vi.fn(), onNewChat: vi.fn(), onWorkspace: vi.fn(), onTask: vi.fn(), onAddWorkspace: vi.fn(), onRenameWorkspace: vi.fn(), onRemoveWorkspace: vi.fn(), onArchiveTask: vi.fn(), onPinTask: vi.fn(), onRenameTask: vi.fn(), collapsed: false, onToggleCollapsed: vi.fn(), sidebarResizing: false, onStartResize: vi.fn(), onResizeKeyDown: vi.fn(),
+      accountOpen: false, onAccount: vi.fn(), onCloseAccount: vi.fn(), onSettings: vi.fn(), onPlugins: vi.fn(), onAutomations: vi.fn(), onRemoteControl: vi.fn(), onLogout: vi.fn(), onNewChat: vi.fn(), onWorkspace: vi.fn(), onTask: vi.fn(), onAddWorkspace: vi.fn(), onRenameWorkspace: vi.fn(), onRemoveWorkspace: vi.fn(), onArchiveTask: vi.fn(), onPinTask: vi.fn(), onRenameTask: vi.fn(), collapsed: false, onToggleCollapsed: vi.fn(), sidebarResizing: false, onStartResize: vi.fn(), onResizeKeyDown: vi.fn(),
     };
 
     const view = render(<WorkspaceSidebar {...props} />);

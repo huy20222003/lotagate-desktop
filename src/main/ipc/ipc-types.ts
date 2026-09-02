@@ -19,6 +19,7 @@ import type { DesktopMenuContext } from '../windows/application-menu.js';
 import type { DesktopLogger } from '../observability/desktop-logger.js';
 import type { Workspace } from '../../contracts/ipc/v1/workspace.js';
 import type { AutomationRun } from '../../contracts/ipc/v1/automation.js';
+import type { RemoteControlService } from '../remote-control/remote-control-service.js';
 
 export interface DesktopIpcServices {
   auth: DesktopAuthApi;
@@ -37,6 +38,7 @@ export interface DesktopIpcServices {
   browser: BrowserService;
   automations: AutomationService;
   approvals: ApprovalCoordinator;
+  remoteControl: RemoteControlService;
   operations: DesktopOperations;
   runAutomation(id: string): Promise<AutomationRun>;
   retryAutomation(runId: string): Promise<AutomationRun>;
