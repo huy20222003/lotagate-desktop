@@ -1,0 +1,13 @@
+export { InlineApproval } from '../../../components/approval/InlineApproval.js';
+export { FileChangesDrawer } from '../review/FileChangesDrawer.js';
+export { GitPanel } from '../integrations/GitPanel.js';
+export { FileChangeCard } from '../review/FileChangeCard.js';
+export { FileChangeItem } from '../review/FileChangeItem.js';
+export { FileChangeDiffContent } from '../review/FileChangeDiffContent.js';
+export { CollapsibleUnifiedDiff } from '../review/CollapsibleUnifiedDiff.js';
+export { FileChangeSplitDiff } from '../review/FileChangeSplitDiff.js';
+export { DiffSide } from '../review/DiffSide.js';
+export { TrustCard } from './TrustCard.js';
+export { FileContentTab } from '../review/FileContentTab.js';
+export { FolderPopover } from '../review/FolderPopover.js';
+export type { DiffViewMode, OpenFileState } from '../review/file-change-view.js';

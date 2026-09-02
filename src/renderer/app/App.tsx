@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { LoginInput, UserProfile } from '../../contracts/ipc/v1/auth.js';
 import { Spinner } from '../components/ui.js';
 import { LoginScreen } from '../features/auth/LoginScreen.js';
-import { WorkspaceShell } from '../features/workspace/WorkspaceShell.js';
+import { WorkspaceShell } from '../features/workspace/shell/WorkspaceShell.js';
 import { useLocale } from '../i18n/locale.js';
 import { toUserErrorMessage as toMessage } from '../utils/errors.js';
 

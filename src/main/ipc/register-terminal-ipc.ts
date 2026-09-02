@@ -1,0 +1,20 @@
+import { z } from 'zod';
+import { assertTrustedRenderer } from './sender-policy.js';
+import { terminalExecutionInputSchema, terminalSessionOpenSchema, terminalSessionResizeSchema } from '../../contracts/ipc/v1/workspace.js';
+import type { IpcRegistrationContext } from './ipc-registration-context.js';
+
+export function registerTerminalIpcHandlers(context: IpcRegistrationContext): void {
+  const { handle, terminal, interactiveTerminal, tasks, requireWorkspaceCwd, idSchema } = context;
+handle('terminal.execute', async (event, input: unknown) => {
+    assertTrustedRenderer(event);
+    const value = terminalExecutionInputSchema.parse(input);
+    const result = await terminal.execute({ ...value, cwd: await requireWorkspaceCwd(value.cwd) });
+    if (value.taskId) await tasks.appendActivity(value.taskId, 'verification', `${value.command} ${value.args.join(' ')}`.trim(), { cwd: result.cwd, exitCode: result.exitCode, durationMs: result.durationMs, truncated: result.truncated, evidenceId: result.id, output: `${result.stdout}\n${result.stderr}`.slice(0, 4_096) });
+    return result;
+  });
+handle('terminal.list', async (event, taskId?: unknown) => { assertTrustedRenderer(event); return terminal.list(taskId === undefined ? undefined : idSchema.parse(taskId)); });
+handle('terminal.open', async (event, input: unknown) => { assertTrustedRenderer(event); const value = terminalSessionOpenSchema.parse(input); const session = await interactiveTerminal.open({ ...value, cwd: await requireWorkspaceCwd(value.cwd) }, event.sender.id, output => event.sender.send('terminal.output', output)); event.sender.once('destroyed', () => interactiveTerminal.closeOwner(event.sender.id)); return session; });
+handle('terminal.write', async (event, sessionId: unknown, data: unknown) => { assertTrustedRenderer(event); interactiveTerminal.write(idSchema.parse(sessionId), z.string().min(1).max(128 * 1024).parse(data), event.sender.id); });
+handle('terminal.resize', async (event, input: unknown) => { assertTrustedRenderer(event); const value = terminalSessionResizeSchema.parse(input); interactiveTerminal.resize(value.sessionId, value.cols, value.rows, event.sender.id); });
+handle('terminal.close', async (event, sessionId: unknown) => { assertTrustedRenderer(event); interactiveTerminal.close(idSchema.parse(sessionId), event.sender.id); });
+}

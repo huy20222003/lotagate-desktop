@@ -24,25 +24,20 @@ import { buildInteractiveDesktopExecutionPolicy } from './agents/desktop-executi
 import { AutomationService } from './automation/automation-service.js';
 import { DesktopOperations } from './operations/desktop-operations.js';
 import { WorkspaceFileSuggestions } from './workspaces/workspace-file-suggestions.js';
-import type { Automation } from './automation/automation-service.js';
-import type { AutomationExecutionResult } from './automation/automation-service.js';
 import type { AutomationRun } from '../contracts/ipc/v1/automation.js';
 import type { AutomationApproval } from '../contracts/ipc/v1/automation.js';
 import { DesktopLogger } from './observability/desktop-logger.js';
 import { PersistentCache } from './cache/persistent-cache.js';
 import { ExtensionFileService } from './extensions/extension-file-service.js';
-import { buildAutomationExecutionPolicy, supportsAutomationExecution } from './automation/automation-execution-policy.js';
-import { cleanupAutomationWorkspace, prepareAutomationWorkspace } from './automation/automation-workspace.js';
-import { requireExistingPath } from './security/path-policy.js';
-import { artifactKind } from './artifacts/artifact-kind.js';
+import { cleanupAutomationWorkspace } from './automation/automation-workspace.js';
 import { formatToolDisplayName } from '../shared/tool-display.js';
 import { AutomationOsScheduler } from './automation/automation-os-scheduler.js';
 import { ApprovalCoordinator } from './approvals/approval-coordinator.js';
 import { CheckpointService } from './checkpoints/checkpoint-service.js';
 import type { DesktopApprovalInput } from '../contracts/ipc/v1/approval.js';
-import { finalAutomationSummary } from './automation/automation-output.js';
 import { automationNotification } from './automation/automation-notification.js';
 import { configureWindowsAppIdentity } from './windows/windows-app-identity.js';
+import { AutomationExecutionService } from './automation/automation-execution-service.js';
 
 loadRuntimeEnvironment();
 const runtimeConfig = readRuntimeConfig();
@@ -169,38 +164,8 @@ app.whenReady().then(async () => {
   });
   agentManager = agents;
   const git = new GitService();
-  const executeAutomation = async (automation: Automation, run: AutomationRun, signal: AbortSignal): Promise<AutomationExecutionResult> => {
-    const workspace = await workspaces.require(automation.workspaceId);
-    if (!workspace.trusted) throw new Error('Trust the automation workspace before running it.');
-    const executionWorkspace = await prepareAutomationWorkspace(git, workspace, automation, run.id);
-    let preserveWorkspace = true;
-    const task = await tasks.create({ workspaceId: workspace.id, cwd: executionWorkspace.cwd, title: automation.name, prompt: automation.prompt });
-    const cli = await agents.initialize(executionWorkspace.cwd);
-    const execution = buildAutomationExecutionPolicy(automation, run.attempt, (await settings.get()).sandbox.hostFallback);
-    if (!supportsAutomationExecution(cli.capabilities)) throw new Error('The installed CLI does not support the required Desktop execution protocol. Update the Desktop CLI runtime before running this automation.');
-    const session = await agents.sessionCreate(executionWorkspace.cwd, { name: task.title });
-    const sessionId = extractSessionId(session);
-    if (sessionId === undefined) throw new Error('Automation could not create a CLI session.');
-    automationSessions.set(sessionId, { runId: run.id, cwd: executionWorkspace.cwd });
-    await tasks.update(task.id, { sessionId });
-    const cancelTurn = () => { void cancelTaskTurn(agents, tasks, executionWorkspace.cwd, task.id); };
-    signal.addEventListener('abort', cancelTurn, { once: true });
-    browserHost.setRunPolicy(run.id, automation.browserAccess);
-    browserHost.bindSessionToRun(executionWorkspace.cwd, sessionId, run.id);
-    try {
-      await agents.turnStart(executionWorkspace.cwd, { sessionId, prompt: automation.prompt, ...(automation.model === undefined ? {} : { model: automation.model }), runId: run.id, taskId: task.id, skills: automation.skills, execution });
-      const completedTask = await waitForAutomationTask(tasks, task.id, signal);
-      const outputs = await collectAutomationOutputs(tasks, artifacts, task.id, executionWorkspace.cwd);
-      preserveWorkspace = automation.permissionPolicy === 'review';
-      return { taskId: completedTask.id, sessionId, executionCwd: executionWorkspace.cwd, ...(executionWorkspace.branch === undefined ? {} : { branch: executionWorkspace.branch }), ...(executionWorkspace.worktreePath === undefined ? {} : { worktreePath: executionWorkspace.worktreePath }), ...outputs, ...(outputs.summary === undefined && completedTask.status === 'completed' ? { summary: 'Automation completed successfully.' } : {}), reviewRequired: automation.permissionPolicy === 'review' };
-    } finally {
-      signal.removeEventListener('abort', cancelTurn);
-      if (!automation.keepSession) await browserHost.closeRun(run.id);
-      else browserHost.clearRunPolicy(run.id);
-      if (sessionId !== undefined) automationSessions.delete(sessionId);
-      await executionWorkspace.cleanup(preserveWorkspace).catch(error => logger.warn('automation.worktree.cleanup.failed', { runId: run.id, message: error instanceof Error ? error.message : 'Unable to clean automation worktree.' }));
-    }
-  };
+  const automationExecution = new AutomationExecutionService({ workspaces, git, tasks, agents, settings, browserHost, artifacts, logger, sessions: automationSessions });
+  const executeAutomation = (automation: Parameters<AutomationExecutionService['execute']>[0], run: AutomationRun, signal: AbortSignal) => automationExecution.execute(automation, run, signal);
   const runAutomation = (id: string): Promise<AutomationRun> => automations.runNow(id, executeAutomation);
   const retryAutomation = (runId: string): Promise<AutomationRun> => automations.retry(runId, executeAutomation);
   const osScheduler = new AutomationOsScheduler(message => logger.warn('automation.scheduler', { message }));
@@ -252,47 +217,3 @@ app.on('before-quit', (event) => {
     await browserService?.closeAll();
   })().finally(async () => { await logger.close(); app.quit(); });
 });
-
-function extractSessionId(value: unknown): string | undefined {
-  if (typeof value !== 'object' || value === null) return undefined;
-  const session = (value as Record<string, unknown>)['session'];
-  if (typeof session !== 'object' || session === null) return undefined;
-  const id = (session as Record<string, unknown>)['id'];
-  return typeof id === 'string' ? id : undefined;
-}
-
-async function waitForAutomationTask(tasks: TaskStore, taskId: string, signal: AbortSignal): Promise<Awaited<ReturnType<TaskStore['require']>>> {
-  while (true) {
-    if (signal.aborted) throw new Error('Automation run was cancelled.');
-    const task = await tasks.require(taskId);
-    if (task.status === 'completed') return task;
-    if (task.status === 'failed' || task.status === 'interrupted') throw new Error(task.interruptedReason ?? 'The automation task failed.');
-    if (task.status === 'cancelled') throw new Error('The automation task was cancelled.');
-    await delay(250);
-  }
-}
-
-function delay(milliseconds: number): Promise<void> { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
-
-async function collectAutomationOutputs(tasks: TaskStore, artifacts: ArtifactService, taskId: string, cwd: string): Promise<{ summary?: string; changedFiles: string[]; artifactIds: string[] }> {
-  const activities = await tasks.activities(taskId);
-  const changedFiles = [...new Set(activities.flatMap(activity => {
-    const change = activity.metadata['change'];
-    if (typeof change !== 'object' || change === null || Array.isArray(change)) return [];
-    const path = (change as Record<string, unknown>)['path'];
-    return typeof path === 'string' && path.length > 0 ? [path] : [];
-  }))];
-  for (const changedFile of changedFiles) {
-    const sourcePath = await requireExistingPath(changedFile, cwd).catch(() => undefined);
-    if (sourcePath === undefined) continue;
-    await artifacts.importFile(taskId, sourcePath, artifactKind(sourcePath)).catch(() => undefined);
-  }
-  const artifactIds = (await artifacts.list(taskId)).map(artifact => artifact.id);
-  const summary = finalAutomationSummary(activities);
-  return { changedFiles, artifactIds, ...(summary === undefined ? {} : { summary }) };
-}
-
-async function cancelTaskTurn(agents: AgentManager, tasks: TaskStore, cwd: string, taskId: string): Promise<void> {
-  const task = await tasks.require(taskId).catch(() => undefined);
-  if (task?.turnId !== undefined) await agents.turnCancel(cwd, task.turnId).catch(() => undefined);
-}

@@ -15,7 +15,7 @@ import { BrowserSettingsPage } from './BrowserSettingsPage.js';
 import { SandboxSettingsPage } from './SandboxSettingsPage.js';
 import { ApiKeySettingsPage } from './ApiKeySettingsPage.js';
 import { GeneralSettingsPage } from './GeneralSettingsPage.js';
-import type { McpRuntimeStatus } from '../workspace/mcp-status.js';
+import type { McpRuntimeStatus } from '../../services/mcp-status.js';
 
 export type SettingsSection = 'general' | 'profile' | 'api-key' | 'billing' | 'appearance' | 'keyboard-shortcuts' | 'browser' | 'sandbox' | ExtensionKind;
 const settingsGroups: Array<{ title: string; items: Array<{ value: SettingsSection; label: string; icon: typeof UserRound }> }> = [

@@ -13,7 +13,7 @@ import { HookAddModal } from './HookAddModal.js';
 import type { ExtensionAddValue, EditableExtensionKind, HookAddValue } from './extensions-view-types.js';
 import { useDebounce } from '../../hooks/use-debounce.js';
 import { Icon } from '../../components/ui.js';
-import type { McpRuntimeStatus } from '../workspace/mcp-status.js';
+import type { McpRuntimeStatus } from '../../services/mcp-status.js';
 
 const EXTENSIONS_PAGE_SIZE = 10;
 const PAGE_META: Record<ExtensionKind, { title: string; empty: string; addLabel: string; readOnly?: boolean }> = { hook: { title: 'Hooks', empty: 'No hooks are loaded for this trusted workspace.', addLabel: 'Add hook' }, skill: { title: 'Skills', empty: 'No skills are available.', addLabel: 'Add skill' }, plugin: { title: 'Plugins', empty: 'No plugins are installed.', addLabel: 'Add plugin' }, mcp: { title: 'MCP', empty: 'No MCP servers are configured.', addLabel: 'Add MCP server' } };

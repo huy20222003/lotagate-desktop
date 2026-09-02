@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDesktopEvent, parseDesktopResponse } from './desktop.js';
+import { parseDesktopEvent, parseDesktopResponse } from './index.js';
 
 describe('Desktop JSONL contract', () => {
   it('parses a successful correlated response', () => {

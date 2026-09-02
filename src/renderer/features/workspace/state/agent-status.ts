@@ -1,0 +1,45 @@
+import { readString } from '../../../utils/data.js';
+import { formatToolDisplayName } from '../../../../shared/tool-display.js';
+
+export function agentStatusForEvent(event: string, data: Record<string, unknown>): string | undefined {
+  if (event === 'mcp.server.connecting') return `Connecting to MCP server ${readString(data['serverId']) ?? '…'}.`;
+  if (event === 'mcp.server.connected') return `MCP server ${readString(data['serverId']) ?? '…'} connected.`;
+  if (event === 'mcp.server.failed') return `MCP server ${readString(data['serverId']) ?? '…'} failed to connect.`;
+  if (event === 'mcp.server.disconnected') return `MCP server ${readString(data['serverId']) ?? '…'} disconnected.`;
+  if (event === 'mcp.tool.catalog.updated') return `MCP tools updated (${String(data['toolCount'] ?? 0)} available).`;
+  if (event === 'approval.requested') {
+    const displayName = formatToolDisplayName(data['toolName'], data['displayName']);
+    return `I need your approval before I continue with ${displayName}.`;
+  }
+  if (event === 'tool.started') {
+    const displayName = formatToolDisplayName(data['toolName'], data['displayName']);
+    const kind = readString(data['kind']);
+    if (kind === 'filesystem') return `I’ll inspect the workspace with ${displayName}.`;
+    if (kind === 'shell') return `I’ll run ${displayName} to verify the next step.`;
+    if (kind === 'mcp') return `I’ll query ${displayName} for the information needed next.`;
+    if (kind === 'subagent') return `I’ll delegate ${displayName} as an independent step.`;
+    return `I’ll use ${displayName} to continue.`;
+  }
+  if (event === 'tool.completed') {
+    const displayName = formatToolDisplayName(data['toolName'], data['displayName']);
+    return `${displayName} · ${data['isError'] === true ? 'failed' : 'completed'}`;
+  }
+  if (event === 'command.started') return commandStatusForAction(readString(data['actionId'])) ?? 'Running command…';
+  // Command lifecycle completion is transient. The command output or error
+  // is rendered by the command runner; keeping this status after completion
+  // makes it look like a persisted assistant message.
+  if (event === 'command.completed' || event === 'command.failed' || event === 'command.cancelled') return undefined;
+  if (event === 'command.activity.completed') return commandStatusForAction(readString(data['actionId']));
+  if (event !== 'command.activity.started') return undefined;
+  return commandStatusForAction(readString(data['actionId'])) ?? readString(data['label']) ?? readString(data['message']) ?? readString(data['status']) ?? 'I’m working through the next step.';
+}
+
+export function commandStatusForAction(actionId: string | undefined): string | undefined {
+  if (actionId === 'image.generate') return 'Creating Image';
+  if (actionId === 'image.edit') return 'Editing Image';
+  if (actionId === 'video.generate') return 'Creating Video';
+  if (actionId === 'audio.speech') return 'Creating Audio';
+  if (actionId === 'audio.transcribe') return 'Transcribing Audio';
+  if (actionId === 'audio.translate') return 'Translating Audio';
+  return undefined;
+}

@@ -81,6 +81,24 @@ rules, workspace, settings, file changes, responsive rules, and shared UI
 styling. Do not move business logic, API calls, IPC calls, or data mapping into
 shared UI components.
 
+The renderer feature layout follows ownership boundaries rather than screen
+history. `features/automation/` owns the Workspace automation surface;
+`features/settings/` owns desktop preferences and extension administration;
+`features/workspace/` is grouped into `shell/`, `conversation/`, `composer/`,
+`review/`, `artifacts/`, `integrations/`, `orchestration/`, and `state/`.
+Stable cross-feature model catalogs, attachment types, runtime status types, and
+model preferences live under `renderer/services/`. Approval primitives and
+shared drawers live under `renderer/components/`. Keep feature-to-feature
+imports intentional, and move a concept to a shared layer only when it has
+multiple semantic consumers.
+
+Electron main is composed in `src/main/index.ts`. Automation execution lives in
+`src/main/automation/automation-execution-service.ts`, while IPC registration is
+split by command namespace under `src/main/ipc/`; `register-ipc.ts` remains the
+composition root. The versioned JSONL and IPC contract barrels under
+`src/contracts/` are public boundaries and should be extended there before
+adding duplicate local types.
+
 For a packaged Windows cold-start smoke test:
 
 ```powershell

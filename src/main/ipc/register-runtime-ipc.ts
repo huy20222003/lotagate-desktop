@@ -1,0 +1,53 @@
+import { z } from 'zod';
+import { assertTrustedRenderer } from './sender-policy.js';
+import { automationCreateInputSchema, automationUpdateInputSchema } from '../../contracts/ipc/v1/automation.js';
+import { desktopApprovalInputSchema } from '../../contracts/ipc/v1/approval.js';
+import type { IpcRegistrationContext } from './ipc-registration-context.js';
+
+export function registerRuntimeIpcHandlers(context: IpcRegistrationContext): void {
+  const { handle, settings, browser, approvals, automations, operations, runAutomation, retryAutomation, idSchema, browserBoundsSchema, objectSchema, logger, cwdSchema } = context;
+handle('settings.get', async event => { assertTrustedRenderer(event); return settings.get(); });
+handle('settings.update', async (event, patch: unknown) => { assertTrustedRenderer(event); const updated = await settings.update(objectSchema.parse(patch)); logger.setRetentionDays(updated.sandbox.diagnosticsRetentionDays); return updated; });
+handle('browser.create', async event => { assertTrustedRenderer(event); return browser.create(); });
+handle('browser.open', async (event, url: unknown, approved: unknown) => { assertTrustedRenderer(event); return browser.open(z.string().url().parse(url), z.boolean().parse(approved)); });
+handle('browser.close', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.close(idSchema.parse(id)); });
+handle('browser.hide', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.hide(idSchema.parse(id)); });
+handle('browser.createTab', async (event, sessionId: unknown) => { assertTrustedRenderer(event); return browser.createTab(idSchema.parse(sessionId)); });
+handle('browser.closeTab', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.closeTab(idSchema.parse(sessionId), idSchema.parse(tabId)); });
+handle('browser.selectTab', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.selectTab(idSchema.parse(sessionId), idSchema.parse(tabId)); });
+handle('browser.navigate', async (event, sessionId: unknown, tabId: unknown, url: unknown, approved: unknown) => { assertTrustedRenderer(event); return browser.navigate(idSchema.parse(sessionId), idSchema.parse(tabId), z.string().url().parse(url), z.boolean().parse(approved)); });
+handle('browser.goBack', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.goBack(idSchema.parse(sessionId), idSchema.parse(tabId)); });
+handle('browser.goForward', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.goForward(idSchema.parse(sessionId), idSchema.parse(tabId)); });
+handle('browser.reload', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.reload(idSchema.parse(sessionId), idSchema.parse(tabId)); });
+handle('browser.setViewBounds', async (event, sessionId: unknown, tabId: unknown, bounds: unknown, visible: unknown) => { assertTrustedRenderer(event); const value = browserBoundsSchema.parse(bounds); browser.setViewBounds(idSchema.parse(sessionId), idSchema.parse(tabId), value, z.boolean().parse(visible)); });
+handle('browser.screenshot', async (event, sessionId: unknown, tabId?: unknown) => { assertTrustedRenderer(event); return browser.screenshot(idSchema.parse(sessionId), tabId === undefined ? undefined : idSchema.parse(tabId)); });
+handle('browser.startRecording', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.startRecording(idSchema.parse(id)); });
+handle('browser.stopRecording', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.stopRecording(idSchema.parse(id)); });
+handle('browser.list', async event => { assertTrustedRenderer(event); return browser.list(); });
+handle('browser.evidence', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.evidence(idSchema.parse(id)); });
+handle('approval.request', async (event, input: unknown) => { assertTrustedRenderer(event); return approvals.request(desktopApprovalInputSchema.parse(input)); });
+handle('approval.respond', async (event, approvalId: unknown, approved: unknown, owner?: unknown) => {
+    assertTrustedRenderer(event);
+    const ownerValue = owner === undefined ? undefined : z.object({ taskId: idSchema.optional(), sessionId: idSchema.optional() }).strict().parse(owner);
+    const parsedOwner = ownerValue === undefined ? undefined : { ...(ownerValue.taskId === undefined ? {} : { taskId: ownerValue.taskId }), ...(ownerValue.sessionId === undefined ? {} : { sessionId: ownerValue.sessionId }) };
+    return approvals.respond(idSchema.parse(approvalId), z.boolean().parse(approved), parsedOwner);
+  });
+handle('automation.list', async event => { assertTrustedRenderer(event); return automations.list(); });
+handle('automation.get', async (event, id: unknown) => { assertTrustedRenderer(event); return automations.get(idSchema.parse(id)); });
+handle('automation.create', async (event, input: unknown) => { assertTrustedRenderer(event); return automations.create(automationCreateInputSchema.parse(input)); });
+handle('automation.update', async (event, id: unknown, patch: unknown) => { assertTrustedRenderer(event); return automations.update(idSchema.parse(id), automationUpdateInputSchema.parse(patch)); });
+handle('automation.remove', async (event, id: unknown) => { assertTrustedRenderer(event); return automations.remove(idSchema.parse(id)); });
+handle('automation.run', async (event, id: unknown) => { assertTrustedRenderer(event); return runAutomation(idSchema.parse(id)); });
+handle('automation.pause', async (event, id: unknown) => { assertTrustedRenderer(event); return automations.pause(idSchema.parse(id)); });
+handle('automation.resume', async (event, id: unknown) => { assertTrustedRenderer(event); return automations.resume(idSchema.parse(id)); });
+handle('automation.cancel', async (event, runId: unknown) => { assertTrustedRenderer(event); return automations.cancel(idSchema.parse(runId)); });
+handle('automation.retry', async (event, runId: unknown) => { assertTrustedRenderer(event); return retryAutomation(idSchema.parse(runId)); });
+handle('automation.review', async (event, runId: unknown, approved: unknown) => { assertTrustedRenderer(event); return automations.review(idSchema.parse(runId), z.boolean().parse(approved)); });
+handle('automation.approvalRespond', async (event, runId: unknown, approvalId: unknown, approved: unknown) => { assertTrustedRenderer(event); return automations.respondApproval(idSchema.parse(runId), idSchema.parse(approvalId), z.boolean().parse(approved)); });
+handle('automation.runs', async (event, id: unknown, limit?: unknown) => { assertTrustedRenderer(event); return automations.runs(idSchema.parse(id), limit === undefined ? 100 : z.number().int().min(1).max(100).parse(limit)); });
+handle('operations.notify', async (event, title: unknown, body: unknown) => { assertTrustedRenderer(event); operations.notify(z.string().min(1).parse(title), z.string().max(2_000).parse(body)); });
+handle('operations.showWindow', async event => { assertTrustedRenderer(event); operations.showWindow(); });
+handle('operations.revealPath', async (event, path: unknown) => { assertTrustedRenderer(event); await operations.revealPath(cwdSchema.parse(path)); });
+handle('operations.exportDiagnostics', async event => { assertTrustedRenderer(event); return operations.exportDiagnostics({ version: process.env['npm_package_version'] ?? '0.1.0', settings: await settings.get() }); });
+handle('operations.checkForUpdates', async event => { assertTrustedRenderer(event); return operations.checkForUpdates(process.env['LOTAGATE_UPDATE_MANIFEST_URL']?.trim() ?? ''); });
+}

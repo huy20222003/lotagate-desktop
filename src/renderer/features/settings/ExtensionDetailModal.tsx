@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Button, Modal } from '../../components/ui.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
-import { AgentMarkdown } from '../workspace/markdown-renderer.js';
+import { AgentMarkdown } from '../workspace/conversation/markdown-renderer.js';
 import type { DesktopHookEvent, ExtensionDetail } from '../../../contracts/ipc/v1/extensions.js';
 import type { ExtensionKind, ExtensionRow } from './extension-command-client.js';
 import { isRecord, readString } from '../../utils/data.js';

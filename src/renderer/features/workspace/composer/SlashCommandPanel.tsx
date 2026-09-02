@@ -1,0 +1,16 @@
+import { Button, Field, Icon as UiIcon, TextArea } from '../../../components/ui.js';
+import { X } from 'lucide-react';
+import { slashCommandIcon } from './slash-command-icons.js';
+import { SlashField } from './SlashField.js';
+import { type SlashCommandDefinition, type SlashCommandErrors, type SlashCommandForm } from './slash-command.js';
+import type { WorkspaceModelOption } from '../../../services/model-catalog.js';
+import type { PickedWorkspaceFile } from './slash-command-view-types.js';
+
+export type { PickedWorkspaceFile } from './slash-command-view-types.js';
+export { SlashCommandPicker } from './SlashCommandPicker.js';
+
+export function SlashCommandPanel({ command, form, models, errors = { fields: {} }, onChange, onToggleAdvanced, onClear, onPickFolder, onPickFile, onPickMultipleFile, showHeader = true }: { command: SlashCommandDefinition; form: SlashCommandForm; models: readonly WorkspaceModelOption[]; errors?: SlashCommandErrors; onChange: (form: SlashCommandForm) => void; onToggleAdvanced: () => void; onClear: () => void; onPickFolder: () => Promise<string | null>; onPickFile: (extensions?: readonly string[]) => Promise<PickedWorkspaceFile | null>; onPickMultipleFile: (extensions?: readonly string[]) => Promise<PickedWorkspaceFile[]>; showHeader?: boolean }) {
+  const CommandIcon = slashCommandIcon(command.id);
+  const updateValue = (name: string, value: string | boolean) => onChange({ ...form, values: { ...form.values, [name]: value } });
+  return <section className="slash-command-panel" aria-label={`${command.label} command`}>{showHeader ? <header className="slash-command-header"><span className="slash-command-title"><UiIcon icon={CommandIcon} size={17} /><strong>/{command.id.split('.')[0]}</strong><small>{command.description}</small></span><Button variant="ghost" className="slash-command-clear" aria-label="Clear slash command" onClick={onClear}><UiIcon icon={X} size={16} /></Button></header> : null}<Field label={command.primaryLabel} required={command.primaryRequired !== false} error={errors.primary}><TextArea className="slash-command-primary" autoFocus placeholder={command.primaryPlaceholder} value={form.primary} onChange={event => onChange({ ...form, primary: event.target.value })} /></Field><div className="slash-command-fields">{command.fields.map(field => <SlashField key={field.name} command={command} field={field} models={models} value={form.values[field.name]} error={errors.fields[field.name]} onChange={value => updateValue(field.name, value)} onPickFolder={onPickFolder} onPickFile={onPickFile} onPickMultipleFile={onPickMultipleFile} />)}</div>{command.advancedFields.length > 0 ? <><button type="button" className="slash-command-advanced-toggle" onClick={onToggleAdvanced}>{form.advancedOpen ? 'Hide advanced options' : 'Show advanced options'}</button>{form.advancedOpen ? <div className="slash-command-fields slash-command-advanced-fields">{command.advancedFields.map(field => <SlashField key={field.name} command={command} field={field} models={models} value={form.values[field.name]} error={errors.fields[field.name]} onChange={value => updateValue(field.name, value)} onPickFolder={onPickFolder} onPickFile={onPickFile} onPickMultipleFile={onPickMultipleFile} />)}</div> : null}</> : null}</section>;
+}

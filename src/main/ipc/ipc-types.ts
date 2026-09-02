@@ -1,0 +1,46 @@
+import type { DesktopAuthApi } from '../../contracts/ipc/v1/auth.js';
+import type { DesktopUserContextService } from '../api/desktop-user-context-service.js';
+import type { AgentManager } from '../agents/agent-manager.js';
+import type { WorkspaceRegistry } from '../workspaces/workspace-registry.js';
+import type { WorkspaceFileSuggestions } from '../workspaces/workspace-file-suggestions.js';
+import type { TaskStore } from '../tasks/task-store.js';
+import type { CheckpointService } from '../checkpoints/checkpoint-service.js';
+import type { ExtensionFileService } from '../extensions/extension-file-service.js';
+import type { GitService } from '../git/git-service.js';
+import type { TerminalService } from '../terminal/terminal-service.js';
+import type { InteractiveTerminalService } from '../terminal/interactive-terminal-service.js';
+import type { SettingsService } from '../settings/settings-service.js';
+import type { ArtifactService } from '../artifacts/artifact-service.js';
+import type { BrowserService } from '../browser/browser-service.js';
+import type { AutomationService } from '../automation/automation-service.js';
+import type { ApprovalCoordinator } from '../approvals/approval-coordinator.js';
+import type { DesktopOperations } from '../operations/desktop-operations.js';
+import type { DesktopMenuContext } from '../windows/application-menu.js';
+import type { DesktopLogger } from '../observability/desktop-logger.js';
+import type { Workspace } from '../../contracts/ipc/v1/workspace.js';
+import type { AutomationRun } from '../../contracts/ipc/v1/automation.js';
+
+export interface DesktopIpcServices {
+  auth: DesktopAuthApi;
+  userContext: DesktopUserContextService;
+  agents: AgentManager;
+  workspaces: WorkspaceRegistry;
+  workspaceFileSuggestions: WorkspaceFileSuggestions;
+  tasks: TaskStore;
+  checkpoints: CheckpointService;
+  extensionFiles: ExtensionFileService;
+  git: GitService;
+  terminal: TerminalService;
+  interactiveTerminal: InteractiveTerminalService;
+  settings: SettingsService;
+  artifacts: ArtifactService;
+  browser: BrowserService;
+  automations: AutomationService;
+  approvals: ApprovalCoordinator;
+  operations: DesktopOperations;
+  runAutomation(id: string): Promise<AutomationRun>;
+  retryAutomation(runId: string): Promise<AutomationRun>;
+  setMenuContext(context: DesktopMenuContext): void;
+  logger: DesktopLogger;
+  onWorkspaceRemoved?: (workspace: Workspace) => Promise<void>;
+}
