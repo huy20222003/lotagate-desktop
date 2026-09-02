@@ -2,8 +2,10 @@ import { Check, Circle, ChevronRight, LoaderCircle } from 'lucide-react';
 import type { FileChangeSummary, WorkPlanSnapshot } from '../../../../contracts/ipc/v1/workspace.js';
 import { useState } from 'react';
 import { Icon } from '../../../components/ui.js';
+import { Scrollbar } from '../../../components/Scrollbar.js';
+import { fileName } from './file-change-view.js';
 
-export function ChangeSummaryChip({ summary, plan, onPlanClick, onFilesClick }: { summary: FileChangeSummary; plan?: WorkPlanSnapshot; onPlanClick?: () => void; onFilesClick?: () => void }) {
+export function ChangeSummaryChip({ summary, plan, onPlanClick, onFilesClick }: { summary: FileChangeSummary; plan?: WorkPlanSnapshot; onPlanClick?: () => void; onFilesClick?: (path?: string) => void }) {
   const [popover, setPopover] = useState<'plan' | 'files' | undefined>();
   const hasPlan = plan?.status === 'active' && onPlanClick !== undefined;
   const hasFiles = summary.files.length > 0 && onFilesClick !== undefined;
@@ -18,12 +20,12 @@ export function ChangeSummaryChip({ summary, plan, onPlanClick, onFilesClick }: 
       {popover === 'plan' ? <PlanPopover plan={plan!} /> : null}
     </div> : null}
     {hasFiles ? <div className="change-summary-segment" onMouseEnter={() => setPopover('files')} onFocus={() => setPopover('files')}>
-      <button type="button" className="change-summary-button change-summary-files" onClick={onFilesClick} aria-label={`Open ${summary.files.length} changed ${summary.files.length === 1 ? 'file' : 'files'}`}>
+      <button type="button" className="change-summary-button change-summary-files" onClick={() => onFilesClick?.()} aria-label={`Open ${summary.files.length} changed ${summary.files.length === 1 ? 'file' : 'files'}`}>
         <span>{summary.files.length} {summary.files.length === 1 ? 'file' : 'files'} changed</span>
         <span className="change-additions">+{summary.additions}</span>
         <span className="change-deletions">-{summary.deletions}</span>
       </button>
-      {popover === 'files' ? <FileChangesPopover summary={summary} /> : null}
+      {popover === 'files' ? <FileChangesPopover summary={summary} onOpenFile={path => onFilesClick?.(path)} /> : null}
     </div> : null}
   </div>;
 }
@@ -39,8 +41,8 @@ function PlanPopover({ plan }: { plan: WorkPlanSnapshot }) {
   return <div className="change-summary-popover change-summary-plan-popover" role="tooltip"><strong>{plan.goal}</strong>{plan.steps.map(step => <div className={`change-summary-plan-step plan-step-${step.status}`} key={step.id}>{step.status === 'completed' ? <Check size={13} /> : step.status === 'active' ? <LoaderCircle size={13} className="spin" /> : step.status === 'failed' || step.status === 'blocked' ? <Circle size={11} /> : <Circle size={11} />}<span>{step.title}</span></div>)}</div>;
 }
 
-function FileChangesPopover({ summary }: { summary: FileChangeSummary }) {
-  return <div className="change-summary-popover change-summary-files-popover" role="tooltip">{summary.files.map(file => <div className="change-summary-file" key={file.path}><span>{file.path}</span><span className="file-change-counts"><span className="change-additions">+{file.additions}</span><span className="change-deletions">-{file.deletions}</span></span></div>)}</div>;
+function FileChangesPopover({ summary, onOpenFile }: { summary: FileChangeSummary; onOpenFile: (path: string) => void }) {
+  return <div className="change-summary-popover change-summary-files-popover" role="tooltip"><Scrollbar className="change-summary-files-scrollbar"><div className="change-summary-files-list">{summary.files.map(file => <button type="button" className="change-summary-file" key={file.path} onClick={() => onOpenFile(file.path)} aria-label={`Open ${fileName(file.path)} in changed files`}><span>{fileName(file.path)}</span><span className="file-change-counts"><span className="change-additions">+{file.additions}</span><span className="change-deletions">-{file.deletions}</span></span></button>)}</div></Scrollbar></div>;
 }
 
 export function planStepNumber(plan: WorkPlanSnapshot): number {

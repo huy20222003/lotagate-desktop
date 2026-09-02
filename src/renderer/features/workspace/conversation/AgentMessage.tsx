@@ -8,8 +8,9 @@ import { AgentMediaResponse } from '../artifacts/AgentMediaResponse.js';
 import { readMediaPaths } from '../state/workspace-controller-helpers.js';
 import { resolveWorkspacePath, type MessageFileReference } from './message-markup.js';
 import { useSmoothStreamingText } from './use-smooth-streaming-text.js';
+import type { OpenFileChangesHandler } from '../review/file-change-view.js';
 
-export function AgentMessage({ activity, artifacts, timing, streaming = false, fileChangeSummary, undoState, undoBusy = false, activities = [], workspaceCwd, onUndoFileChanges, onOpenFileChanges }: { activity: Activity; artifacts: Artifact[]; timing?: TurnTiming | undefined; streaming?: boolean; fileChangeSummary?: FileChangeSummary | undefined; undoState?: CheckpointUndoState | undefined; undoBusy?: boolean; activities?: readonly Activity[]; workspaceCwd: string; onUndoFileChanges: (turnId: string) => Promise<void>; onOpenFileChanges: (summary: FileChangeSummary) => void }) {
+export function AgentMessage({ activity, artifacts, timing, streaming = false, fileChangeSummary, undoState, undoBusy = false, activities = [], workspaceCwd, onUndoFileChanges, onOpenFileChanges }: { activity: Activity; artifacts: Artifact[]; timing?: TurnTiming | undefined; streaming?: boolean; fileChangeSummary?: FileChangeSummary | undefined; undoState?: CheckpointUndoState | undefined; undoBusy?: boolean; activities?: readonly Activity[]; workspaceCwd: string; onUndoFileChanges: (turnId: string) => Promise<void>; onOpenFileChanges: OpenFileChangesHandler }) {
   const displayedText = useSmoothStreamingText(activity.text, streaming);
   const fileReferences: MessageFileReference[] = [...artifacts.map(artifact => ({ path: artifact.path, name: artifact.name, kind: artifact.kind })), ...(fileChangeSummary?.files ?? []).map(change => ({ path: resolveWorkspacePath(change.path, workspaceCwd), name: change.path.split(/[\\/]/u).pop() ?? change.path })), ...readMediaPaths(activity.metadata['mediaPaths'], activity.text).map(path => ({ path }))];
   const turnId = typeof activity.metadata['turnId'] === 'string' ? activity.metadata['turnId'] : undefined;

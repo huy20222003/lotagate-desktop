@@ -37,6 +37,7 @@ Desktop runtime `.env` without adding credentials:
 
 ```dotenv
 LOTAGATE_REMOTE_SERVER_URL=http://127.0.0.1:8787
+LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX=api/v1
 LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN=<same-long-random-value-configured-on-remote-server>
 ```
 

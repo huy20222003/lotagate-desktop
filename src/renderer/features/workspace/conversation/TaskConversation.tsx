@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { Activity, Artifact, CheckpointStatus, FileChangeSummary, Task, TrustRequest } from '../../../../contracts/ipc/v1/workspace.js';
+import type { Activity, Artifact, CheckpointStatus, Task, TrustRequest } from '../../../../contracts/ipc/v1/workspace.js';
 import { EmptyState } from '../../../components/ui.js';
 import type { AttachmentPreview } from '../../../services/attachment-types.js';
 import type { FileChangeSummariesByTurn } from '../review/file-changes.js';
@@ -11,6 +11,7 @@ import { ElapsedTime, type TurnTiming } from './ElapsedTime.js';
 import { findActiveTurnTiming, activityTurnId, messageTiming } from './conversation-timing.js';
 import { TypingIndicator } from './TypingIndicator.js';
 import { hasRunningWorkedTool } from './WorkedForDetails.js';
+import type { OpenFileChangesHandler } from '../review/file-change-view.js';
 
 const EMPTY_ATTACHMENTS: AttachmentPreview[] = [];
 const EMPTY_ARTIFACTS: Artifact[] = [];
@@ -22,7 +23,7 @@ interface TurnActivityDetails {
   tools: Activity[];
 }
 
-export function TaskConversation({ task, activities, activityAttachments, activityArtifacts, fileChangesByTurn, checkpointStatuses = {}, undoingTurns = {}, onUndoFileChanges = async () => undefined, onOpenFileChanges, statusText, contextCompactionStatus, thinking, finalResponseReceived, thinkingStartedAt, turnTimings, trust, onTrust }: { task?: Task | undefined; activities: Activity[]; activityAttachments: Record<string, AttachmentPreview[]>; activityArtifacts: Record<string, Artifact[]>; fileChangesByTurn: FileChangeSummariesByTurn; checkpointStatuses?: Record<string, CheckpointStatus>; undoingTurns?: Record<string, boolean>; onUndoFileChanges?: (turnId: string) => Promise<void>; onOpenFileChanges: (summary: FileChangeSummary) => void; statusText?: string | undefined; contextCompactionStatus?: 'compacting' | 'compacted' | 'failed' | undefined; thinking: boolean; finalResponseReceived: boolean; thinkingStartedAt?: number | undefined; turnTimings: Record<string, TurnTiming>; trust?: TrustRequest | undefined; onTrust: (trusted: boolean) => Promise<void> }) {
+export function TaskConversation({ task, activities, activityAttachments, activityArtifacts, fileChangesByTurn, checkpointStatuses = {}, undoingTurns = {}, onUndoFileChanges = async () => undefined, onOpenFileChanges, statusText, contextCompactionStatus, thinking, finalResponseReceived, thinkingStartedAt, turnTimings, trust, onTrust }: { task?: Task | undefined; activities: Activity[]; activityAttachments: Record<string, AttachmentPreview[]>; activityArtifacts: Record<string, Artifact[]>; fileChangesByTurn: FileChangeSummariesByTurn; checkpointStatuses?: Record<string, CheckpointStatus>; undoingTurns?: Record<string, boolean>; onUndoFileChanges?: (turnId: string) => Promise<void>; onOpenFileChanges: OpenFileChangesHandler; statusText?: string | undefined; contextCompactionStatus?: 'compacting' | 'compacted' | 'failed' | undefined; thinking: boolean; finalResponseReceived: boolean; thinkingStartedAt?: number | undefined; turnTimings: Record<string, TurnTiming>; trust?: TrustRequest | undefined; onTrust: (trusted: boolean) => Promise<void> }) {
   const transcript = useMemo(() => mergeChatActivities(activities), [activities]);
   const activityDetailsByTurn = useMemo(() => {
     const grouped = new Map<string, TurnActivityDetails>();

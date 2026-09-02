@@ -6,8 +6,8 @@ import { FileChangeDiffContent } from './FileChangeDiffContent.js';
 import type { DiffViewMode } from './file-change-view.js';
 import { fileIconFor } from '../../../components/file-icon.js';
 
-export function FileChangeItem({ change, onOpenFileChanges, onOpenFile, viewMode = 'unified', showActions = false }: { change: FileChangeDiff; onOpenFileChanges?: (() => void) | undefined; onOpenFile?: (() => void) | undefined; viewMode?: DiffViewMode; showActions?: boolean }) {
-  const [expanded, setExpanded] = useState(true);
+export function FileChangeItem({ change, onOpenFileChanges, onOpenFile, viewMode = 'unified', showActions = false, initiallyExpanded = true }: { change: FileChangeDiff; onOpenFileChanges?: (() => void) | undefined; onOpenFile?: (() => void) | undefined; viewMode?: DiffViewMode; showActions?: boolean; initiallyExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const expandable = onOpenFileChanges === undefined;
   const toggleExpanded = () => setExpanded(current => !current);
   const handleHeaderKeyDown = (event: KeyboardEvent<HTMLElement>) => {

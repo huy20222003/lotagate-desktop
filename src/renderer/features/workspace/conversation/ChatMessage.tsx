@@ -4,6 +4,7 @@ import type { AttachmentPreview } from '../../../services/attachment-types.js';
 import { AgentMessage } from './AgentMessage.js';
 import { UserMessage } from './UserMessage.js';
 import type { TurnTiming } from './ElapsedTime.js';
+import type { OpenFileChangesHandler } from '../review/file-change-view.js';
 
 interface ChatMessageProps {
   activity: Activity;
@@ -15,7 +16,7 @@ interface ChatMessageProps {
   undoBusy?: boolean;
   activities?: readonly Activity[];
   workspaceCwd: string;
-  onOpenFileChanges: (summary: FileChangeSummary) => void;
+  onOpenFileChanges: OpenFileChangesHandler;
   onUndoFileChanges: (turnId: string) => Promise<void>;
 }
 

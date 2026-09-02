@@ -130,6 +130,23 @@ describe('FileChangesDrawer', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'README.md' }));
     expect(readFile).toHaveBeenCalledWith('/workspace', 'README.md');
   });
+
+  it('opens only the selected file when the drawer receives an initial file path', () => {
+    const changes = {
+      additions: 2,
+      deletions: 0,
+      files: [
+        { path: 'src/first.ts', additions: 1, deletions: 0, truncated: false, lines: [{ kind: 'addition' as const, text: 'first', newLine: 1 }] },
+        { path: 'src/second.ts', additions: 1, deletions: 0, truncated: false, lines: [{ kind: 'addition' as const, text: 'second', newLine: 1 }] },
+      ],
+    };
+    render(<FileChangesDrawer cwd="/workspace" summary={changes} initialExpandedPath="src/second.ts" onClose={() => undefined} />);
+
+    const headers = [...document.querySelectorAll<HTMLElement>('.file-change-item-header.is-expandable')];
+    expect(headers).toHaveLength(2);
+    expect(headers[0]).toHaveAttribute('aria-expanded', 'false');
+    expect(headers[1]).toHaveAttribute('aria-expanded', 'true');
+  });
 });
 
 describe('SourcesDrawer', () => {

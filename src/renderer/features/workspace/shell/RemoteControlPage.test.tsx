@@ -9,7 +9,7 @@ import { RemoteControlPage } from './RemoteControlPage.js';
 
 describe('RemoteControlPage', () => {
   it('creates a temporary session through the typed Desktop bridge', async () => {
-    const connectingSession = { sessionId: '2e4b7c4b-7138-4b85-9b0a-7a2cfc5d4d43', connectUrl: 'http://127.0.0.1:8787/connect#session=demo&token=pairing', expiresAt: '2026-09-02T13:00:00.000Z', status: 'connecting' as const };
+    const connectingSession = { sessionId: '2e4b7c4b-7138-4b85-9b0a-7a2cfc5d4d43', connectUrl: 'http://127.0.0.1:8787/api/v1/connect/#session=demo&token=pairing', expiresAt: '2026-09-02T13:00:00.000Z', status: 'connecting' as const };
     let publishState: ((event: RemoteControlStateEvent) => void) | undefined;
     const create = vi.fn().mockResolvedValue(connectingSession);
     window.lotagate = {

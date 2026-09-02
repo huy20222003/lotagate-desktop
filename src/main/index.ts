@@ -171,7 +171,7 @@ app.whenReady().then(async () => {
   const git = new GitService();
   const automationExecution = new AutomationExecutionService({ workspaces, git, tasks, agents, settings, browserHost, artifacts, logger, sessions: automationSessions });
   const workspaceFileSuggestions = new WorkspaceFileSuggestions();
-  const remoteControl = new RemoteControlService({ serverUrl: runtimeConfig.remoteServerUrl, enrollmentToken: runtimeConfig.remoteServerEnrollmentToken, tasks, workspaces, workspaceFileSuggestions, agents, approvals, artifacts, logger });
+  const remoteControl = new RemoteControlService({ serverUrl: runtimeConfig.remoteServerUrl, globalPrefix: runtimeConfig.remoteServerGlobalPrefix, enrollmentToken: runtimeConfig.remoteServerEnrollmentToken, tasks, workspaces, workspaceFileSuggestions, agents, approvals, artifacts, logger });
   remoteControlService = remoteControl;
   remoteControl.onState(event => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('remote-control.state', event);

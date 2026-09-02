@@ -14,6 +14,7 @@ import type { DesktopLogger } from '../observability/desktop-logger.js';
 import type { ArtifactService } from '../artifacts/artifact-service.js';
 import { artifactKind } from '../artifacts/artifact-kind.js';
 import type { WorkspaceFileSuggestions } from '../workspaces/workspace-file-suggestions.js';
+import { normalizeRemoteServerGlobalPrefix, remoteServerRoute } from './remote-server-paths.js';
 
 interface RemoteServerSessionResponse { sessionId: string; hostToken: string; pairingToken: string; expiresAt: string; connectUrl: string }
 interface RemoteRuntimeSession { publicState: RemoteControlSession; hostToken: string; socket: WebSocket | undefined; keyPair: RemoteKeyPair; cipher: RemoteCipher | undefined; sendChain: Promise<void>; nextSequence: number; lastReceivedSequence: number; reconnectAttempt: number; stopping: boolean; reconnectTimer: ReturnType<typeof setTimeout> | undefined; reconnectStableTimer: ReturnType<typeof setTimeout> | undefined; expiryTimer: ReturnType<typeof setTimeout> | undefined; uploadCleanupTimer: ReturnType<typeof setTimeout> | undefined; uploadStartReservations: number; uploads: Map<string, RemoteUpload>; requestLedger: Map<string, Promise<RemoteResponse>> }
@@ -38,7 +39,7 @@ export class RemoteControlService {
   private readonly queuedPrompts = new Map<string, QueuedRemotePrompt[]>();
   private readonly drainingTasks = new Set<string>();
 
-  constructor(private readonly options: { serverUrl: string; enrollmentToken?: string; tasks: TaskStore; workspaces: WorkspaceRegistry; workspaceFileSuggestions: WorkspaceFileSuggestions; agents: AgentManager; approvals: ApprovalCoordinator; artifacts: ArtifactService; logger: DesktopLogger }) {}
+  constructor(private readonly options: { serverUrl: string; globalPrefix: string; enrollmentToken?: string; tasks: TaskStore; workspaces: WorkspaceRegistry; workspaceFileSuggestions: WorkspaceFileSuggestions; agents: AgentManager; approvals: ApprovalCoordinator; artifacts: ArtifactService; logger: DesktopLogger }) {}
 
   get(): RemoteControlSession | null { return this.runtime?.publicState ?? null; }
   onState(listener: (event: RemoteControlStateEvent) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -47,11 +48,13 @@ export class RemoteControlService {
     if (this.runtime !== undefined && !['expired', 'revoked', 'error'].includes(this.runtime.publicState.status)) return this.runtime.publicState;
     const serverUrl = normalizeServerUrl(this.options.serverUrl);
     if (serverUrl === undefined) throw new Error('Configure LOTAGATE_REMOTE_SERVER_URL before starting Remote Control.');
+    const globalPrefix = normalizeRemoteServerGlobalPrefix(this.options.globalPrefix);
+    if (globalPrefix === undefined) throw new Error('Configure LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX before starting Remote Control.');
     this.clearRuntime();
     this.emitState({ status: 'creating' });
     const enrollmentToken = this.options.enrollmentToken?.trim();
     if (!enrollmentToken) throw new Error('Configure LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN before starting Remote Control.');
-    const response = await fetchWithTimeout(`${serverUrl}/v1/sessions`, { method: 'POST', headers: { Accept: 'application/json', 'X-LotaGate-Desktop-Token': enrollmentToken } }, REMOTE_REQUEST_TIMEOUT_MS);
+    const response = await fetchWithTimeout(`${serverUrl}${remoteServerRoute(globalPrefix, '/sessions')}`, { method: 'POST', headers: { Accept: 'application/json', 'X-LotaGate-Desktop-Token': enrollmentToken } }, REMOTE_REQUEST_TIMEOUT_MS);
     if (!response.ok) throw new Error(`Remote server could not create a session (HTTP ${response.status}).`);
     const value = parseServerSession(await response.json());
     const publicState = remoteControlSessionSchema.parse({ sessionId: value.sessionId, connectUrl: value.connectUrl, expiresAt: value.expiresAt, status: 'connecting' });
@@ -70,7 +73,8 @@ export class RemoteControlService {
     this.clearRuntimeTimers(runtime);
     runtime.socket?.close(1000, 'Remote session revoked.');
     const serverUrl = normalizeServerUrl(this.options.serverUrl);
-    if (serverUrl !== undefined) await fetchWithTimeout(`${serverUrl}/v1/sessions/${encodeURIComponent(runtime.publicState.sessionId)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${runtime.hostToken}` } }, REMOTE_REQUEST_TIMEOUT_MS).catch(() => undefined);
+    const globalPrefix = normalizeRemoteServerGlobalPrefix(this.options.globalPrefix);
+    if (serverUrl !== undefined && globalPrefix !== undefined) await fetchWithTimeout(`${serverUrl}${remoteServerRoute(globalPrefix, `/sessions/${encodeURIComponent(runtime.publicState.sessionId)}`)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${runtime.hostToken}` } }, REMOTE_REQUEST_TIMEOUT_MS).catch(() => undefined);
     runtime.publicState = remoteControlSessionSchema.parse({ ...runtime.publicState, status: 'revoked' });
     this.emit();
   }
@@ -101,8 +105,9 @@ export class RemoteControlService {
 
   private connect(runtime: RemoteRuntimeSession, sessionId: string): void {
     const serverUrl = normalizeServerUrl(this.options.serverUrl);
-    if (serverUrl === undefined || runtime.stopping || this.runtime !== runtime) return;
-    const url = new URL(`${serverUrl}/v1/ws`);
+    const globalPrefix = normalizeRemoteServerGlobalPrefix(this.options.globalPrefix);
+    if (serverUrl === undefined || globalPrefix === undefined || runtime.stopping || this.runtime !== runtime) return;
+    const url = new URL(`${serverUrl}${remoteServerRoute(globalPrefix, '/ws')}`);
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     url.searchParams.set('session', sessionId);
     url.searchParams.set('role', 'host');

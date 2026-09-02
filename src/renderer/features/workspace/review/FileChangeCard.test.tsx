@@ -68,8 +68,10 @@ describe('FileChangeCard', () => {
     expect(screen.getByText('src/fourth.ts')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show fewer files' })).toHaveAttribute('aria-expanded', 'true');
 
+    fireEvent.click(screen.getByRole('button', { name: 'src/first.ts' }));
+    expect(onOpenFileChanges).toHaveBeenCalledWith(multiFileSummary, 'src/first.ts');
     fireEvent.click(card.querySelector('.file-change-item-header')!);
-    expect(onOpenFileChanges).toHaveBeenCalledWith(multiFileSummary);
+    expect(onOpenFileChanges).toHaveBeenLastCalledWith(multiFileSummary);
   });
 
   it('runs Undo only when a ready checkpoint is supplied', async () => {

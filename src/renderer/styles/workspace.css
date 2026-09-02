@@ -219,7 +219,10 @@
 .plan-ring-segment-blocked { stroke: var(--color-warning); }
 .change-summary-popover { position: absolute; bottom: calc(100% + 8px); z-index: 4; display: grid; min-width: 220px; max-width: min(360px, 70vw); gap: 8px; border: 1px solid var(--color-border); border-radius: 9px; padding: 11px 12px; background: var(--color-surface-popover); box-shadow: 0 16px 38px var(--shadow-popover); color: var(--color-text-secondary); font-size: 12px; pointer-events: none; }
 .change-summary-plan-popover { left: 0; }
-.change-summary-files-popover { right: 0; min-width: 260px; }
+.change-summary-files-popover { right: 0; min-width: 260px; max-height: min(280px, calc(100vh - 48px)); overflow: hidden; pointer-events: auto; }
+.change-summary-files-scrollbar { width: 100%; min-width: 0; min-height: 0; max-height: inherit; overflow: hidden; }
+.change-summary-files-scrollbar .scrollbar-viewport { width: 100%; height: auto; max-height: inherit; overflow-x: hidden; overflow-y: auto; }
+.change-summary-files-list { display: grid; gap: 2px; }
 .change-summary-popover > strong { overflow: hidden; color: var(--color-text); font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .change-summary-plan-step { display: flex; min-width: 0; align-items: center; gap: 7px; color: var(--color-text-tertiary); }
 .change-summary-plan-step > svg { flex: 0 0 auto; }
@@ -227,7 +230,8 @@
 .change-summary-plan-step.plan-step-completed { color: var(--color-success); }
 .change-summary-plan-step.plan-step-failed { color: var(--color-danger); }
 .change-summary-plan-step.plan-step-blocked { color: var(--color-warning); }
-.change-summary-file { display: flex; min-width: 0; align-items: center; gap: 12px; }
+.change-summary-file { display: flex; width: 100%; min-width: 0; align-items: center; gap: 12px; border: 0; border-radius: 5px; padding: 4px 5px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.change-summary-file:hover, .change-summary-file:focus-visible { background: var(--color-surface-hover); outline: none; }
 .change-summary-file > span:first-child { min-width: 0; overflow: hidden; flex: 1; color: var(--color-text); text-overflow: ellipsis; white-space: nowrap; }
 .change-summary-file .file-change-counts { flex: 0 0 auto; }
 .change-additions { color: var(--color-success); }

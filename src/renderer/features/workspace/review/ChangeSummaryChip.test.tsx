@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FileChangeSummary, WorkPlanSnapshot } from '../../../../contracts/ipc/v1/workspace.js';
 import { ChangeSummaryChip } from './ChangeSummaryChip.js';
 
@@ -21,6 +21,8 @@ const summary: FileChangeSummary = {
 };
 
 describe('ChangeSummaryChip', () => {
+  afterEach(() => cleanup());
+
   it('shows plan progress and both hover popovers without nesting buttons', () => {
     const onPlanClick = vi.fn();
     const onFilesClick = vi.fn();
@@ -34,9 +36,22 @@ describe('ChangeSummaryChip', () => {
     expect(onPlanClick).toHaveBeenCalledOnce();
 
     fireEvent.mouseEnter(container.querySelector('.change-summary-files')!);
-    expect(screen.getByText('src/example.ts')).toBeInTheDocument();
+    expect(screen.getByText('example.ts')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open example.ts in changed files' }));
+    expect(onFilesClick).toHaveBeenCalledWith('src/example.ts');
     fireEvent.click(screen.getByRole('button', { name: 'Open 1 changed file' }));
-    expect(onFilesClick).toHaveBeenCalledOnce();
+    expect(onFilesClick).toHaveBeenCalledTimes(2);
+    expect(onFilesClick).toHaveBeenLastCalledWith();
     expect(container.querySelectorAll('button button')).toHaveLength(0);
+  });
+
+  it('shows the file popover when no plan segment is present', () => {
+    const onFilesClick = vi.fn();
+    const { container } = render(<ChangeSummaryChip summary={summary} onFilesClick={onFilesClick} />);
+
+    fireEvent.mouseEnter(container.querySelector('.change-summary-files')!);
+
+    expect(screen.getByText('example.ts')).toBeVisible();
+    expect(screen.queryByText('src/example.ts')).not.toBeInTheDocument();
   });
 });

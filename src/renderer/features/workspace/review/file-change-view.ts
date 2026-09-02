@@ -1,6 +1,7 @@
-import type { FileChangeDiff, WorkspaceFileSuggestion } from '../../../../contracts/ipc/v1/workspace.js';
+import type { FileChangeDiff, FileChangeSummary, WorkspaceFileSuggestion } from '../../../../contracts/ipc/v1/workspace.js';
 
 export type DiffViewMode = 'unified' | 'split';
+export type OpenFileChangesHandler = (summary: FileChangeSummary, initialExpandedPath?: string) => void;
 export interface OpenFileState { status: 'loading' | 'ready' | 'error'; content?: string | undefined; error?: string | undefined }
 
 export const REVIEW_TAB = 'review';
