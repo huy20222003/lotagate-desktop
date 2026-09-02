@@ -8,6 +8,14 @@ describe('Remote Control contract', () => {
     expect(() => remoteCommandSchema.parse({ action: 'unknown' })).toThrow();
   });
 
+  it('accepts a model and uploaded attachment references on a prompt', () => {
+    expect(remoteCommandSchema.parse({ action: 'prompt', taskId: 'task-1', prompt: 'Inspect this image.', model: 'model-a', attachmentIds: ['artifact-1'] })).toMatchObject({ model: 'model-a', attachmentIds: ['artifact-1'] });
+  });
+
+  it('accepts bounded attachment upload commands', () => {
+    expect(remoteCommandSchema.parse({ action: 'attachment.start', taskId: 'task-1', name: 'screen.png', mimeType: 'image/png', sizeBytes: 48 * 1024, chunkCount: 1 })).toMatchObject({ action: 'attachment.start' });
+  });
+
   it('requires a monotonic transport envelope shape', () => {
     expect(remoteEnvelopeSchema.parse({ version: 1, type: 'encrypted', messageId: 'message-1', sequence: 0, sentAt: '2026-09-02T00:00:00.000Z', nonce: 'nonce', ciphertext: 'ciphertext' })).toMatchObject({ version: 1, sequence: 0 });
     expect(() => remoteEnvelopeSchema.parse({ version: 2, type: 'encrypted', messageId: 'message-1', sequence: 0, sentAt: '2026-09-02T00:00:00.000Z', nonce: 'nonce', ciphertext: 'ciphertext' })).toThrow();

@@ -33,7 +33,7 @@ describe('RemoteControlService', () => {
   it('creates a relay session without exposing the host credential to the renderer', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ sessionId: '11111111-1111-4111-8111-111111111111', hostToken: 'host-secret', pairingToken: 'pairing-token', expiresAt: '2026-09-02T01:00:00.000Z', connectUrl: 'https://remote.example/connect#session=11111111-1111-4111-8111-111111111111&token=pairing-token' }), { status: 201, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
-    const service = new RemoteControlService({ serverUrl: 'https://remote.example', enrollmentToken: 'desktop-enrollment-test-token', tasks: {} as never, workspaces: {} as never, agents: {} as never, approvals: {} as never, git: {} as never, logger: { warn: vi.fn() } as never });
+    const service = new RemoteControlService({ serverUrl: 'https://remote.example', enrollmentToken: 'desktop-enrollment-test-token', tasks: {} as never, workspaces: {} as never, workspaceFileSuggestions: {} as never, agents: {} as never, approvals: {} as never, artifacts: {} as never, logger: { warn: vi.fn() } as never });
 
     const session = await service.create();
     expect(session).toMatchObject({ sessionId: '11111111-1111-4111-8111-111111111111', status: 'connecting' });

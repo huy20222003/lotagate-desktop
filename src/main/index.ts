@@ -167,7 +167,8 @@ app.whenReady().then(async () => {
   agentManager = agents;
   const git = new GitService();
   const automationExecution = new AutomationExecutionService({ workspaces, git, tasks, agents, settings, browserHost, artifacts, logger, sessions: automationSessions });
-  const remoteControl = new RemoteControlService({ serverUrl: runtimeConfig.remoteServerUrl, enrollmentToken: runtimeConfig.remoteServerEnrollmentToken, tasks, workspaces, agents, approvals, git, logger });
+  const workspaceFileSuggestions = new WorkspaceFileSuggestions();
+  const remoteControl = new RemoteControlService({ serverUrl: runtimeConfig.remoteServerUrl, enrollmentToken: runtimeConfig.remoteServerEnrollmentToken, tasks, workspaces, workspaceFileSuggestions, agents, approvals, artifacts, logger });
   remoteControlService = remoteControl;
   remoteControl.onState(event => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('remote-control.state', event);
@@ -187,7 +188,7 @@ app.whenReady().then(async () => {
       if (notification !== undefined) operations.notify(notification.title, notification.body);
     }
   });
-  registerIpc({ auth: new DesktopAuthService(transport, async () => { await remoteControl.stop(); await agents.shutdownAll(); }), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions: new WorkspaceFileSuggestions(), tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
+  registerIpc({ auth: new DesktopAuthService(transport, async () => { await remoteControl.stop(); await agents.shutdownAll(); }), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions, tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }

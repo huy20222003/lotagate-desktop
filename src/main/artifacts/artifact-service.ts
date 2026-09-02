@@ -78,12 +78,21 @@ export class ArtifactService {
 
   async createImage(taskId: string, name: string, bytes: Uint8Array): Promise<Artifact> {
     if (bytes.byteLength === 0 || bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('The image attachment exceeds the supported size limit.');
+    return this.createBytes(taskId, name, bytes, 'image');
+  }
+
+  async createBinary(taskId: string, name: string, bytes: Uint8Array): Promise<Artifact> {
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('The file attachment exceeds the supported size limit.');
+    return this.createBytes(taskId, name, bytes, 'binary');
+  }
+
+  private async createBytes(taskId: string, name: string, bytes: Uint8Array, kind: Extract<Artifact['kind'], 'image' | 'binary'>): Promise<Artifact> {
     const safeName = basename(name).replace(/[^A-Za-z0-9._-]/gu, '_').slice(0, 120) || 'pasted-image.png';
     const directory = join(desktopDataPath('artifacts'), taskId);
     await mkdir(directory, { recursive: true });
     const path = join(directory, `${randomUUID()}-${safeName}`);
     await writeFile(path, bytes);
-    const artifact = artifactSchema.parse({ id: randomUUID(), taskId, name: safeName, path, kind: 'image', size: bytes.byteLength, createdAt: new Date().toISOString() });
+    const artifact = artifactSchema.parse({ id: randomUUID(), taskId, name: safeName, path, kind, size: bytes.byteLength, createdAt: new Date().toISOString() });
     await this.store.update(current => [...current, artifact]);
     return artifact;
   }
