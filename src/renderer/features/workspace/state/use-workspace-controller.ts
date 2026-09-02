@@ -29,6 +29,8 @@ import { useDraftTask } from './use-draft-task.js';
 import { isMcpDisplayStatus, type McpRuntimeStatus } from '../../../services/mcp-status.js';
 import { selectedTaskLiveState } from './selected-task-live-state.js';
 import { createRendererOperationOwner, isRendererOperationCurrent, resolveRendererOperationOwner } from './operation-owner.js';
+import { useTaskUpdates } from './use-task-updates.js';
+import { firstTaskForWorkspace } from '../task-order.js';
 type ContextCompactionPhase = 'compacting' | 'compacted' | 'failed';
 export function useWorkspaceController() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -81,6 +83,7 @@ export function useWorkspaceController() {
   const suppressQueueRef = useRef(false);
   useEffect(() => { draftTaskRef.current = task; }, [task]);
   useEffect(() => { workspaceRef.current = workspace; tasksRef.current = tasks; }, [tasks, workspace]);
+  useTaskUpdates(draftTaskRef, setTasks, setTask);
   useEffect(() => { setMcpStatuses({}); }, [task?.id, workspace?.rootPath]);
   const { runningTaskIds, unreadTaskIds, markTurnStarted, markTurnFinished } = useTaskSidebarStatus(task?.id);
   const { models, selectedModel, setSelectedModel: setSelectedModelValue } = useWorkspaceModelCatalog(workspace, task);
@@ -108,7 +111,6 @@ export function useWorkspaceController() {
     setContextCompactionStatus(phase);
   }, []);
   const publishActivities = useDeferredStatePublisher(setActivities);
-
   const reloadTasks = useCallback(async (workspaceId: string) => {
     const requestId = ++taskReloadRequestRef.current;
     const next = await window.lotagate.tasks.list(workspaceId);
@@ -116,10 +118,9 @@ export function useWorkspaceController() {
     setTasks(current => [...current.filter(item => item.workspaceId !== workspaceId), ...next]);
     setTask(current => {
       if (current === undefined || current.workspaceId !== workspaceId) return current;
-      return next.find(item => item.id === current.id && !item.archived) ?? next.find(item => !item.archived);
+      return next.find(item => item.id === current.id && !item.archived) ?? firstTaskForWorkspace(next, workspaceId);
     });
   }, []);
-
   const scheduleTaskReload = useCallback((workspaceId: string) => {
     if (taskReloadTimerRef.current !== undefined) return;
     taskReloadTimerRef.current = setTimeout(() => {
@@ -139,7 +140,7 @@ export function useWorkspaceController() {
         setWorkspaces(nextWorkspaces);
         setTasks(nextTasks);
         setWorkspace(preferredWorkspace);
-        setTask(preferredWorkspace === undefined ? undefined : nextTasks.find(item => item.workspaceId === preferredWorkspace.id && !item.archived));
+        setTask(preferredWorkspace === undefined ? undefined : firstTaskForWorkspace(nextTasks, preferredWorkspace.id));
       } catch (reason) {
         if (mounted) setError(toMessage(reason));
       } finally {
@@ -328,7 +329,7 @@ export function useWorkspaceController() {
   const selectWorkspace = useCallback((next: Workspace) => {
     void discardQueuedAttachments(task?.id, messageQueueServiceRef.current.snapshot(), activities, task?.draftAttachmentIds ?? []);
     setWorkspace(next);
-    const nextTask = tasks.find(item => item.workspaceId === next.id && !item.archived);
+    const nextTask = firstTaskForWorkspace(tasks, next.id);
     draftTaskRef.current = nextTask;
     setTask(current => current?.workspaceId === next.id ? current : nextTask);
     const nextLiveState = selectedTaskLiveState(nextTask);
@@ -348,7 +349,7 @@ export function useWorkspaceController() {
     if (target === undefined) return;
     setBusy(true); setError(undefined); setThinking(false); setFinalResponseReceived(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); setActiveTurnId(undefined); activeTurnRef.current = undefined; showContextCompactionStatus(undefined); setWorkspace(target); setApproval(undefined); setTrust(undefined);
     try {
-      const created = await window.lotagate.tasks.create({ workspaceId: target.id, title: 'New chat' });
+      const created = await window.lotagate.tasks.create({ workspaceId: target.id, title: 'New chat', titleSource: 'automatic' });
       setTasks(current => [created, ...current]);
       const handshake = await window.lotagate.agent.initialize(target.rootPath);
       if (!handshake) throw new Error('CLI handshake failed.');
@@ -375,7 +376,7 @@ export function useWorkspaceController() {
     setWorkspace(current => current?.id === updated.id ? updated : current);
   }, []);
   const renameTask = useCallback(async (taskId: string, title: string) => {
-    const updated = await window.lotagate.tasks.update(taskId, { title });
+    const updated = await window.lotagate.tasks.rename(taskId, title);
     setTasks(current => current.map(item => item.id === updated.id ? updated : item));
     setTask(current => current?.id === updated.id ? updated : current);
   }, []);
@@ -405,7 +406,7 @@ export function useWorkspaceController() {
       if (!isNewTask) await window.lotagate.tasks.addActivity(activeTask.id, 'user', prompt, attachmentIds.length === 0 ? {} : { attachmentIds });
       await loadActivities(activeTask.id, isNewTask);
       const patch: { draft: string; draftAttachmentIds: string[]; title?: string } = { draft: '', draftAttachmentIds: [] };
-      if (activeTask.title === 'New chat') {
+      if (activeTask.titleSource === 'automatic' && activeTask.title === 'New chat') {
         patch.title = sessionSlugFromPrompt(prompt);
       }
       activeTask = await window.lotagate.tasks.update(activeTask.id, patch);
@@ -483,7 +484,7 @@ export function useWorkspaceController() {
       resolveRendererOperationOwner(commandOwner, activeTask.id);
       draftTaskRef.current = activeTask;
       if (!isNewTask) await window.lotagate.tasks.addActivity(activeTask.id, 'user', preview, { command: invocation.actionId });
-      activeTask = await window.lotagate.tasks.update(activeTask.id, { draft: '', draftAttachmentIds: [], ...(activeTask.title === 'New chat' ? { title: sessionSlugFromPrompt(preview) } : {}) });
+      activeTask = await window.lotagate.tasks.update(activeTask.id, { draft: '', draftAttachmentIds: [], ...(activeTask.titleSource === 'automatic' && activeTask.title === 'New chat' ? { title: sessionSlugFromPrompt(preview) } : {}) });
       draftTaskRef.current = activeTask;
       if (isCurrentCommand()) { setTask(activeTask); setAttachments([]); }
       await loadActivities(activeTask.id, isNewTask);

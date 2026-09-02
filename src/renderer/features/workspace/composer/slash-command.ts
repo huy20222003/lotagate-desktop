@@ -1,33 +1,13 @@
 import type { DesktopCommandDescriptor, DesktopCommandInvocation } from '../../../services/desktop-command-client.js';
 import { z } from 'zod';
 import { filterModelsByCategory, modelCategoryForCommand, type MediaModelCategory, type WorkspaceModelOption } from '../../../services/model-catalog.js';
+import { REMOTE_SLASH_COMMAND_DEFINITIONS, type RemoteSlashCommandDefinition, type RemoteSlashCommandField } from '../../../../contracts/remote-control/v1/slash-command-catalog.js';
 
-export type SlashCommandId = 'goal.run' | 'image.generate' | 'image.edit' | 'video.generate' | 'audio.speech' | 'audio.transcribe' | 'audio.translate';
-export type SlashFieldType = 'text' | 'textarea' | 'select' | 'directory' | 'file' | 'multiple-file' | 'checkbox';
-
-export interface SlashCommandField {
-  name: string;
-  label: string;
-  type: SlashFieldType;
-  placeholder?: string;
-  options?: string[];
-  accept?: readonly string[];
-  required?: boolean;
-  maxBytes?: number;
-  maxTotalBytes?: number;
-}
-
-export interface SlashCommandDefinition {
-  id: SlashCommandId;
-  label: string;
-  description: string;
-  modelCategory?: MediaModelCategory;
-  primaryLabel: string;
-  primaryPlaceholder: string;
-  primaryRequired?: boolean;
-  fields: SlashCommandField[];
-  advancedFields: SlashCommandField[];
-}
+export type SlashCommandId = RemoteSlashCommandDefinition['id'];
+export type SlashFieldType = RemoteSlashCommandField['type'];
+export type SlashCommandField = RemoteSlashCommandField;
+export type SlashCommandDefinition = Omit<RemoteSlashCommandDefinition, 'modelCategory' | 'fields' | 'advancedFields'> & { modelCategory?: MediaModelCategory; fields: SlashCommandField[]; advancedFields: SlashCommandField[] };
+export { REMOTE_SLASH_COMMAND_DEFINITIONS as SLASH_COMMAND_DEFINITIONS };
 
 export interface SlashCommandForm {
   primary: string;
@@ -44,94 +24,9 @@ export interface SlashCommandValidationOptions {
   showRequired?: boolean;
 }
 
-const OUTPUT_FIELDS: SlashCommandField[] = [
-  { name: 'model', label: 'Model', type: 'select' },
-  { name: 'out', label: 'Output filename', type: 'text', placeholder: 'Optional filename without extension' },
-  { name: 'out-dir', label: 'Output directory', type: 'directory', placeholder: 'Optional local directory' },
-  { name: 'force', label: 'Overwrite existing output', type: 'checkbox' },
-];
-
-const AUDIO_FILE_EXTENSIONS = ['mp3', 'wav', 'm4a', 'ogg', 'flac', 'webm', 'mp4', 'mpeg', 'mpga', 'oga'];
-const IMAGE_FILE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
-
-const IMAGE_FIELDS: SlashCommandField[] = [
-  { name: 'n', label: 'Number of images', type: 'text', placeholder: '1' },
-  { name: 'size', label: 'Size', type: 'select', options: ['auto', '1024x1024', '1536x1024', '1024x1536'] },
-  { name: 'quality', label: 'Quality', type: 'select', options: ['auto', 'low', 'medium', 'high'] },
-  { name: 'background', label: 'Background', type: 'select', options: ['auto', 'transparent', 'opaque'] },
-  { name: 'output-format', label: 'Output format', type: 'select', options: ['png', 'jpeg', 'webp'] },
-];
-
-const IMAGE_ADVANCED_FIELDS: SlashCommandField[] = [
-  { name: 'output-compression', label: 'Compression', type: 'text', placeholder: 'Optional 0-100' },
-  { name: 'moderation', label: 'Moderation', type: 'text', placeholder: 'Optional policy' },
-  { name: 'user', label: 'User identifier', type: 'text', placeholder: 'Optional identifier' },
-  ...OUTPUT_FIELDS,
-];
-
-export const SLASH_COMMAND_DEFINITIONS: SlashCommandDefinition[] = [
-  {
-    id: 'goal.run', label: 'Goal', description: 'Run a focused autonomous goal.', primaryLabel: 'Objective', primaryPlaceholder: 'What should the agent accomplish?',
-    fields: [
-      { name: 'token-budget', label: 'Token budget', type: 'text', placeholder: 'Optional number' },
-      { name: 'max-turns', label: 'Maximum turns', type: 'text', placeholder: 'Optional number' },
-      { name: 'max-duration-ms', label: 'Maximum duration (ms)', type: 'text', placeholder: 'Optional number' },
-    ], advancedFields: [],
-  },
-  {
-    id: 'image.generate', label: 'Image', description: 'Generate an image from a prompt.', modelCategory: 'image', primaryLabel: 'Prompt', primaryPlaceholder: 'Describe the image to generate',
-    fields: IMAGE_FIELDS, advancedFields: IMAGE_ADVANCED_FIELDS,
-  },
-  {
-    id: 'image.edit', label: 'Image edit', description: 'Edit one or more workspace images.', modelCategory: 'image', primaryLabel: 'Prompt', primaryPlaceholder: 'Describe how to edit the image',
-    fields: [
-      { name: 'image', label: 'Source image(s)', type: 'multiple-file', accept: IMAGE_FILE_EXTENSIONS, required: true, maxBytes: 47 * 1_000_000, maxTotalBytes: 128 * 1_000_000 },
-      { name: 'mask', label: 'Mask image', type: 'file', accept: IMAGE_FILE_EXTENSIONS, maxBytes: 4 * 1_000_000 },
-      { name: 'input-fidelity', label: 'Input fidelity', type: 'select', options: ['low', 'high'] },
-    ],
-    advancedFields: [
-      ...IMAGE_FIELDS,
-      ...IMAGE_ADVANCED_FIELDS,
-    ],
-  },
-  {
-    id: 'video.generate', label: 'Video', description: 'Generate a video from a prompt.', modelCategory: 'video', primaryLabel: 'Prompt', primaryPlaceholder: 'Describe the video to generate',
-    fields: [{ name: 'parameters', label: 'Parameters (JSON)', type: 'textarea', placeholder: '{ }' }, { name: 'no-wait', label: 'Return before completion', type: 'checkbox' }],
-    advancedFields: OUTPUT_FIELDS,
-  },
-  {
-    id: 'audio.speech', label: 'Audio', description: 'Convert text into speech.', modelCategory: 'speech', primaryLabel: 'Text', primaryPlaceholder: 'Text to synthesize',
-    fields: [
-      { name: 'voice', label: 'Voice', type: 'text', placeholder: 'Voice name', required: true },
-      { name: 'instructions', label: 'Instructions', type: 'textarea', placeholder: 'Optional speaking instructions' },
-      { name: 'response-format', label: 'Response format', type: 'select', options: ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'] },
-      { name: 'speed', label: 'Speed', type: 'text', placeholder: '1.0' },
-    ], advancedFields: OUTPUT_FIELDS,
-  },
-  {
-    id: 'audio.transcribe', label: 'Audio transcribe', description: 'Transcribe an audio file.', modelCategory: 'transcription', primaryLabel: 'Prompt (optional)', primaryPlaceholder: 'Optional transcription prompt', primaryRequired: false,
-    fields: [
-      { name: 'file', label: 'Audio file', type: 'file', accept: AUDIO_FILE_EXTENSIONS, required: true, maxBytes: 50 * 1_000_000 },
-      { name: 'language', label: 'Language code', type: 'text', placeholder: 'Optional language code' },
-      { name: 'response-format', label: 'Response format', type: 'select', options: ['json', 'text', 'srt', 'verbose_json', 'vtt', 'diarized_json'] },
-      { name: 'temperature', label: 'Temperature', type: 'text', placeholder: '0.0 - 1.0' },
-      { name: 'timestamp-granularities', label: 'Timestamp granularities', type: 'text', placeholder: 'word,segment' },
-      { name: 'include', label: 'Include fields', type: 'text', placeholder: 'Optional comma-separated fields' },
-    ], advancedFields: [...OUTPUT_FIELDS],
-  },
-  {
-    id: 'audio.translate', label: 'Audio translate', description: 'Translate an audio file.', modelCategory: 'translation', primaryLabel: 'Prompt (optional)', primaryPlaceholder: 'Optional translation prompt', primaryRequired: false,
-    fields: [
-      { name: 'file', label: 'Audio file', type: 'file', accept: AUDIO_FILE_EXTENSIONS, required: true, maxBytes: 50 * 1_000_000 },
-      { name: 'response-format', label: 'Response format', type: 'select', options: ['json', 'text', 'srt', 'verbose_json', 'vtt'] },
-      { name: 'temperature', label: 'Temperature', type: 'text', placeholder: '0.0 - 1.0' },
-    ], advancedFields: [...OUTPUT_FIELDS],
-  },
-];
-
 export function availableSlashCommands(descriptors: readonly DesktopCommandDescriptor[]): SlashCommandDefinition[] {
   const available = new Set(descriptors.map(descriptor => descriptor.id));
-  return SLASH_COMMAND_DEFINITIONS.filter(command => available.has(command.id));
+  return REMOTE_SLASH_COMMAND_DEFINITIONS.filter(command => available.has(command.id)) as SlashCommandDefinition[];
 }
 
 export function filterSlashCommands(commands: readonly SlashCommandDefinition[], query: string): SlashCommandDefinition[] {
@@ -183,11 +78,6 @@ export function validateSlashCommandForm(command: SlashCommandDefinition, form: 
   for (const field of [...command.fields, ...command.advancedFields]) {
     if (field.required && !hasValue(field.name) && showRequired) errors.fields[field.name] = `${field.label} is required.`;
   }
-  if (command.id === 'goal.run') {
-    validatePositiveInteger(value('token-budget'), 'Token budget', 10_000_000, errors.fields);
-    validatePositiveInteger(value('max-turns'), 'Maximum turns', 10_000, errors.fields);
-    validatePositiveInteger(value('max-duration-ms'), 'Maximum duration', 8 * 60 * 60 * 1_000, errors.fields);
-  }
   if (command.id === 'image.generate' || command.id === 'image.edit') {
     validateInteger(value('n'), 'Number of images', 1, 16, errors.fields);
     validateImageSize(value('size'), errors.fields);
@@ -197,6 +87,11 @@ export function validateSlashCommandForm(command: SlashCommandDefinition, form: 
     validateMaxLength(value('moderation'), 'Moderation', 64, errors.fields);
     validateMaxLength(value('user'), 'User identifier', 255, errors.fields);
     if (command.id === 'image.edit' && value('image').split(',').map(item => item.trim()).filter(Boolean).length > 16) errors.fields['image'] = 'Image edits support at most 16 input images.';
+  }
+  if (command.id === 'goal.run') {
+    validatePositiveInteger(value('token-budget'), 'Token budget', 10_000_000, errors.fields);
+    validatePositiveInteger(value('max-turns'), 'Maximum turns', 10_000, errors.fields);
+    validatePositiveInteger(value('max-duration-ms'), 'Maximum duration', 8 * 60 * 60 * 1_000, errors.fields);
   }
   if (command.id === 'audio.speech') {
     validateMaxLength(value('voice'), 'Voice', 64, errors.fields);
@@ -224,16 +119,17 @@ export function validateSlashCommandForm(command: SlashCommandDefinition, form: 
   return errors;
 }
 
-function validatePositiveInteger(raw: string, label: string, maximum: number, errors: Record<string, string>): void {
-  if (!raw) return;
-  const schema = z.string().regex(/^\d+$/u).refine(value => Number.isSafeInteger(Number(value)) && Number(value) > 0 && Number(value) <= maximum);
-  if (!schema.safeParse(raw).success) errors[camelCaseField(label)] = `${label} must be a positive integer no greater than ${maximum.toLocaleString()}.`;
-}
-
 function validateInteger(raw: string, label: string, minimum: number, maximum: number, errors: Record<string, string>): void {
   if (!raw) return;
   const schema = z.string().regex(/^\d+$/u).refine(value => Number.isSafeInteger(Number(value)) && Number(value) >= minimum && Number(value) <= maximum);
   if (!schema.safeParse(raw).success) errors[FIELD_NAMES[label] ?? label] = `${label} must be an integer between ${minimum} and ${maximum}.`;
+}
+
+function validatePositiveInteger(raw: string, label: string, maximum: number, errors: Record<string, string>): void {
+  if (!raw) return;
+  const schema = z.string().regex(/^\d+$/u).refine(value => Number.isSafeInteger(Number(value)) && Number(value) > 0 && Number(value) <= maximum);
+  const field = label === 'Token budget' ? 'token-budget' : label === 'Maximum turns' ? 'max-turns' : 'max-duration-ms';
+  if (!schema.safeParse(raw).success) errors[field] = `${label} must be a positive integer no greater than ${maximum.toLocaleString()}.`;
 }
 
 function validateNumber(raw: string, label: string, minimum: number, maximum: number, errors: Record<string, string>): void {
@@ -257,8 +153,7 @@ function validateImageSize(raw: string, errors: Record<string, string>): void {
   if (!schema.safeParse(raw).success) errors['size'] = 'Size must use dimensions up to 4096px, a maximum 3:1 ratio, and multiples of 16.';
 }
 
-const FIELD_NAMES: Record<string, string> = { 'Number of images': 'n', Compression: 'output-compression', Speed: 'speed', Temperature: 'temperature', 'Language code': 'language', 'Voice': 'voice', 'Speech instructions': 'instructions', 'Moderation': 'moderation', 'User identifier': 'user' };
-function camelCaseField(label: string): string { return label === 'Token budget' ? 'token-budget' : label === 'Maximum turns' ? 'max-turns' : 'max-duration-ms'; }
+const FIELD_NAMES: Record<string, string> = { 'Number of images': 'n', Compression: 'output-compression', Speed: 'speed', Temperature: 'temperature', 'Language code': 'language', 'Voice': 'voice', 'Speech instructions': 'instructions', Moderation: 'moderation', 'User identifier': 'user' };
 function isValidOutputName(value: string): boolean { return z.string().min(1).refine(candidate => candidate !== '.' && candidate !== '..' && !candidate.includes('/') && !candidate.includes('\\') && ![...candidate].some(character => (character.codePointAt(0) ?? 0) < 32 || (character.codePointAt(0) ?? 0) === 127)).safeParse(value).success; }
 
 export function slashCommandPreview(command: SlashCommandDefinition, form: SlashCommandForm): string {

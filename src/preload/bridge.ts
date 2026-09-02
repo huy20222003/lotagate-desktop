@@ -82,7 +82,9 @@ const bridge: DesktopBridge = {
   },
   tasks: {
     list: workspaceId => ipcRenderer.invoke('task.list', workspaceId),
+    onUpdated: listener => { const handler = (_event: Electron.IpcRendererEvent, task: Parameters<typeof listener>[0]) => listener(task); ipcRenderer.on('task.updated', handler); return () => ipcRenderer.removeListener('task.updated', handler); },
     create: input => ipcRenderer.invoke('task.create', input),
+    rename: (taskId, title) => ipcRenderer.invoke('task.rename', taskId, title),
     update: (taskId, patch) => ipcRenderer.invoke('task.update', taskId, patch),
     setStatus: (taskId, status) => ipcRenderer.invoke('task.status', taskId, status),
     retry: taskId => ipcRenderer.invoke('task.retry', taskId),

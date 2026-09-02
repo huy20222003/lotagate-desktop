@@ -15,10 +15,11 @@ export class TaskStore {
     return workspaceId === undefined ? tasks : tasks.filter(task => task.workspaceId === workspaceId);
   }
 
-  async create(input: { workspaceId: string; title: string; cwd: string; prompt?: string }): Promise<Task> {
+  async create(input: { workspaceId: string; title: string; cwd: string; titleSource?: Task['titleSource']; prompt?: string }): Promise<Task> {
     return this.withExclusive(async () => {
       const now = new Date().toISOString();
-      const task = taskSchema.parse({ id: randomUUID(), workspaceId: input.workspaceId, title: input.title, cwd: input.cwd, status: 'queued', pinned: false, archived: false, draft: '', draftAttachmentIds: [], lastEventCursor: 0, createdAt: now, updatedAt: now });
+      const titleSource = input.titleSource ?? 'manual';
+      const task = taskSchema.parse({ id: randomUUID(), workspaceId: input.workspaceId, title: input.title, titleSource, titleSummaryStatus: titleSource === 'automatic' ? 'not_started' : 'completed', cwd: input.cwd, status: 'queued', pinned: false, archived: false, draft: '', draftAttachmentIds: [], lastEventCursor: 0, createdAt: now, updatedAt: now });
       await this.taskStore.update(current => [...current, task]);
       if (input.prompt) await this.appendActivityInternal(task.id, 'user', input.prompt, {});
       return task;
@@ -27,6 +28,46 @@ export class TaskStore {
 
   async update(taskId: string, patch: TaskUpdate): Promise<Task> {
     return this.withExclusive(() => this.mutate(taskId, current => ({ ...current, ...patch, updatedAt: new Date().toISOString() })));
+  }
+
+  async rename(taskId: string, title: string): Promise<Task> {
+    return this.withExclusive(() => this.mutate(taskId, current => ({ ...current, title, titleSource: 'manual', titleSummaryStatus: 'completed', updatedAt: new Date().toISOString() })));
+  }
+
+  async claimAutomaticTitleSummary(taskId: string): Promise<Task | undefined> {
+    return this.withExclusive(async () => {
+      let claimed: Task | undefined;
+      await this.taskStore.update(current => current.map(task => {
+        if (task.id !== taskId || task.titleSource !== 'automatic' || task.titleSummaryStatus !== 'not_started') return task;
+        claimed = taskSchema.parse({ ...task, titleSummaryStatus: 'generating', updatedAt: new Date().toISOString() });
+        return claimed;
+      }));
+      return claimed;
+    });
+  }
+
+  async completeAutomaticTitleSummary(taskId: string, title: string): Promise<Task | undefined> {
+    return this.withExclusive(async () => {
+      let completed: Task | undefined;
+      await this.taskStore.update(current => current.map(task => {
+        if (task.id !== taskId || task.titleSource !== 'automatic' || task.titleSummaryStatus !== 'generating') return task;
+        completed = taskSchema.parse({ ...task, title, titleSummaryStatus: 'completed', updatedAt: new Date().toISOString() });
+        return completed;
+      }));
+      return completed;
+    });
+  }
+
+  async failAutomaticTitleSummary(taskId: string): Promise<Task | undefined> {
+    return this.withExclusive(async () => {
+      let failed: Task | undefined;
+      await this.taskStore.update(current => current.map(task => {
+        if (task.id !== taskId || task.titleSource !== 'automatic' || task.titleSummaryStatus !== 'generating') return task;
+        failed = taskSchema.parse({ ...task, titleSummaryStatus: 'failed', updatedAt: new Date().toISOString() });
+        return failed;
+      }));
+      return failed;
+    });
   }
 
   async setStatus(taskId: string, status: TaskStatus): Promise<Task> { return this.withExclusive(() => this.mutate(taskId, current => ({ ...current, status, updatedAt: new Date().toISOString() }))); }

@@ -35,7 +35,7 @@ export class AutomationExecutionService {
     if (!workspace.trusted) throw new Error('Trust the automation workspace before running it.');
     const executionWorkspace = await prepareAutomationWorkspace(git, workspace, automation, run.id);
     let preserveWorkspace = true;
-    const task = await tasks.create({ workspaceId: workspace.id, cwd: executionWorkspace.cwd, title: automation.name, prompt: automation.prompt });
+    const task = await tasks.create({ workspaceId: workspace.id, cwd: executionWorkspace.cwd, title: automation.name, titleSource: 'manual', prompt: automation.prompt });
     const cli = await agents.initialize(executionWorkspace.cwd);
     const execution = buildAutomationExecutionPolicy(automation, run.attempt, (await settings.get()).sandbox.hostFallback);
     if (!supportsAutomationExecution(cli.capabilities)) throw new Error('The installed CLI does not support the required Desktop execution protocol. Update the Desktop CLI runtime before running this automation.');

@@ -6,16 +6,17 @@ import { artifactKind } from '../artifacts/artifact-kind.js';
 import type { IpcRegistrationContext } from './ipc-registration-context.js';
 
 export function registerTaskIpcHandlers(context: IpcRegistrationContext): void {
-  const { handle, tasks, workspaces, artifacts, idSchema, objectSchema, taskUpdateSchema, activityPageOptionsSchema, cwdSchema } = context;
+  const { handle, tasks, workspaces, artifacts, idSchema, objectSchema, taskUpdateSchema, taskTitleSourceInputSchema, activityPageOptionsSchema, cwdSchema } = context;
 handle('task.list', async (event, workspaceId?: unknown) => { assertTrustedRenderer(event); return tasks.list(workspaceId === undefined ? undefined : idSchema.parse(workspaceId)); });
 handle('task.create', async (event, input: unknown) => {
     assertTrustedRenderer(event);
     const value = objectSchema.parse(input);
     const workspaceId = idSchema.parse(value['workspaceId']);
     const workspace = await workspaces.require(workspaceId);
-    return tasks.create({ workspaceId, cwd: workspace.rootPath, title: z.string().min(1).parse(value['title']), ...(value['prompt'] === undefined ? {} : { prompt: z.string().parse(value['prompt']) }) });
+    return tasks.create({ workspaceId, cwd: workspace.rootPath, title: z.string().min(1).parse(value['title']), ...(value['titleSource'] === undefined ? {} : { titleSource: taskTitleSourceInputSchema.parse(value['titleSource']) }), ...(value['prompt'] === undefined ? {} : { prompt: z.string().parse(value['prompt']) }) });
   });
 handle('task.update', async (event, taskId: unknown, patch: unknown) => { assertTrustedRenderer(event); return tasks.update(idSchema.parse(taskId), taskUpdateSchema.parse(patch) as TaskUpdate); });
+handle('task.rename', async (event, taskId: unknown, title: unknown) => { assertTrustedRenderer(event); return tasks.rename(idSchema.parse(taskId), z.string().min(1).max(200).parse(title)); });
 handle('task.status', async (event, taskId: unknown, status: unknown) => { assertTrustedRenderer(event); return tasks.setStatus(idSchema.parse(taskId), z.enum(['queued', 'active', 'completed', 'failed', 'cancelled', 'paused', 'interrupted']).parse(status)); });
 handle('task.retry', async (event, taskId: unknown) => { assertTrustedRenderer(event); return tasks.retry(idSchema.parse(taskId)); });
 handle('task.cancel', async (event, taskId: unknown) => { assertTrustedRenderer(event); return tasks.cancel(idSchema.parse(taskId)); });

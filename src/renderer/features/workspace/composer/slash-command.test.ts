@@ -3,8 +3,8 @@ import { availableSlashCommands, createSlashCommandForm, createSlashInvocation, 
 
 describe('slash commands', () => {
   it('only exposes commands advertised by the CLI catalog', () => {
-    const commands = availableSlashCommands([{ id: 'goal.run', path: ['goal', 'run'], summary: 'Run goal' }]);
-    expect(commands.map(command => command.id)).toEqual(['goal.run']);
+    const commands = availableSlashCommands([{ id: 'image.generate', path: ['image', 'generate'], summary: 'Generate image' }]);
+    expect(commands.map(command => command.id)).toEqual(['image.generate']);
   });
 
   it('includes all media command variants exposed by the CLI', () => {

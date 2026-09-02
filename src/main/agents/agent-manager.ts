@@ -17,9 +17,12 @@ export interface AgentManagerHandler {
 export interface CliAttachmentInput { id: string; name: string; mimeType: string; sizeBytes: number; path: string; }
 
 interface ProcessBinding { key: string; projectRoot: string; sessionId?: string; process: CliAgentProcess; }
+interface CommandEventBuffer { events: DesktopEvent[]; bytes: number; resolve: (events: DesktopEvent[]) => void; operation: Promise<DesktopEvent[]>; timer: ReturnType<typeof setTimeout> }
 
 export interface AgentManagerOptions { idleTimeoutMs?: number; now?: () => number; }
 const DEFAULT_AGENT_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
+const COMMAND_EVENT_BUFFER_TTL_MS = 30_000;
+const MAX_COMMAND_EVENT_BUFFER_BYTES = 256 * 1024;
 
 /** Owns one CLI process per Desktop session; project-level calls use a separate control process. */
 export class AgentManager {
@@ -32,6 +35,7 @@ export class AgentManager {
   private readonly recoveryAttempts = new Map<string, number>();
   private readonly recoveryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly commandEventBuffers = new Map<string, CommandEventBuffer>();
   private readonly idleTimeoutMs: number;
   private readonly now: () => number;
 
@@ -56,6 +60,8 @@ export class AgentManager {
   }
 
   async sessionList(cwd: string): Promise<unknown> { return this.request(cwd, 'session.list', {}); }
+
+  async generateTitle(cwd: string, input: { prompt: string; model?: string }): Promise<unknown> { return this.request(cwd, 'title.generate', input); }
 
   async sessionResume(cwd: string, sessionId: string): Promise<unknown> {
     const projectRoot = await requireDirectory(cwd);
@@ -92,6 +98,36 @@ export class AgentManager {
   async modelList(cwd: string): Promise<unknown> { return this.cachedProtocolResult(cwd, 'models', CACHE_TTL_MS.models, () => this.request(cwd, 'model.list', {})); }
   async commandList(cwd: string): Promise<unknown> { return this.cachedProtocolResult(cwd, 'commands', CACHE_TTL_MS.models, () => this.request(cwd, 'command.list', {})); }
   async commandExecute(cwd: string, input: Record<string, unknown>): Promise<unknown> { return this.request(cwd, 'command.execute', input); }
+  async commandExecuteResult(cwd: string, input: Record<string, unknown>): Promise<{ content: string; structured?: Record<string, unknown> }> {
+    const accepted = await this.commandExecute(cwd, input);
+    const commandId = isRecord(accepted) && typeof accepted['commandId'] === 'string' ? accepted['commandId'] : undefined;
+    if (commandId === undefined) throw new Error('The CLI did not return a command id.');
+    const buffer = this.commandEventBuffers.get(commandId) ?? this.createCommandEventBuffer(commandId);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const events = await Promise.race([buffer.operation, new Promise<DesktopEvent[]>((_, reject) => { timeout = setTimeout(() => reject(new Error('The CLI command did not complete.')), COMMAND_EVENT_BUFFER_TTL_MS); })]);
+      return this.readCommandExecutionResult(commandId, buffer, events);
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
+  }
+  private readCommandExecutionResult(commandId: string, buffer: CommandEventBuffer, events: DesktopEvent[]): { content: string; structured?: Record<string, unknown> } {
+    let content = '';
+    let structured: Record<string, unknown> | undefined;
+    let exitCode: number | undefined;
+    for (const event of events) {
+      if (event.event === 'command.output') {
+        if (typeof event.data['content'] === 'string') content += event.data['content'];
+        if (isRecord(event.data['structured'])) structured = event.data['structured'];
+      }
+      if (event.event === 'command.completed' && typeof event.data['exitCode'] === 'number') exitCode = event.data['exitCode'];
+      if (event.event === 'command.failed') throw new Error((readCommandError(event.data['error']) ?? content.trim()) || 'Command failed.');
+      if (event.event === 'command.cancelled') throw new Error('Command was cancelled.');
+    }
+    if (exitCode !== undefined && exitCode !== 0) throw new Error(content.trim() || `Command exited with code ${exitCode}.`);
+    this.disposeCommandEventBuffer(commandId, buffer);
+    return { content, ...(structured === undefined ? {} : { structured }) };
+  }
   async commandCancel(cwd: string, commandId: string): Promise<unknown> { return this.request(cwd, 'command.cancel', { commandId }); }
 
   isApprovalProcessAvailable(cwd: string, approvalId: string): boolean {
@@ -100,7 +136,7 @@ export class AgentManager {
   }
 
   async shutdown(cwd: string, reason = 'ipc.agent.shutdown'): Promise<void> { const projectRoot = await requireDirectory(cwd); await Promise.allSettled([...this.processes.values()].filter(binding => binding.projectRoot === projectRoot).map(binding => this.shutdownBinding(binding, reason))); }
-  async shutdownAll(reason = 'shutdown-all'): Promise<void> { await Promise.allSettled([...this.processes.values()].map(binding => this.shutdownBinding(binding, reason))); this.processes.clear(); this.sessionBindings.clear(); this.sessionResumes.clear(); this.turnBindings.clear(); this.approvalBindings.clear(); this.trustBindings.clear(); for (const timer of this.recoveryTimers.values()) clearTimeout(timer); this.recoveryTimers.clear(); this.recoveryAttempts.clear(); for (const timer of this.idleTimers.values()) clearTimeout(timer); this.idleTimers.clear(); }
+  async shutdownAll(reason = 'shutdown-all'): Promise<void> { await Promise.allSettled([...this.processes.values()].map(binding => this.shutdownBinding(binding, reason))); this.processes.clear(); this.sessionBindings.clear(); this.sessionResumes.clear(); this.turnBindings.clear(); this.approvalBindings.clear(); this.trustBindings.clear(); for (const timer of this.recoveryTimers.values()) clearTimeout(timer); this.recoveryTimers.clear(); this.recoveryAttempts.clear(); for (const timer of this.idleTimers.values()) clearTimeout(timer); this.idleTimers.clear(); for (const buffer of this.commandEventBuffers.values()) clearTimeout(buffer.timer); this.commandEventBuffers.clear(); }
 
   private createProcess(projectRoot: string, key: string): ProcessBinding {
     const current = this.processes.get(key); if (current !== undefined) return current;
@@ -111,6 +147,7 @@ export class AgentManager {
         if (event.event === 'trust.requested' && typeof event.data['trustRequestId'] === 'string') { this.trustBindings.set(event.data['trustRequestId'], binding); this.touch(binding); }
         if (event.event === 'turn.started' && typeof event.data['turnId'] === 'string') this.turnBindings.set(event.data['turnId'], binding);
         if (event.event === 'turn.completed' || event.event === 'turn.failed' || event.event === 'turn.cancelled') { const turnId = typeof event.data['turnId'] === 'string' ? event.data['turnId'] : undefined; if (turnId !== undefined) this.turnBindings.delete(turnId); this.touch(binding); }
+        this.recordCommandEvent(event);
         this.handler.onEvent(projectRoot, event);
       },
       onHostRequest: request => this.handler.onHostRequest === undefined ? Promise.resolve({ version: 2, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message: 'The Desktop host is unavailable.', retryable: false } }) : this.handler.onHostRequest(projectRoot, request),
@@ -148,9 +185,36 @@ export class AgentManager {
     await this.shutdownBinding(binding, 'idle-timeout').catch(error => this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', message: error instanceof Error ? error.message : 'Idle CLI process shutdown failed.' }));
   }
   private clearIdle(key: string): void { const timer = this.idleTimers.get(key); if (timer !== undefined) clearTimeout(timer); this.idleTimers.delete(key); }
+  private recordCommandEvent(event: DesktopEvent): void {
+    if (!event.event.startsWith('command.')) return;
+    const commandId = typeof event.data['commandId'] === 'string' ? event.data['commandId'] : undefined;
+    if (commandId === undefined) return;
+    const buffer = this.commandEventBuffers.get(commandId) ?? this.createCommandEventBuffer(commandId);
+    const eventBytes = Buffer.byteLength(JSON.stringify(event));
+    if (buffer.bytes + eventBytes <= MAX_COMMAND_EVENT_BUFFER_BYTES || event.event === 'command.completed' || event.event === 'command.failed' || event.event === 'command.cancelled') {
+      buffer.events.push(event);
+      buffer.bytes += eventBytes;
+    }
+    if (event.event === 'command.completed' || event.event === 'command.failed' || event.event === 'command.cancelled') buffer.resolve(buffer.events);
+  }
+  private createCommandEventBuffer(commandId: string): CommandEventBuffer {
+    let resolve!: (events: DesktopEvent[]) => void;
+    const operation = new Promise<DesktopEvent[]>(nextResolve => { resolve = nextResolve; });
+    const timer = setTimeout(() => this.disposeCommandEventBuffer(commandId, this.commandEventBuffers.get(commandId)), COMMAND_EVENT_BUFFER_TTL_MS);
+    timer.unref?.();
+    const buffer: CommandEventBuffer = { events: [], bytes: 0, resolve, operation, timer };
+    this.commandEventBuffers.set(commandId, buffer);
+    return buffer;
+  }
+  private disposeCommandEventBuffer(commandId: string, buffer: CommandEventBuffer | undefined): void {
+    if (buffer === undefined || this.commandEventBuffers.get(commandId) !== buffer) return;
+    clearTimeout(buffer.timer);
+    this.commandEventBuffers.delete(commandId);
+  }
   private async cachedProtocolResult(cwd: string, kind: string, ttlMs: number, load: () => Promise<unknown>): Promise<unknown> { const canonical = await requireDirectory(cwd); const key = `agent:${kind}:${canonical}`; const cached = await this.cache?.get<unknown>(key); if (cached !== undefined) return cached; const value = await load(); await this.cache?.set(key, value, ttlMs); return value; }
 }
 
 function extractSessionId(value: unknown): string | undefined { if (!isRecord(value) || !isRecord(value['session'])) return undefined; return typeof value['session']['id'] === 'string' ? value['session']['id'] : undefined; }
 function extractTurnId(value: unknown): string | undefined { return isRecord(value) && typeof value['turnId'] === 'string' ? value['turnId'] : undefined; }
+function readCommandError(value: unknown): string | undefined { return isRecord(value) && typeof value['message'] === 'string' ? value['message'] : undefined; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }

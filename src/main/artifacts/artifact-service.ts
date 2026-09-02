@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, open, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { artifactSchema, type Artifact } from '../../contracts/ipc/v1/workspace.js';
@@ -27,6 +27,19 @@ export class ArtifactService {
     if (artifact.size > MAX_ATTACHMENT_BYTES) throw new Error('The media artifact exceeds the supported preview size.');
     const fileBytes = await readFile(artifact.path);
     return { artifact, mimeType: artifactMimeType(artifact), bytes: Uint8Array.from(fileBytes) };
+  }
+
+  async readMediaChunk(taskId: string, artifactId: string, offset: number, length: number): Promise<{ artifact: Artifact; mimeType: string; bytes: Uint8Array }> {
+    const artifact = await this.requireActive(taskId, artifactId);
+    if (!['image', 'audio', 'video'].includes(artifact.kind)) throw new Error('The artifact is not a media file.');
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset >= artifact.size) throw new Error('The media chunk offset is invalid.');
+    const boundedLength = Math.min(length, 48 * 1024, artifact.size - offset);
+    const handle = await open(artifact.path, 'r');
+    try {
+      const bytes = Buffer.alloc(boundedLength);
+      const result = await handle.read(bytes, 0, boundedLength, offset);
+      return { artifact, mimeType: artifactMimeType(artifact), bytes: bytes.subarray(0, result.bytesRead) };
+    } finally { await handle.close(); }
   }
 
   async path(taskId: string, artifactId: string): Promise<string> { return (await this.requireActive(taskId, artifactId)).path; }
@@ -81,12 +94,17 @@ export class ArtifactService {
     return this.createBytes(taskId, name, bytes, 'image');
   }
 
+  async createMedia(taskId: string, name: string, bytes: Uint8Array, kind: Extract<Artifact['kind'], 'audio' | 'video'>): Promise<Artifact> {
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('The media attachment exceeds the supported size limit.');
+    return this.createBytes(taskId, name, bytes, kind);
+  }
+
   async createBinary(taskId: string, name: string, bytes: Uint8Array): Promise<Artifact> {
     if (bytes.byteLength === 0 || bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('The file attachment exceeds the supported size limit.');
     return this.createBytes(taskId, name, bytes, 'binary');
   }
 
-  private async createBytes(taskId: string, name: string, bytes: Uint8Array, kind: Extract<Artifact['kind'], 'image' | 'binary'>): Promise<Artifact> {
+  private async createBytes(taskId: string, name: string, bytes: Uint8Array, kind: Extract<Artifact['kind'], 'image' | 'audio' | 'video' | 'binary'>): Promise<Artifact> {
     const safeName = basename(name).replace(/[^A-Za-z0-9._-]/gu, '_').slice(0, 120) || 'pasted-image.png';
     const directory = join(desktopDataPath('artifacts'), taskId);
     await mkdir(directory, { recursive: true });

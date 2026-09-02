@@ -25,7 +25,7 @@ describe('Remote Control contract', () => {
     const task = { id: 'task-1', workspaceId: 'workspace-1', title: 'Fix the build', cwd: 'C:\\workspace', status: 'active', sessionId: 'session-1', lastEventCursor: 0, pinned: false, archived: false, draft: '', draftAttachmentIds: [], createdAt: '2026-09-02T00:00:00.000Z', updatedAt: '2026-09-02T00:00:00.000Z' } as Parameters<typeof remoteTaskSummary>[0];
     const workspace = { id: 'workspace-1', name: 'Desktop', rootPath: 'C:\\workspace' } as Parameters<typeof remoteWorkspaceSummary>[0];
 
-    expect(remoteTaskSummary(task)).toEqual({ id: 'task-1', title: 'Fix the build', status: 'active', sessionId: 'session-1', updatedAt: '2026-09-02T00:00:00.000Z' });
+    expect(remoteTaskSummary(task)).toEqual({ id: 'task-1', title: 'Fix the build', status: 'active', sessionId: 'session-1', updatedAt: '2026-09-02T00:00:00.000Z', pinned: false });
     expect(remoteWorkspaceSummary(workspace, [task])).toMatchObject({ id: 'workspace-1', name: 'Desktop', tasks: [{ id: 'task-1' }] });
   });
 });

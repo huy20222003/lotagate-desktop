@@ -40,4 +40,41 @@ describe('WorkspaceSidebar', () => {
     view.rerender(<WorkspaceSidebar {...props} runningTaskIds={new Set()} unreadTaskIds={new Set([task.id])} />);
     expect(screen.getByRole('status', { name: 'New agent message' })).toBeInTheDocument();
   });
+
+  it('reveals sessions in pages of five and resets with Show less', () => {
+    Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
+    const workspace = { id: 'workspace', name: 'Workspace', rootPath: '/workspace' } as Workspace;
+    const tasks = Array.from({ length: 11 }, (_, index) => ({
+      id: `task-${index}`,
+      workspaceId: workspace.id,
+      title: `Session ${index}`,
+      cwd: workspace.rootPath,
+      status: 'completed',
+      pinned: false,
+      archived: false,
+      draft: '',
+      draftAttachmentIds: [],
+      lastEventCursor: 0,
+      createdAt: `2026-08-${String(10 + index).padStart(2, '0')}T00:00:00.000Z`,
+      updatedAt: `2026-08-${String(10 + index).padStart(2, '0')}T00:00:00.000Z`,
+    } as Task));
+    const props: WorkspaceSidebarProps = {
+      accountName: 'Nguyễn Huy', avatarProps: { name: 'Nguyễn Huy' }, workspaces: [workspace], activeWorkspace: workspace, tasks, activeTask: undefined, runningTaskIds: new Set(), unreadTaskIds: new Set(), loading: false,
+      accountOpen: false, onAccount: vi.fn(), onCloseAccount: vi.fn(), onSettings: vi.fn(), onPlugins: vi.fn(), onAutomations: vi.fn(), onRemoteControl: vi.fn(), onLogout: vi.fn(), onNewChat: vi.fn(), onWorkspace: vi.fn(), onTask: vi.fn(), onAddWorkspace: vi.fn(), onRenameWorkspace: vi.fn(), onRemoveWorkspace: vi.fn(), onArchiveTask: vi.fn(), onPinTask: vi.fn(), onRenameTask: vi.fn(), collapsed: false, onToggleCollapsed: vi.fn(), sidebarResizing: false, onStartResize: vi.fn(), onResizeKeyDown: vi.fn(),
+    };
+
+    const view = render(<WorkspaceSidebar {...props} />);
+    const sessionRows = () => view.container.querySelectorAll('.session-row-shell');
+    expect(sessionRows()).toHaveLength(5);
+    const showMore = () => view.getByRole('button', { name: 'Show more' });
+    fireEvent.click(showMore());
+    expect(sessionRows()).toHaveLength(10);
+    expect(showMore()).toBeInTheDocument();
+    fireEvent.click(showMore());
+    expect(sessionRows()).toHaveLength(11);
+    const showLess = view.getByRole('button', { name: 'Show less' });
+    fireEvent.click(showLess);
+    expect(sessionRows()).toHaveLength(5);
+    expect(view.getByRole('button', { name: 'Show more' })).toBeInTheDocument();
+  });
 });

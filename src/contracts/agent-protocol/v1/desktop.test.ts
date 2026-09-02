@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDesktopEvent, parseDesktopResponse } from './index.js';
+import { desktopRequestSchema, parseDesktopEvent, parseDesktopResponse } from './index.js';
 
 describe('Desktop JSONL contract', () => {
   it('parses a successful correlated response', () => {
@@ -8,6 +8,10 @@ describe('Desktop JSONL contract', () => {
 
   it('parses an event without treating it as a response', () => {
     expect(parseDesktopEvent({ version: 2, type: 'event', scope: 'session', event: 'assistant.delta', data: { content: 'hello' } })).toMatchObject({ event: 'assistant.delta' });
+  });
+
+  it('accepts the Desktop-only title generation request', () => {
+    expect(desktopRequestSchema.parse({ version: 2, id: 'request-1', method: 'title.generate', params: { prompt: 'Summarize this request.' } })).toMatchObject({ method: 'title.generate' });
   });
 
   it('derives the event scope when the installed CLI omits it', () => {

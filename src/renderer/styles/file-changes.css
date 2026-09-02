@@ -13,6 +13,8 @@
 .file-change-card-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 .file-change-card-action { min-height: 29px; gap: 6px; padding: 0 9px; font-size: 11px; }
 .file-change-card-list { padding: 0; background: var(--color-canvas); }
+.file-change-card-more { display: flex; width: 100%; min-height: 32px; align-items: center; justify-content: space-between; gap: 8px; border: 0; border-top: 1px solid var(--color-border-subtle); padding: 0 14px; background: var(--color-surface-hover); color: var(--color-text-secondary); font: inherit; font-size: 12px; text-align: left; }
+.file-change-card-more:hover { color: var(--color-text); }
 .file-change-card .file-change-item, .file-review-list .file-change-item { position: relative; margin: 0; overflow: hidden; border: 0; border-radius: 0; background: transparent; }
 .file-change-card .file-change-item + .file-change-item, .file-review-list .file-change-item + .file-change-item { border-top: 1px solid var(--color-border-subtle); }
 .file-changes-panel { position: relative; display: flex; min-width: 360px; max-width: 75vw; min-height: 0; flex: 0 0 auto; flex-direction: column; border-left: 1px solid var(--color-border); background: var(--color-surface-drawer); box-shadow: -20px 0 45px var(--shadow-drawer); animation: file-changes-slide-in .18s ease-out; }
@@ -44,6 +46,7 @@
 .file-change-path-wrap { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: 7px; }
 .file-change-path-wrap > .file-icon { width: 14px; height: 14px; flex: 0 0 14px; stroke-width: 1.8; }
 .file-change-item > header strong, .file-change-path { min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--color-text-secondary); font-family: var(--font-code, ui-monospace, SFMono-Regular, Consolas, monospace); font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.file-changes-panel .file-change-item > header strong, .file-changes-panel .file-change-path { direction: rtl; }
 .file-change-path { border: 0; padding: 0; background: transparent; }
 .file-change-path:hover { color: var(--color-text-link-hover); text-decoration: underline; }
 .file-change-counts { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; font-size: 11px; }

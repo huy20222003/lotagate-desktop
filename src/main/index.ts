@@ -11,6 +11,7 @@ import { setApplicationMenu } from './windows/application-menu.js';
 import { WorkspaceRegistry } from './workspaces/workspace-registry.js';
 import { TaskStore } from './tasks/task-store.js';
 import { TaskEventProjector } from './tasks/task-event-projector.js';
+import { TaskTitleGenerationService } from './tasks/task-title-generation-service.js';
 import { GitService } from './git/git-service.js';
 import { TerminalService } from './terminal/terminal-service.js';
 import { InteractiveTerminalService } from './terminal/interactive-terminal-service.js';
@@ -48,6 +49,7 @@ let browserService: BrowserService | undefined;
 let automationService: AutomationService | undefined;
 let approvalCoordinator: ApprovalCoordinator | undefined;
 let taskProjector: TaskEventProjector | undefined;
+let titleGenerationService: TaskTitleGenerationService | undefined;
 let automationDispatchHandler: (() => Promise<void>) | undefined;
 let remoteControlService: RemoteControlService | undefined;
 let pendingAutomationDispatch = false;
@@ -138,7 +140,7 @@ app.whenReady().then(async () => {
           void approvals.request({ ...commonInput, source: 'agent', surface: 'composer' }, approved => agents.approvalRespond(projectRoot, { approvalId, approved }), { isAvailable: () => agents.isApprovalProcessAvailable(projectRoot, approvalId) }).catch(error => logger.warn('approval.registration.failed', { cwd: projectRoot, approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
         }
       }
-      void taskProjector?.apply(projectRoot, event).catch(error => logger.error('task.event.persist.failed', { cwd: projectRoot, event: event.event, message: error instanceof Error ? error.message : 'Unable to persist agent event.' })).finally(() => { remoteControlService?.publishAgentEvent(projectRoot, event); remoteControlService?.observeAgentEvent(event); });
+      void taskProjector?.apply(projectRoot, event).then(() => titleGenerationService?.observeTurnCompleted(projectRoot, event)).then(updated => { if (updated === undefined) return; for (const window of BrowserWindow.getAllWindows()) window.webContents.send('task.updated', updated); }).catch(error => logger.error('task.event.persist.failed', { cwd: projectRoot, event: event.event, message: error instanceof Error ? error.message : 'Unable to persist agent event.' })).finally(() => { remoteControlService?.publishAgentEvent(projectRoot, event); remoteControlService?.observeAgentEvent(event); });
       const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
       const isAutomationEvent = sessionId !== undefined && automationSessions.has(sessionId);
       if (event.event !== 'approval.requested' && !isAutomationEvent) {
@@ -165,6 +167,7 @@ app.whenReady().then(async () => {
     return buildInteractiveDesktopExecutionPolicy(configured.sandbox.hostFallback);
   });
   agentManager = agents;
+  titleGenerationService = new TaskTitleGenerationService(tasks, agents, logger);
   const git = new GitService();
   const automationExecution = new AutomationExecutionService({ workspaces, git, tasks, agents, settings, browserHost, artifacts, logger, sessions: automationSessions });
   const workspaceFileSuggestions = new WorkspaceFileSuggestions();

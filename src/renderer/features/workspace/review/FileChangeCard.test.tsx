@@ -10,6 +10,17 @@ const summary = {
   files: [{ path: 'src/example.ts', additions: 3, deletions: 1, truncated: false, lines: [] }],
 };
 
+const multiFileSummary = {
+  additions: 7,
+  deletions: 4,
+  files: [
+    { path: 'src/first.ts', additions: 1, deletions: 0, truncated: false, lines: [] },
+    { path: 'src/second.ts', additions: 2, deletions: 1, truncated: false, lines: [] },
+    { path: 'src/third.ts', additions: 3, deletions: 2, truncated: false, lines: [] },
+    { path: 'src/fourth.ts', additions: 1, deletions: 1, truncated: false, lines: [] },
+  ],
+};
+
 describe('FileChangeCard', () => {
   afterEach(() => cleanup());
 
@@ -39,6 +50,26 @@ describe('FileChangeCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review' }));
 
     expect(onOpenFileChanges).toHaveBeenCalledOnce();
+  });
+
+  it('shows three changed files and expands the remaining file list on demand', () => {
+    const onOpenFileChanges = vi.fn();
+    render(<FileChangeCard summary={multiFileSummary} onOpenFileChanges={onOpenFileChanges} />);
+
+    const card = screen.getByRole('region', { name: 'Edited files' });
+    expect(card.querySelectorAll('.file-change-item')).toHaveLength(3);
+    expect(screen.queryByText('src/fourth.ts')).not.toBeInTheDocument();
+    const more = screen.getByRole('button', { name: 'Show 1 more files' });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(more);
+
+    expect(card.querySelectorAll('.file-change-item')).toHaveLength(4);
+    expect(screen.getByText('src/fourth.ts')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show fewer files' })).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(card.querySelector('.file-change-item-header')!);
+    expect(onOpenFileChanges).toHaveBeenCalledWith(multiFileSummary);
   });
 
   it('runs Undo only when a ready checkpoint is supplied', async () => {

@@ -21,6 +21,7 @@ export const taskUpdateSchema = z.object({
   lastEventCursor: z.number().int().nonnegative().optional(),
   interruptedReason: z.string().max(4_096).optional(),
 }).strict();
+export const taskTitleSourceInputSchema = z.enum(['automatic', 'manual']);
 
 export interface IpcRegistrationContext extends DesktopIpcServices {
   services: DesktopIpcServices;
@@ -32,6 +33,7 @@ export interface IpcRegistrationContext extends DesktopIpcServices {
   activityPageOptionsSchema: typeof activityPageOptionsSchema;
   objectSchema: typeof objectSchema;
   taskUpdateSchema: typeof taskUpdateSchema;
+  taskTitleSourceInputSchema: typeof taskTitleSourceInputSchema;
   handle<TArgs extends unknown[], TResult>(channel: string, listener: (event: Electron.IpcMainInvokeEvent, ...args: TArgs) => TResult): void;
   requireWorkspaceCwd(input: unknown): Promise<string>;
 }
@@ -39,5 +41,5 @@ export interface IpcRegistrationContext extends DesktopIpcServices {
 export function createIpcRegistrationContext(services: DesktopIpcServices): IpcRegistrationContext {
   const handle = <TArgs extends unknown[], TResult>(channel: string, listener: (event: Electron.IpcMainInvokeEvent, ...args: TArgs) => TResult): void => registerLoggedIpcHandler(services.logger, channel, listener);
   const requireWorkspaceCwd = (input: unknown): Promise<string> => services.workspaces.requireRegisteredRoot(cwdSchema.parse(input));
-  return { ...services, services, cwdSchema, idSchema, browserBoundsSchema, paginationPageSchema, paginationLimitSchema, activityPageOptionsSchema, objectSchema, taskUpdateSchema, handle, requireWorkspaceCwd };
+  return { ...services, services, cwdSchema, idSchema, browserBoundsSchema, paginationPageSchema, paginationLimitSchema, activityPageOptionsSchema, objectSchema, taskUpdateSchema, taskTitleSourceInputSchema, handle, requireWorkspaceCwd };
 }

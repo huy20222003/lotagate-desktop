@@ -16,6 +16,8 @@ export const workspaceSchema = z.object({
 });
 
 export const taskStatusSchema = z.enum(['queued', 'active', 'completed', 'failed', 'cancelled', 'paused', 'interrupted']);
+export const taskTitleSourceSchema = z.enum(['automatic', 'manual']);
+export const taskTitleSummaryStatusSchema = z.enum(['not_started', 'generating', 'completed', 'failed']);
 export const DESKTOP_TURN_TIMING_METADATA_KEY = 'desktopTurnTiming' as const;
 export const DESKTOP_COMMAND_TIMING_METADATA_KEY = 'desktopCommandTiming' as const;
 export interface DesktopCommandTiming { startedAt: number; endedAt: number }
@@ -25,6 +27,8 @@ export const taskSchema = z.object({
   id: z.string().min(1),
   workspaceId: z.string().min(1),
   title: z.string().min(1),
+  titleSource: taskTitleSourceSchema.default('manual'),
+  titleSummaryStatus: taskTitleSummaryStatusSchema.default('completed'),
   cwd: z.string().min(1),
   status: taskStatusSchema,
   sessionId: z.string().optional(),
@@ -80,7 +84,8 @@ export const agentEventEnvelopeSchema = z.object({
 
 export type Workspace = z.infer<typeof workspaceSchema>;
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
-export type Task = z.infer<typeof taskSchema>;
+type PersistedTask = z.infer<typeof taskSchema>;
+export type Task = Omit<PersistedTask, 'titleSource' | 'titleSummaryStatus'> & { titleSource?: z.infer<typeof taskTitleSourceSchema>; titleSummaryStatus?: z.infer<typeof taskTitleSummaryStatusSchema> };
 export type Activity = z.infer<typeof activitySchema>;
 export interface ActivityPage { activities: Activity[]; nextCursor: string | null; hasMore: boolean; }
 export type Artifact = z.infer<typeof artifactSchema>;
@@ -132,7 +137,9 @@ export interface WorkspaceFileSuggestion { path: string; kind: 'file' | 'folder'
 
 export interface DesktopTaskApi {
   list(workspaceId?: string): Promise<Task[]>;
-  create(input: { workspaceId: string; title: string; prompt?: string }): Promise<Task>;
+  onUpdated(listener: (task: Task) => void): () => void;
+  create(input: { workspaceId: string; title: string; titleSource?: 'automatic' | 'manual'; prompt?: string }): Promise<Task>;
+  rename(taskId: string, title: string): Promise<Task>;
   update(taskId: string, patch: { title?: string; pinned?: boolean; archived?: boolean; draft?: string; draftAttachmentIds?: string[]; sessionId?: string; turnId?: string; model?: string; lastEventCursor?: number; interruptedReason?: string }): Promise<Task>;
   setStatus(taskId: string, status: TaskStatus): Promise<Task>;
   retry(taskId: string): Promise<Task>;

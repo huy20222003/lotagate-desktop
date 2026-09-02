@@ -14,7 +14,7 @@ interface UseDraftTaskOptions {
 export function useDraftTask({ workspace, task, draftTaskRef, draftTaskPromiseRef, setTasks, setTask }: UseDraftTaskOptions) {
   const createTask = useCallback(async (prompt: string) => {
     if (workspace === undefined) throw new Error('Select a workspace first.');
-    const created = await window.lotagate.tasks.create({ workspaceId: workspace.id, title: sessionSlugFromPrompt(prompt), prompt });
+    const created = await window.lotagate.tasks.create({ workspaceId: workspace.id, title: sessionSlugFromPrompt(prompt), titleSource: 'automatic', prompt });
     setTasks(current => [created, ...current]);
     setTask(created);
     return created;
@@ -25,7 +25,7 @@ export function useDraftTask({ workspace, task, draftTaskRef, draftTaskPromiseRe
     if (draftTaskRef.current !== undefined) return draftTaskRef.current;
     if (workspace === undefined) return undefined;
     if (draftTaskPromiseRef.current !== undefined) return draftTaskPromiseRef.current;
-    const promise = window.lotagate.tasks.create({ workspaceId: workspace.id, title: 'New chat' }).then(created => {
+    const promise = window.lotagate.tasks.create({ workspaceId: workspace.id, title: 'New chat', titleSource: 'automatic' }).then(created => {
       draftTaskRef.current = created;
       setTasks(current => current.some(item => item.id === created.id) ? current : [created, ...current]);
       setTask(created);

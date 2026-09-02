@@ -2,6 +2,7 @@ const CLI_REQUEST_TIMEOUTS_MS: Readonly<Record<string, number>> = {
   initialize: 15_000,
   'session.create': 15_000,
   'session.resume': 15_000,
+  'title.generate': 30_000,
   'attachment.begin': 30_000,
   'attachment.chunk': 30_000,
   'attachment.complete': 30_000,

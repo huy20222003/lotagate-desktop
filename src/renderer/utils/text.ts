@@ -1,1 +1,1 @@
-export { formatTextClamp } from '../../shared/text.js';
+export { formatTextClamp, takeWords } from '../../shared/text.js';
