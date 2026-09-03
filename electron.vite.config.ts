@@ -13,13 +13,21 @@ export default defineConfig({
     ...shared,
     build: {
       outDir: electronBuildDirectory,
+      minify: true,
+      sourcemap: false,
       lib: { entry: mainEntry },
       rollupOptions: { external: ['node-pty'] },
     },
   },
   preload: {
     ...shared,
-    build: { outDir: electronBuildDirectory, emptyOutDir: false, lib: { entry: preloadEntry } },
+    build: {
+      outDir: electronBuildDirectory,
+      emptyOutDir: false,
+      lib: { entry: preloadEntry },
+      minify: true,
+      sourcemap: false,
+    },
   },
   renderer: {
     ...shared,

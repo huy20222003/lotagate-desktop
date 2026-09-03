@@ -8,5 +8,8 @@ export default defineConfig({
   build: {
     outDir: fileURLToPath(new URL('./.vite/renderer/main_window', import.meta.url)),
     emptyOutDir: true,
+    minify: 'esbuild',
+    sourcemap: false,
+    cssMinify: true,
   },
 });

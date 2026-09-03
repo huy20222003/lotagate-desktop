@@ -10,7 +10,8 @@ fork and does not modify `server/`, `sdk/`, `agent-sdk/`, or `cli/`.
 - The `@lotagate/cli` package installed through `npm install`; Desktop resolves
   its packaged executable and does not depend on a system `PATH` entry. During
   CLI development, use the local link workflow below.
-- The checked-in `.env` runtime configuration for the LotaGate production API.
+- The local `.env` runtime configuration for the LotaGate production API. The
+  packaging step converts it to an encrypted `runtime.dat` artifact.
   It contains public endpoints only; never place passwords, tokens, or private
   keys in this file.
 - The desktop uses normal password login at `/auth/login`; it does not

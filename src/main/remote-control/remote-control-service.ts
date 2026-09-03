@@ -158,7 +158,7 @@ export class RemoteControlService {
         }
         return;
       }
-      try { runtime.cipher = createRemoteCipher(runtime.keyPair, peerPublicKey, runtime.publicState.sessionId); runtime.publicState = remoteControlSessionSchema.parse({ ...runtime.publicState, status: 'connected', lastError: undefined }); this.emit(); this.send(runtime, socket, 'host.ready', { at: new Date().toISOString() }); } catch (error) { this.options.logger.warn('remote-control.crypto.failed', { message: error instanceof Error ? error.message : 'Unable to establish encrypted remote session.' }); socket.close(4003, 'Remote encryption negotiation failed.'); }
+      try { if (isPeerKeyUpdated(value)) runtime.lastReceivedSequence = -1; runtime.cipher = createRemoteCipher(runtime.keyPair, peerPublicKey, runtime.publicState.sessionId); runtime.publicState = remoteControlSessionSchema.parse({ ...runtime.publicState, status: 'connected', lastError: undefined }); this.emit(); this.send(runtime, socket, 'host.ready', { at: new Date().toISOString() }); } catch (error) { this.options.logger.warn('remote-control.crypto.failed', { message: error instanceof Error ? error.message : 'Unable to establish encrypted remote session.' }); socket.close(4003, 'Remote encryption negotiation failed.'); }
       return;
     }
     const parsed = remoteEnvelopeSchema.safeParse(value);
