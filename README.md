@@ -77,7 +77,7 @@ version deliberately.
 
 ## Execution boundaries
 
-Desktop protocol v2 sends filesystem and shell actions through the Desktop
+Desktop protocol v3 sends filesystem and shell actions through the Desktop
 execution broker. Interactive turns and automations request the sandbox by
 default; the broker mounts only the selected workspace into a disposable
 Docker/Podman container, disables networking by default, applies memory and
@@ -87,6 +87,13 @@ runtime or image is required. If the sandbox is unavailable, `ask` policies
 reuse the existing approval card before retrying the exact action on the host;
 `deny` policies fail closed. Standalone CLI execution remains local because it
 does not receive the Desktop host bridge.
+
+The same v3 contract also requires CLI capabilities for the Intent runtime,
+host-attested evidence, conversational progress, and local-memory commands.
+Desktop never stores a second copy of agent memory: Settings → Memory resolves
+and invokes the CLI command catalog (`memory list/show/forget/clear/export/import`).
+Memory remains on the user's local machine; importing is validated before the
+CLI applies it.
 
 ## UI architecture
 

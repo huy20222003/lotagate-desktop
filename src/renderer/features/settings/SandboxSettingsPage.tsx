@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SandboxSettings } from '../../../contracts/ipc/v1/settings.js';
 import { Dropdown, TextInput, useToast } from '../../components/ui.js';
+import { SettingsPageSkeleton } from './SettingsPageSkeleton.js';
 
 const defaults: SandboxSettings = { backend: 'auto', image: 'node:22-bookworm-slim', networkPolicy: 'none', mountMode: 'read-write', memoryMb: 2_048, cpuCores: 2, pidsLimit: 128, hostFallback: 'ask', cleanup: 'always', diagnosticsRetentionDays: 30 };
 const sandboxImageOptions = [
@@ -18,7 +19,7 @@ export function SandboxSettingsPage() {
   const saveSequenceRef = useRef(0);
   const { error } = useToast();
   useEffect(() => { void window.lotagate.settings.get().then(settings => { valueRef.current = settings.sandbox; setValue(settings.sandbox); }).catch(reason => error('Unable to load Sandbox settings', reason instanceof Error ? reason.message : 'Please try again.')).finally(() => setLoading(false)); }, [error]);
-  if (loading) return <div className="settings-loading">Loading Sandbox settings…</div>;
+  if (loading) return <SettingsPageSkeleton rows={5} />;
   const persist = async (next: SandboxSettings) => {
     const sequence = ++saveSequenceRef.current;
     try {

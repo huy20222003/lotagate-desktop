@@ -9,6 +9,7 @@ import type { VisualArtifact } from './source-view.js';
 import { AudioWaveform } from './SourceAudioList.js';
 import { LightBox } from './LightBox.js';
 import type { LightBoxMediaItem } from '../../../services/lightbox-types.js';
+import { Skeleton } from '../../../components/ui.js';
 import { useArtifactMediaUrls } from './use-artifact-media-url.js';
 
 export function AgentMediaResponse({ taskId, artifacts }: { taskId: string; artifacts: readonly Artifact[] }) {
@@ -33,7 +34,7 @@ function AgentMediaGallery({ taskId, artifacts }: { taskId: string; artifacts: r
 
 function AgentMediaSlide({ artifact, media, onOpen }: { artifact: VisualArtifact; media: { url?: string; error?: string } | undefined; onOpen: () => void }) {
   if (media?.error) return <p className="agent-media-error">Unable to load {artifact.name}.</p>;
-  if (media?.url === undefined) return <div className="agent-media-loading" aria-label={`Loading ${artifact.name}`} />;
+  if (media?.url === undefined) return <Skeleton className="agent-media-loading" aria-label={`Loading ${artifact.name}`} />;
   return <button type="button" className="agent-media-open" onClick={onOpen} aria-label={`Open ${artifact.kind} ${artifact.name}`}>{artifact.kind === 'video' ? <video className="agent-media-video" src={media.url} muted playsInline preload="metadata" /> : <img className="agent-media-image" src={media.url} alt={artifact.name} />}</button>;
 }
 

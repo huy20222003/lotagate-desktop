@@ -8,7 +8,7 @@ import type { SandboxExecutionProvider } from './sandbox-execution-provider.js';
 import { SandboxUnavailableError } from './sandbox-execution-provider.js';
 
 function request(tool: DesktopHostRequest['tool'], action: string, params: Record<string, unknown>, boundary: DesktopHostRequest['executionBoundary'] = 'host', hostFallback: DesktopHostRequest['hostFallback'] = 'deny'): DesktopHostRequest {
-  return { version: 2, type: 'host.request', requestId: `request-${action}`, tool, sessionId: 'session-1', runId: 'run-1', action, params, executionBoundary: boundary, hostFallback };
+  return { version: 3, type: 'host.request', requestId: `request-${action}`, tool, sessionId: 'session-1', runId: 'run-1', action, params, executionBoundary: boundary, hostFallback };
 }
 
 describe('DesktopHostExecutionBroker', () => {

@@ -31,6 +31,7 @@ const MAX_QUEUED_PROMPTS_PER_TASK = 20;
 const REMOTE_REQUEST_TIMEOUT_MS = 10_000;
 const REMOTE_UPLOAD_TTL_MS = 5 * 60_000;
 const REMOTE_UPLOAD_CLEANUP_INTERVAL_MS = 60_000;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export class RemoteControlService {
   private runtime: RemoteRuntimeSession | undefined;
@@ -60,7 +61,7 @@ export class RemoteControlService {
     const publicState = remoteControlSessionSchema.parse({ sessionId: value.sessionId, connectUrl: value.connectUrl, expiresAt: value.expiresAt, status: 'connecting' });
     const runtime: RemoteRuntimeSession = { publicState, hostToken: value.hostToken, socket: undefined, keyPair: createRemoteKeyPair(), cipher: undefined, sendChain: Promise.resolve(), nextSequence: 0, lastReceivedSequence: -1, reconnectAttempt: 0, stopping: false, reconnectTimer: undefined, reconnectStableTimer: undefined, expiryTimer: undefined, uploadCleanupTimer: undefined, uploadStartReservations: 0, uploads: new Map(), requestLedger: new Map() };
     this.runtime = runtime;
-    runtime.expiryTimer = setTimeout(() => this.expire(), Math.max(0, Date.parse(value.expiresAt) - Date.now()));
+    this.scheduleExpiry(runtime, value.expiresAt);
     this.emit();
     this.connect(runtime, value.sessionId);
     return publicState;
@@ -394,6 +395,20 @@ export class RemoteControlService {
   private isConnected(): boolean { return this.runtime?.socket?.readyState === WebSocket.OPEN && this.runtime.cipher !== undefined; }
   private emit(event?: RemoteControlStateEvent): void { const next = event ?? { type: 'state' as const, session: this.runtime?.publicState ?? null }; for (const listener of this.listeners) listener(next); }
   private emitState(patch: Partial<RemoteControlSession>): void { this.emit({ type: 'state', session: patch.status === 'creating' ? null : this.runtime === undefined ? null : remoteControlSessionSchema.parse({ ...this.runtime.publicState, ...patch }) }); }
+  private scheduleExpiry(runtime: RemoteRuntimeSession, expiresAt: string): void {
+    const expiryMs = Date.parse(expiresAt);
+    const schedule = (): void => {
+      if (this.runtime !== runtime || runtime.stopping) return;
+      const remainingMs = expiryMs - Date.now();
+      const delayMs = Number.isFinite(remainingMs) ? Math.max(0, Math.min(remainingMs, MAX_TIMER_DELAY_MS)) : 0;
+      runtime.expiryTimer = setTimeout(() => {
+        if (this.runtime !== runtime || runtime.stopping) return;
+        if (!Number.isFinite(remainingMs) || remainingMs <= MAX_TIMER_DELAY_MS) { this.expire(); return; }
+        schedule();
+      }, delayMs);
+    };
+    schedule();
+  }
   private expire(): void { const runtime = this.runtime; if (runtime === undefined) return; runtime.stopping = true; runtime.socket?.close(4002, 'Remote session expired.'); runtime.publicState = remoteControlSessionSchema.parse({ ...runtime.publicState, status: 'expired' }); this.emit(); }
   private clearRuntimeTimers(runtime: RemoteRuntimeSession): void { if (runtime.reconnectTimer !== undefined) clearTimeout(runtime.reconnectTimer); if (runtime.reconnectStableTimer !== undefined) clearTimeout(runtime.reconnectStableTimer); if (runtime.expiryTimer !== undefined) clearTimeout(runtime.expiryTimer); if (runtime.uploadCleanupTimer !== undefined) clearTimeout(runtime.uploadCleanupTimer); runtime.reconnectTimer = undefined; runtime.reconnectStableTimer = undefined; runtime.expiryTimer = undefined; runtime.uploadCleanupTimer = undefined; }
   private clearRuntime(): void { if (this.runtime !== undefined) { this.runtime.stopping = true; this.clearRuntimeTimers(this.runtime); this.runtime.socket?.close(); this.runtime.uploads.clear(); this.runtime.requestLedger.clear(); } this.runtime = undefined; this.queuedPrompts.clear(); this.drainingTasks.clear(); this.pendingTrustRequests.clear(); }

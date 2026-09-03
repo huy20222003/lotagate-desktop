@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
 /**
- * Protocol v2 is the first protocol that models the Desktop execution
- * boundary.  The CLI standalone protocol is intentionally unaffected.
+ * Protocol v3 adds host-attested intent progress and local-memory command
+ * support. The CLI standalone protocol is intentionally unaffected.
  */
-export const DESKTOP_PROTOCOL_VERSION = 2 as const;
+export const DESKTOP_PROTOCOL_VERSION = 3 as const;
 
 const id = z.string().min(1).max(256);
 const params = z.record(z.string(), z.unknown());
@@ -103,7 +103,7 @@ export type DesktopResponse = z.infer<typeof desktopResponseSchema>;
 export type DesktopEvent = z.infer<typeof desktopEventSchema>;
 export type DesktopHostRequest = z.infer<typeof desktopHostRequestSchema>;
 export type DesktopHostResponse = z.infer<typeof desktopHostResponseSchema>;
-export type DesktopAgentResult = { protocol: 'lotagate.desktop'; version: 2; capabilities: string[] };
+export type DesktopAgentResult = { protocol: 'lotagate.desktop'; version: 3; capabilities: string[] };
 export type DesktopExecutionPolicy = {
   permissionPolicy: 'ask' | 'allowlist' | 'review' | 'autonomous';
   allowedTools?: readonly string[];

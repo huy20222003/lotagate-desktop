@@ -9,13 +9,16 @@ describe('GitService', () => {
   const service = new GitService();
 
   afterEach(async () => {
-    await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })));
+    await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })));
   });
 
   it('reads and mutates a repository through the service boundary', async () => {
     const root = await mkdtemp(join(process.env['TEMP'] ?? '.', 'lotagate-git-service-'));
     roots.push(root);
     await runGit(['init', '-b', 'main'], root);
+    // Git for Windows may launch background maintenance after commits, which
+    // races with temporary-directory cleanup and makes this integration test flaky.
+    await runGit(['config', 'maintenance.auto', 'false'], root);
     await runGit(['config', 'user.name', 'LotaGate Test'], root);
     await runGit(['config', 'user.email', 'test@lotagate.invalid'], root);
     await runGit(['remote', 'add', 'origin', 'https://github.com/huy20222003/lotagate-desktop.git'], root);

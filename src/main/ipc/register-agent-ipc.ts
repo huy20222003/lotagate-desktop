@@ -36,6 +36,18 @@ handle('agent.turnCancel', async (event, cwd: unknown, turnId: unknown) => { ass
 handle('agent.trustRespond', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.trustRespond(await requireWorkspaceCwd(cwd), objectSchema.parse(input) as { trustRequestId: string; trusted: boolean }); });
 handle('agent.modelList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.modelList(await requireWorkspaceCwd(cwd)); });
 handle('agent.commandList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.commandList(await requireWorkspaceCwd(cwd)); });
-handle('agent.commandExecute', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.commandExecute(await requireWorkspaceCwd(cwd), objectSchema.parse(input)); });
+handle('agent.commandExecute', async (event, cwd: unknown, input: unknown) => {
+    assertTrustedRenderer(event);
+    const projectRoot = await requireWorkspaceCwd(cwd);
+    const command = objectSchema.parse(input);
+    const actionId = z.string().min(1).max(256).parse(command['actionId']);
+    const options = command['options'];
+    const scope = typeof options === 'object' && options !== null && !Array.isArray(options) && typeof (options as Record<string, unknown>)['scope'] === 'string' ? (options as Record<string, unknown>)['scope'] : undefined;
+    logger.info('agent.command.requested', { cwd: projectRoot, actionId, ...(scope === undefined ? {} : { scope }) });
+    const result = await agents.commandExecute(projectRoot, { ...command, actionId });
+    const commandId = typeof result === 'object' && result !== null && typeof (result as Record<string, unknown>)['commandId'] === 'string' ? (result as Record<string, unknown>)['commandId'] : undefined;
+    logger.info('agent.command.accepted', { cwd: projectRoot, actionId, ...(commandId === undefined ? {} : { commandId }) });
+    return result;
+  });
 handle('agent.commandCancel', async (event, cwd: unknown, commandId: unknown) => { assertTrustedRenderer(event); return agents.commandCancel(await requireWorkspaceCwd(cwd), idSchema.parse(commandId)); });
 }

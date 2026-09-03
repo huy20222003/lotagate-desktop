@@ -100,7 +100,7 @@ app.whenReady().then(async () => {
   browserService = browser;
   const browserHost = new BrowserHostToolBroker(browser, (cwd, activity) => {
     logger.debug('agent.browser', { cwd, event: activity.event, action: activity.data['action'] });
-    const event = { version: 2 as const, type: 'event' as const, scope: 'session' as const, event: activity.event, data: activity.data };
+    const event = { version: 3 as const, type: 'event' as const, scope: 'session' as const, event: activity.event, data: activity.data };
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
   });
   const hostExecution = new DesktopHostExecutionBroker({
@@ -118,7 +118,7 @@ app.whenReady().then(async () => {
   const agents = new AgentManager({
     onEvent: (projectRoot, event) => {
       const executionCwd = typeof event.data['executionCwd'] === 'string' ? event.data['executionCwd'] : undefined;
-      logger.debug('agent.event', { projectRoot, executionCwd, event: event.event });
+      logger.debug('agent.event', { projectRoot, executionCwd, event: event.event, ...agentEventLogFields(event.data) });
       checkpoints.observeEvent(projectRoot, event);
       if (event.event === 'approval.requested') {
         const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
@@ -230,3 +230,17 @@ app.on('before-quit', (event) => {
     await browserService?.closeAll();
   })().finally(async () => { await logger.close(); app.quit(); });
 });
+
+function agentEventLogFields(data: Readonly<Record<string, unknown>>): Record<string, string | number | boolean> {
+  const fields: Record<string, string | number | boolean> = {};
+  for (const key of ['sessionId', 'turnId', 'intentId', 'commandId', 'actionId'] as const) {
+    if (typeof data[key] === 'string') fields[key] = data[key];
+  }
+  for (const key of ['exitCode'] as const) {
+    if (typeof data[key] === 'number') fields[key] = data[key];
+  }
+  for (const key of ['success', 'isError'] as const) {
+    if (typeof data[key] === 'boolean') fields[key] = data[key];
+  }
+  return fields;
+}

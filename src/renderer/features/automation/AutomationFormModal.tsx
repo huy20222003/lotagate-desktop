@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Clock3 } from 'lucide-react';
 import { automationCreateInputSchema, type Automation, type AutomationCreateInput, type AutomationTool } from '../../../contracts/ipc/v1/automation.js';
 import type { GitBranch, Workspace } from '../../../contracts/ipc/v1/workspace.js';
-import { Button, Checkbox, Dropdown, Field, Modal, TextArea, TextInput } from '../../components/ui.js';
+import { Button, Checkbox, Dropdown, Field, Modal, Skeleton, TextArea, TextInput } from '../../components/ui.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
 import { ExtensionCommandClient } from '../../services/extension-command-client.js';
 import { extractWorkspaceModels, type WorkspaceModelOption } from '../../services/model-catalog.js';
@@ -123,8 +123,8 @@ export function AutomationFormModal({ workspaces, automation, onClose, onSubmit 
         <Field label="Instructions" required><TextArea value={value.prompt} onChange={event => update('prompt', event.target.value)} placeholder="Inspect the project, run the checks, and summarize the result." rows={6} /></Field>
         <Field label="Workspace" required><Dropdown value={value.workspaceId} options={workspaces.map(workspace => ({ value: workspace.id, label: workspace.name }))} onChange={next => update('workspaceId', next)} disabled={workspaces.length === 0} /></Field>
         {value.workspaceId && workspaces.find(workspace => workspace.id === value.workspaceId)?.trusted !== true ? <p className="automation-warning">This workspace must be trusted before the automation can run.</p> : null}
-        <div className="automation-form-grid"><Field label="Base branch"><Dropdown value={value.branch || DEFAULT_BRANCH_OPTION} options={branchOptions} onChange={next => update('branch', next === DEFAULT_BRANCH_OPTION ? '' : next)} disabled={optionsLoading} placeholder="Default (HEAD)" /></Field><Field label="Model"><Dropdown value={value.model} options={textModelOptions} onChange={next => update('model', next)} disabled={optionsLoading || textModelOptions.length === 0} placeholder="Use workspace default" /></Field></div>
-        <Field label="Skills (optional)"><Dropdown multiple value={value.skills} options={availableSkillOptions} onChange={next => update('skills', next)} disabled={optionsLoading || availableSkillOptions.length === 0} placeholder="Select skills" /></Field>
+        {optionsLoading ? <AutomationOptionsSkeleton /> : <><div className="automation-form-grid"><Field label="Base branch"><Dropdown value={value.branch || DEFAULT_BRANCH_OPTION} options={branchOptions} onChange={next => update('branch', next === DEFAULT_BRANCH_OPTION ? '' : next)} placeholder="Default (HEAD)" /></Field><Field label="Model"><Dropdown value={value.model} options={textModelOptions} onChange={next => update('model', next)} disabled={textModelOptions.length === 0} placeholder="Use workspace default" /></Field></div>
+          <Field label="Skills (optional)"><Dropdown multiple value={value.skills} options={availableSkillOptions} onChange={next => update('skills', next)} disabled={availableSkillOptions.length === 0} placeholder="Select skills" /></Field></>}
         <Checkbox label="Use an isolated worktree" checked={value.worktree} onChange={next => update('worktree', next)} />
       </section>
 
@@ -147,6 +147,14 @@ export function AutomationFormModal({ workspaces, automation, onClose, onSubmit 
     </div></Scrollbar>
     <div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={workspaces.length === 0 || (submitted && Boolean(validationError))} onClick={() => void submit()}>{automation ? 'Save changes' : 'Create automation'}</Button></div>
   </Modal>;
+}
+
+function AutomationOptionsSkeleton() {
+  return <div className="automation-options-skeleton" aria-label="Loading workspace automation options">
+    <Skeleton className="automation-options-skeleton-row" />
+    <Skeleton className="automation-options-skeleton-row" />
+    <Skeleton className="automation-options-skeleton-wide" />
+  </div>;
 }
 
 function buildInput(value: AutomationFormValue): unknown {

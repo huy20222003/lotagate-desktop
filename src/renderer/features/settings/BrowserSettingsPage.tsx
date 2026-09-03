@@ -3,6 +3,7 @@ import { FolderOpen } from 'lucide-react';
 import type { BrowserSettings } from '../../../contracts/ipc/v1/settings.js';
 import { normalizeOriginAllowlist } from '../../../contracts/ipc/v1/origin-allowlist.js';
 import { Button, Dropdown, Icon, TextArea, TextInput, useToast } from '../../components/ui.js';
+import { SettingsPageSkeleton } from './SettingsPageSkeleton.js';
 
 const defaults: BrowserSettings = { viewportProfile: 'desktop', customViewport: { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 }, downloadDirectory: '', sessionRetention: 'persistent', sessionRetentionMinutes: 60, originAllowlist: [], clearDataOnClose: false, evidenceRetentionDays: 30 };
 const viewportOptions = [{ value: 'desktop', label: 'Desktop · 1280 × 800' }, { value: 'laptop', label: 'Laptop · 1440 × 900' }, { value: 'tablet', label: 'Tablet · 1024 × 768' }, { value: 'mobile', label: 'Mobile · 390 × 844' }, { value: 'custom', label: 'Custom device profile' }];
@@ -15,7 +16,7 @@ export function BrowserSettingsPage() {
   const saveSequenceRef = useRef(0);
   const { error } = useToast();
   useEffect(() => { void window.lotagate.settings.get().then(settings => { valueRef.current = settings.browser; setValue(settings.browser); }).catch(reason => error('Unable to load Browser settings', reason instanceof Error ? reason.message : 'Please try again.')).finally(() => setLoading(false)); }, [error]);
-  if (loading) return <div className="settings-loading">Loading Browser settings…</div>;
+  if (loading) return <SettingsPageSkeleton rows={5} />;
   const persist = async (next: BrowserSettings) => {
     const sequence = ++saveSequenceRef.current;
     try {

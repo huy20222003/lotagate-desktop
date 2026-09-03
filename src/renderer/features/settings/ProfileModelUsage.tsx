@@ -1,4 +1,4 @@
-import { Card, Table, type TableColumn } from '../../components/ui.js';
+import { Card, Skeleton, Table, type TableColumn } from '../../components/ui.js';
 import { formatTokens } from './profile-format.js';
 import type { ModelUsageSummary } from './profile-types.js';
 
@@ -12,5 +12,7 @@ export function ProfileModelUsage({ models, loading }: { models: ModelUsageSumma
     { key: 'totalTokens', label: 'Tokens used', render: row => formatTokens(row.totalTokens) },
     { key: 'totalRequests', label: 'Requests', render: row => row.totalRequests.toLocaleString() },
   ];
-  return <section className="profile-model-usage"><div className="profile-section-heading"><strong>Top models by token usage</strong><span>Top 10</span></div>{loading ? <Card className="profile-model-usage-status">Loading model usage…</Card> : rows.length === 0 ? <Card className="profile-model-usage-status">No model usage recorded yet.</Card> : <Table columns={columns} rows={rows} />}</section>;
+  return <section className="profile-model-usage"><div className="profile-section-heading"><strong>Top models by token usage</strong><span>Top 10</span></div>{loading ? <ModelUsageSkeleton /> : rows.length === 0 ? <Card className="profile-model-usage-status">No model usage recorded yet.</Card> : <Table columns={columns} rows={rows} />}</section>;
 }
+
+function ModelUsageSkeleton() { return <Card className="profile-model-usage-skeleton" aria-label="Loading model usage">{[1, 2, 3].map(index => <Skeleton className="profile-model-usage-skeleton-row" key={index} />)}</Card>; }

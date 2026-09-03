@@ -170,7 +170,7 @@ describe('CheckpointService', () => {
 });
 
 async function workspace(): Promise<string> { const root = await mkdtemp(join(process.env['TEMP'] ?? '.', 'lotagate-checkpoint-')); roots.push(root); return root; }
-function event(name: string, data: Record<string, unknown>): DesktopEvent { return { version: 2, type: 'event', scope: 'session', event: name, data }; }
-function request(tool: DesktopHostRequest['tool'], action: string, params: Record<string, unknown>, sessionId: string, executionCwd?: string): DesktopHostRequest { return { version: 2, type: 'host.request', requestId: `${tool}-${action}-${sessionId}`, tool, sessionId, runId: 'run-1', action, params, executionBoundary: 'host', hostFallback: 'deny', ...(executionCwd === undefined ? {} : { executionCwd }) }; }
+function event(name: string, data: Record<string, unknown>): DesktopEvent { return { version: 3, type: 'event', scope: 'session', event: name, data }; }
+function request(tool: DesktopHostRequest['tool'], action: string, params: Record<string, unknown>, sessionId: string, executionCwd?: string): DesktopHostRequest { return { version: 3, type: 'host.request', requestId: `${tool}-${action}-${sessionId}`, tool, sessionId, runId: 'run-1', action, params, executionBoundary: 'host', hostFallback: 'deny', ...(executionCwd === undefined ? {} : { executionCwd }) }; }
 async function execute(service: CheckpointService, root: string, input: DesktopHostRequest, operation?: () => Promise<DesktopHostResponse>): Promise<void> { await service.withHostRequest(root, input, operation ?? (async () => { const path = input.params['path'] as string; await writeFile(join(root, path), input.params['content'] as string); return response(); })); }
-function response(): DesktopHostResponse { return { version: 2, type: 'host.response', requestId: 'request', tool: 'filesystem', executionBoundary: 'host', ok: true, result: true }; }
+function response(): DesktopHostResponse { return { version: 3, type: 'host.response', requestId: 'request', tool: 'filesystem', executionBoundary: 'host', ok: true, result: true }; }

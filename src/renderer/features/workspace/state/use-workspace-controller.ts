@@ -129,7 +129,6 @@ export function useWorkspaceController() {
       void reloadTasks(workspaceId).catch(reason => setError(toMessage(reason)));
     }, 75);
   }, [reloadTasks]);
-
   useEffect(() => {
     let mounted = true;
     void (async () => {
@@ -150,7 +149,6 @@ export function useWorkspaceController() {
     })();
     return () => { mounted = false; };
   }, []);
-
   useEffect(() => {
     if (!workspace) return;
     if (!initialTasksLoadedRef.current) { initialTasksLoadedRef.current = true; return; }
@@ -185,7 +183,6 @@ export function useWorkspaceController() {
     }
   }, [publishActivities]);
   const { checkpointStatuses, undoingTurns, refreshCheckpointStatuses, undoFileChanges } = useWorkspaceCheckpoints(task, loadActivities);
-
   const scheduleActivityRefresh = useActivityRefreshScheduler(loadActivities, reportControllerError, task?.id);
   const loadOlderActivities = useCallback(async (): Promise<boolean> => {
     const taskId = task?.id;
@@ -219,7 +216,6 @@ export function useWorkspaceController() {
       setLoadingOlderActivities(false);
     }
   }, [hasOlderActivities, publishActivities, task?.id]);
-
   useEffect(() => {
     let mounted = true;
     activityRequestRef.current += 1;
@@ -233,7 +229,6 @@ export function useWorkspaceController() {
       mounted = false;
     };
   }, [loadActivities, publishActivities, task?.id]);
-
   useEffect(() => () => {
     if (taskReloadTimerRef.current !== undefined) { clearTimeout(taskReloadTimerRef.current); taskReloadTimerRef.current = undefined; }
   }, [workspace?.id]);

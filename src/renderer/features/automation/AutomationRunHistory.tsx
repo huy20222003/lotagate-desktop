@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { AutomationRun } from '../../../contracts/ipc/v1/automation.js';
-import { Badge, Button, Card, EmptyState, Icon, Spinner } from '../../components/ui.js';
+import { Badge, Button, Card, EmptyState, Icon, Skeleton } from '../../components/ui.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
 import { Pagination } from '../../components/Pagination.js';
 import { formatTime } from '../../utils/time.js';
@@ -63,7 +63,7 @@ export function AutomationRunHistory({ automationId, refreshToken, onCancel, onR
     }
   };
 
-  if (loading) return <div className="automation-history-loading"><Spinner /></div>;
+  if (loading) return <div className="automation-history-loading" aria-label="Loading automation runs">{[1, 2, 3].map(index => <Skeleton className="automation-history-skeleton" key={index} />)}</div>;
   if (error) return <Card className="settings-extension-error"><strong>Unable to load run history</strong><p>{error}</p><Button variant="secondary" onClick={() => void reload()}><Icon icon={RefreshCw} size={14} /> Retry</Button></Card>;
   if (runs.length === 0) return <EmptyState title="No runs yet" detail="Run this automation manually or wait for its next scheduled time." />;
 

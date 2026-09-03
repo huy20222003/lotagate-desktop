@@ -16,7 +16,7 @@ describe('SettingsPage', () => {
 
   it.each([
     ['general', 'General'], ['profile', 'Profile'], ['api-key', 'API key'], ['billing', 'Billing'], ['appearance', 'Appearance'], ['keyboard-shortcuts', 'Keyboard shortcuts'],
-    ['browser', 'Browser'], ['sandbox', 'Sandbox'], ['hook', 'Hooks'], ['skill', 'Skills'], ['plugin', 'Plugins'], ['mcp', 'MCP'],
+    ['browser', 'Browser'], ['sandbox', 'Sandbox'], ['memory', 'Memory'], ['hook', 'Hooks'], ['skill', 'Skills'], ['plugin', 'Plugins'], ['mcp', 'MCP'],
   ] as Array<[SettingsSection, string]> )('routes the %s settings section', async (section, title) => {
     installBridge();
     render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection={section} /></ToastProvider>);

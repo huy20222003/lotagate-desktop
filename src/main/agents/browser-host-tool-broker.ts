@@ -64,7 +64,7 @@ export class BrowserHostToolBroker {
       return await operation;
     } catch (error) {
       return {
-        version: 2,
+        version: 3,
         type: 'host.response',
         requestId: request.requestId,
         tool: request.tool,
@@ -98,7 +98,7 @@ export class BrowserHostToolBroker {
     try {
       const result = await this.runAction(cwd, browserSessionId, activeTabId, request.action, request.params);
       this.onActivity?.(cwd, { event: 'browser.action.completed', data: { sessionId: request.sessionId, runId: request.runId, browserSessionId, tabId: activeTabId, action: request.action, success: true } });
-      return { version: 2, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: true, result: { browserSessionId, tabId: activeTabId, ...asRecord(result) } };
+      return { version: 3, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: true, result: { browserSessionId, tabId: activeTabId, ...asRecord(result) } };
     } catch (error) {
       this.onActivity?.(cwd, { event: 'browser.action.completed', data: { sessionId: request.sessionId, runId: request.runId, browserSessionId, tabId: activeTabId, action: request.action, success: false } });
       throw error;

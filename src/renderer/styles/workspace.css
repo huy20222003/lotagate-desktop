@@ -273,10 +273,15 @@
 .subagent-detail small { color: var(--color-text-tertiary); }
 .orchestration-error { margin: 2px 0 0; color: var(--color-danger); font-size: 11px; }
 .orchestration-drawer { position: absolute; top: 64px; right: 0; bottom: 0; z-index: 4; display: flex; width: min(430px, 72%); flex-direction: column; border-left: 1px solid var(--color-border); background: var(--color-surface-drawer); box-shadow: -20px 0 45px var(--shadow-soft); }
+.plan-drawer { top: 0; bottom: 0; }
 .orchestration-drawer > header { display: flex; min-height: 55px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--color-border); padding: 0 16px; color: var(--color-text); }
 .orchestration-drawer-scroll { min-height: 0; }
 .orchestration-drawer-scroll .scrollbar-viewport { padding: 15px; }
 .orchestration-drawer-goal { margin: 0 0 15px; color: var(--color-text-tertiary); font-size: 12px; line-height: 1.5; }
+.plan-request { display: grid; gap: 5px; }
+.plan-request > strong { color: var(--color-text); font-size: 12px; }
+.plan-request .orchestration-drawer-goal { margin-bottom: 0; }
+.plan-request .show-more { justify-self: start; }
 .plan-details { display: grid; gap: 12px; }
 .plan-details .plan-step { padding-bottom: 4px; }
 .subagent-details { display: grid; gap: 10px; color: var(--color-text-secondary); font-size: 12px; }

@@ -83,5 +83,5 @@ describe('BrowserHostToolBroker', () => {
 });
 
 function request(action: string, params: Record<string, unknown>): DesktopHostRequest {
-  return { version: 2, type: 'host.request', requestId: `request-${action}`, tool: 'browser', sessionId: 'session-1', runId: 'run-1', action, params, executionBoundary: 'host', hostFallback: 'deny' };
+  return { version: 3, type: 'host.request', requestId: `request-${action}`, tool: 'browser', sessionId: 'session-1', runId: 'run-1', action, params, executionBoundary: 'host', hostFallback: 'deny' };
 }

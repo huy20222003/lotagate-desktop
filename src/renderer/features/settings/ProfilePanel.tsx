@@ -7,6 +7,8 @@ import { ProfileModelUsage } from './ProfileModelUsage.js';
 import { ProfileMetrics } from './ProfileMetrics.js';
 import type { ModelUsageSummary, ProfileSummary } from './profile-types.js';
 
+const PROFILE_WORKSPACE_CONCURRENCY = 4;
+
 export function ProfilePanel({ user, accountName }: { user: UserProfile; accountName: string }) {
   const organization = user.organizations.find(item => item.organizationCode === user.defaultOrganizationCode) ?? user.organizations[0];
   const [summary, setSummary] = useState<ProfileSummary>({ workspaceCount: 0, chatCount: 0, lifetimeTokens: 0, peakTokens: 0, modelsUsed: 0, dailyTokens: new Map(), modelUsage: [] });
@@ -21,7 +23,7 @@ export function ProfilePanel({ user, accountName }: { user: UserProfile; account
         ? Promise.resolve<[unknown, unknown]>([[], null])
         : Promise.all([window.lotagate.userContext.usage(organization.organizationCode), window.lotagate.userContext.dashboardStats(organization.organizationCode)]);
       const workspaces = await window.lotagate.workspaces.list().catch(() => []);
-      const tasks = (await Promise.all(workspaces.map(workspace => window.lotagate.tasks.list(workspace.id).catch(() => [])))).flat();
+      const tasks = await loadWorkspaceTasks(workspaces.map(workspace => workspace.id), workspaceId => window.lotagate.tasks.list(workspaceId));
       const [usage, dashboard] = await analyticsPromise;
       const usageModels = normalizeUsage(usage);
       const apiDailyTokens = normalizeDailyTokens(dashboard);
@@ -39,6 +41,20 @@ export function ProfilePanel({ user, accountName }: { user: UserProfile; account
     return () => { mounted = false; };
   }, [organization?.organizationCode, user.defaultWorkspaceCode]);
   return <div className="profile-panel"><div className="profile-identity"><Avatar name={accountName} {...(user.avatarUrl ? { src: user.avatarUrl } : {})} /><h2>{accountName}</h2><p className="settings-muted">{user.username ? `@${user.username}` : user.email}</p></div>{profileError ? <Card className="settings-empty"><strong>Profile data is unavailable</strong><p>Your session may have expired. Please sign in again.</p></Card> : <><ProfileMetrics summary={summary} loading={loading} /><ProfileActivity summary={summary} loading={loading} /><Card className="profile-details"><dl><div><dt>Email</dt><dd>{user.email}</dd></div><div><dt>Organization</dt><dd>{organization?.displayName ?? 'Personal workspace'}</dd></div><div><dt>Role</dt><dd>{organization?.role ?? 'Member'}</dd></div></dl></Card><ProfileModelUsage models={summary.modelUsage} loading={loading} /></>}</div>;
+}
+
+export async function loadWorkspaceTasks<T>(workspaceIds: readonly string[], listTasks: (workspaceId: string) => Promise<readonly T[]>): Promise<T[]> {
+  const results: T[][] = Array.from({ length: workspaceIds.length }, () => []);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < workspaceIds.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = [...await listTasks(workspaceIds[index]!).catch(() => [])];
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PROFILE_WORKSPACE_CONCURRENCY, workspaceIds.length) }, worker));
+  return results.flat();
 }
 
 function normalizeUsage(value: unknown): ModelUsageSummary[] {

@@ -3,7 +3,7 @@ import { ChevronRight, type LucideIcon } from 'lucide-react';
 import { Scrollbar } from './Scrollbar.js';
 import { IconButton } from './ui.js';
 
-export function OrchestrationDrawer({ title, children, onClose, closeIcon: CloseIcon = ChevronRight, closeLabel = 'Close orchestration details', titleClassName = '' }: { title: string; children: ReactNode; onClose: () => void; closeIcon?: LucideIcon; closeLabel?: string; titleClassName?: string }) {
+export function OrchestrationDrawer({ title, children, onClose, closeIcon: CloseIcon = ChevronRight, closeLabel = 'Close orchestration details', titleClassName = '', className = '' }: { title: string; children: ReactNode; onClose: () => void; closeIcon?: LucideIcon; closeLabel?: string; titleClassName?: string; className?: string }) {
   const drawerRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const closeOnOutsidePointer = (event: PointerEvent): void => {
@@ -17,5 +17,5 @@ export function OrchestrationDrawer({ title, children, onClose, closeIcon: Close
     document.addEventListener('keydown', closeOnEscape);
     return () => { document.removeEventListener('pointerdown', closeOnOutsidePointer); document.removeEventListener('keydown', closeOnEscape); };
   }, [onClose]);
-  return <aside ref={drawerRef} className="orchestration-drawer" aria-label={title}><header><strong className={titleClassName}>{title}</strong><IconButton icon={CloseIcon} label={closeLabel} onClick={onClose} /></header><Scrollbar className="orchestration-drawer-scroll">{children}</Scrollbar></aside>;
+  return <aside ref={drawerRef} className={`orchestration-drawer${className ? ` ${className}` : ''}`} aria-label={title}><header><strong className={titleClassName}>{title}</strong><IconButton icon={CloseIcon} label={closeLabel} onClick={onClose} /></header><Scrollbar className="orchestration-drawer-scroll">{children}</Scrollbar></aside>;
 }

@@ -36,6 +36,7 @@ export class AgentManager {
   private readonly recoveryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly commandEventBuffers = new Map<string, CommandEventBuffer>();
+  private readonly protocolCacheLoads = new Map<string, Promise<unknown>>();
   private readonly idleTimeoutMs: number;
   private readonly now: () => number;
 
@@ -136,7 +137,7 @@ export class AgentManager {
   }
 
   async shutdown(cwd: string, reason = 'ipc.agent.shutdown'): Promise<void> { const projectRoot = await requireDirectory(cwd); await Promise.allSettled([...this.processes.values()].filter(binding => binding.projectRoot === projectRoot).map(binding => this.shutdownBinding(binding, reason))); }
-  async shutdownAll(reason = 'shutdown-all'): Promise<void> { await Promise.allSettled([...this.processes.values()].map(binding => this.shutdownBinding(binding, reason))); this.processes.clear(); this.sessionBindings.clear(); this.sessionResumes.clear(); this.turnBindings.clear(); this.approvalBindings.clear(); this.trustBindings.clear(); for (const timer of this.recoveryTimers.values()) clearTimeout(timer); this.recoveryTimers.clear(); this.recoveryAttempts.clear(); for (const timer of this.idleTimers.values()) clearTimeout(timer); this.idleTimers.clear(); for (const buffer of this.commandEventBuffers.values()) clearTimeout(buffer.timer); this.commandEventBuffers.clear(); }
+  async shutdownAll(reason = 'shutdown-all'): Promise<void> { await Promise.allSettled([...this.processes.values()].map(binding => this.shutdownBinding(binding, reason))); this.processes.clear(); this.sessionBindings.clear(); this.sessionResumes.clear(); this.turnBindings.clear(); this.approvalBindings.clear(); this.trustBindings.clear(); this.protocolCacheLoads.clear(); for (const timer of this.recoveryTimers.values()) clearTimeout(timer); this.recoveryTimers.clear(); this.recoveryAttempts.clear(); for (const timer of this.idleTimers.values()) clearTimeout(timer); this.idleTimers.clear(); for (const buffer of this.commandEventBuffers.values()) clearTimeout(buffer.timer); this.commandEventBuffers.clear(); }
 
   private createProcess(projectRoot: string, key: string): ProcessBinding {
     const current = this.processes.get(key); if (current !== undefined) return current;
@@ -150,7 +151,7 @@ export class AgentManager {
         this.recordCommandEvent(event);
         this.handler.onEvent(projectRoot, event);
       },
-      onHostRequest: request => this.handler.onHostRequest === undefined ? Promise.resolve({ version: 2, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message: 'The Desktop host is unavailable.', retryable: false } }) : this.handler.onHostRequest(projectRoot, request),
+      onHostRequest: request => this.handler.onHostRequest === undefined ? Promise.resolve({ version: 3, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message: 'The Desktop host is unavailable.', retryable: false } }) : this.handler.onHostRequest(projectRoot, request),
       onDiagnostic: diagnostic => this.handler.onDiagnostic?.(projectRoot, diagnostic),
       onExit: error => {
         const approvalIds = [...this.approvalBindings.entries()].filter(([, candidate]) => candidate === binding).map(([approvalId]) => approvalId);
@@ -211,7 +212,21 @@ export class AgentManager {
     clearTimeout(buffer.timer);
     this.commandEventBuffers.delete(commandId);
   }
-  private async cachedProtocolResult(cwd: string, kind: string, ttlMs: number, load: () => Promise<unknown>): Promise<unknown> { const canonical = await requireDirectory(cwd); const key = `agent:${kind}:${canonical}`; const cached = await this.cache?.get<unknown>(key); if (cached !== undefined) return cached; const value = await load(); await this.cache?.set(key, value, ttlMs); return value; }
+  private async cachedProtocolResult(cwd: string, kind: string, ttlMs: number, load: () => Promise<unknown>): Promise<unknown> {
+    const canonical = await requireDirectory(cwd);
+    const key = `agent:${kind}:${canonical}`;
+    const cached = await this.cache?.get<unknown>(key);
+    if (cached !== undefined) return cached;
+    const pending = this.protocolCacheLoads.get(key);
+    if (pending !== undefined) return pending;
+    const operation = load().then(async value => {
+      await this.cache?.set(key, value, ttlMs);
+      return value;
+    });
+    this.protocolCacheLoads.set(key, operation);
+    try { return await operation; }
+    finally { if (this.protocolCacheLoads.get(key) === operation) this.protocolCacheLoads.delete(key); }
+  }
 }
 
 function extractSessionId(value: unknown): string | undefined { if (!isRecord(value) || !isRecord(value['session'])) return undefined; return typeof value['session']['id'] === 'string' ? value['session']['id'] : undefined; }

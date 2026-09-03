@@ -33,6 +33,7 @@ import { UndoConfirmationModal } from '../review/UndoConfirmationModal.js';
 import { WorkspaceAutomationPage } from './WorkspaceAutomationPage.js';
 import { RemoteControlPage } from './RemoteControlPage.js';
 import { useAgentResponseNotifications } from '../state/use-agent-response-notifications.js';
+import { X } from 'lucide-react';
 
 export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLoggedOut: () => void }) {
   const controller = useWorkspaceController();
@@ -277,7 +278,7 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
          </section>
          {!isWelcomeState && terminalOpen && terminalPlacement === 'right' && controller.workspace ? <TerminalPanel cwd={controller.workspace.rootPath} placement="right" onClose={() => setTerminalOpen(false)} /> : null}
         {!isWelcomeState && changesOpen && controller.workspace ? <FileChangesDrawer cwd={controller.workspace.rootPath} summary={changesSummary ?? controller.fileChanges} {...(changesInitialExpandedPath === undefined ? {} : { initialExpandedPath: changesInitialExpandedPath })} onClose={() => setChangesOpen(false)} /> : null}
-         {!isWelcomeState && planDrawerOpen && controller.plan?.status === 'active' ? <OrchestrationDrawer title={`Plan · Step ${planStepNumber(controller.plan)} / ${controller.plan.totalSteps}`} onClose={() => setPlanDrawerOpen(false)}><PlanDetails plan={controller.plan} /></OrchestrationDrawer> : null}
+         {!isWelcomeState && planDrawerOpen && controller.plan?.status === 'active' ? <OrchestrationDrawer className="plan-drawer" title={`Plan · Step ${planStepNumber(controller.plan)} / ${controller.plan.totalSteps}`} closeIcon={X} closeLabel="Close plan" onClose={() => setPlanDrawerOpen(false)}><PlanDetails plan={controller.plan} /></OrchestrationDrawer> : null}
          {!isWelcomeState && sourcesOpen && controller.task ? <SourcesDrawer taskId={controller.task.id} refreshKey={controller.task.updatedAt} onClose={() => setSourcesOpen(false)} /> : null}
          {!isWelcomeState && browserOpen ? <BrowserPanel {...(controller.task?.id === undefined ? {} : { taskId: controller.task.id })} {...(agentBrowserSessionId === undefined ? {} : { sessionId: agentBrowserSessionId })} {...(controller.workspace?.rootPath === undefined ? {} : { cwd: controller.workspace.rootPath })} onClose={() => setBrowserOpen(false)} /> : null}
          {!isWelcomeState && gitOpen && controller.workspace ? <GitPanel cwd={controller.workspace.rootPath} onClose={() => setGitOpen(false)} /> : null}
