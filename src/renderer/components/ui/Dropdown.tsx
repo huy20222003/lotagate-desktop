@@ -22,7 +22,7 @@ export function Dropdown(props: DropdownProps) {
   const singleSelected = options.find(option => option.value === singleValue)?.label ?? singleValue;
   const selected = multiple
     ? selectedLabels.join(', ') || placeholder || 'Select options'
-    : singleSelected || placeholder || 'Select option';
+    : options.length === 0 ? placeholder || 'Select option' : singleSelected || placeholder || 'Select option';
   const hasSelectedValue = options.some(option => option.value === singleValue);
   const toggleValue = (nextValue: string) => {
     if (props.multiple === true) {

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Blocks, Brain, CreditCard, KeyRound, Keyboard, MonitorCog, Plug, Puzzle, ShieldCheck, UserRound, Workflow, Globe2, Settings2 } from 'lucide-react';
+import { ArrowLeft, Blocks, Brain, CreditCard, KeyRound, Keyboard, MonitorCog, Plug, Puzzle, RefreshCw, ShieldCheck, UserRound, Workflow, Globe2, Settings2 } from 'lucide-react';
 import type { UserProfile } from '../../../contracts/ipc/v1/auth.js';
 import type { Workspace } from '../../../contracts/ipc/v1/workspace.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
-import { Button, Icon } from '../../components/ui.js';
+import { Button, Icon, IconButton } from '../../components/ui.js';
 import { ExtensionsPage } from './ExtensionsPage.js';
 import type { ExtensionKind } from './extension-command-client.js';
 import { AppearancePage } from './AppearancePage.js';
@@ -28,12 +28,13 @@ const settingsGroups: Array<{ title: string; items: Array<{ value: SettingsSecti
 
 export function SettingsPage({ user, workspace, mcpStatuses = {}, onBack, keyboardShortcuts, onUpdateShortcut, initialSection = 'profile' }: { user: UserProfile; workspace?: Workspace; mcpStatuses?: Record<string, McpRuntimeStatus>; onBack: () => void; keyboardShortcuts: KeyboardShortcutBindings; onUpdateShortcut: (action: KeyboardShortcutAction, shortcut: string | null) => Promise<void>; initialSection?: SettingsSection }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
+  const [memoryRefreshToken, setMemoryRefreshToken] = useState(0);
   useEffect(() => setSection(initialSection), [initialSection]);
   const accountName = user.fullName ?? user.username ?? user.email;
   const organizationCode = useMemo(() => user.defaultOrganizationCode ?? user.organizations[0]?.organizationCode, [user]);
   const title = settingsGroups.flatMap(group => group.items).find(item => item.value === section)?.label ?? 'Settings';
   return <div className="settings-page">
     <aside className="settings-sidebar"><Button variant="ghost" className="settings-back" onClick={onBack}><Icon icon={ArrowLeft} size={16} /> Back to app</Button><h2>Settings</h2><Scrollbar className="settings-nav scrollbar-hide-track"><div className="settings-nav-groups">{settingsGroups.map(group => <section className="settings-nav-group" key={group.title}><h3>{group.title}</h3><div className="settings-nav-list">{group.items.map(item => <button key={item.value} className={section === item.value ? 'settings-nav-item selected' : 'settings-nav-item'} onClick={() => setSection(item.value)}><Icon icon={item.icon} size={15} /> {item.label}</button>)}</div></section>)}</div></Scrollbar></aside>
-    <Scrollbar className="settings-content-scrollbar"><main className="settings-content"><header className="settings-header"><h1>{title}</h1></header>{section === 'general' ? <GeneralSettingsPage /> : section === 'profile' ? <ProfilePanel user={user} accountName={accountName} /> : section === 'api-key' ? <ApiKeySettingsPage {...(workspace?.rootPath ? { cwd: workspace.rootPath } : {})} /> : section === 'billing' ? <BillingPanel {...(organizationCode ? { organizationCode } : {})} /> : section === 'appearance' ? <AppearancePage /> : section === 'keyboard-shortcuts' ? <KeyboardShortcutsPage bindings={keyboardShortcuts} onUpdate={onUpdateShortcut} /> : section === 'browser' ? <BrowserSettingsPage /> : section === 'sandbox' ? <SandboxSettingsPage /> : section === 'memory' ? <MemorySettingsPage {...(workspace?.rootPath ? { cwd: workspace.rootPath } : {})} /> : <ExtensionsPage kind={section} {...(workspace?.rootPath ? { cwd: workspace.rootPath } : {})} trusted={workspace?.trusted === true} mcpStatuses={mcpStatuses} />}</main></Scrollbar>
+    <Scrollbar className="settings-content-scrollbar"><main className="settings-content"><header className="settings-header"><h1>{title}</h1>{section === 'memory' ? <IconButton icon={RefreshCw} iconSize={15} label="Refresh memory" disabled={workspace?.rootPath === undefined} onClick={() => setMemoryRefreshToken(current => current + 1)} /> : null}</header>{section === 'general' ? <GeneralSettingsPage /> : section === 'profile' ? <ProfilePanel user={user} accountName={accountName} /> : section === 'api-key' ? <ApiKeySettingsPage {...(workspace?.rootPath ? { cwd: workspace.rootPath } : {})} /> : section === 'billing' ? <BillingPanel {...(organizationCode ? { organizationCode } : {})} /> : section === 'appearance' ? <AppearancePage /> : section === 'keyboard-shortcuts' ? <KeyboardShortcutsPage bindings={keyboardShortcuts} onUpdate={onUpdateShortcut} /> : section === 'browser' ? <BrowserSettingsPage /> : section === 'sandbox' ? <SandboxSettingsPage /> : section === 'memory' ? <MemorySettingsPage refreshToken={memoryRefreshToken} {...(workspace?.rootPath ? { cwd: workspace.rootPath } : {})} /> : <ExtensionsPage kind={section} {...(workspace?.rootPath ? { cwd: workspace.rootPath } : {})} trusted={workspace?.trusted === true} mcpStatuses={mcpStatuses} />}</main></Scrollbar>
   </div>;
 }

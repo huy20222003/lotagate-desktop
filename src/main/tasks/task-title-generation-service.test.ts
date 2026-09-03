@@ -6,7 +6,7 @@ import type { AgentManager } from '../agents/agent-manager.js';
 import type { TaskStore } from './task-store.js';
 import { TaskTitleGenerationService } from './task-title-generation-service.js';
 
-const completedEvent: DesktopEvent = { version: 3, type: 'event', scope: 'session', event: 'turn.completed', data: { sessionId: 'session-1', turnId: 'turn-1' } };
+const completedEvent: DesktopEvent = { version: 1, type: 'event', scope: 'session', event: 'turn.completed', data: { sessionId: 'session-1', turnId: 'turn-1' } };
 
 function task(overrides: Partial<Task> = {}): Task {
   return { id: 'task-1', workspaceId: 'workspace-1', title: 'Initial title', titleSource: 'automatic', titleSummaryStatus: 'not_started', cwd: 'C:\\workspace', status: 'completed', sessionId: 'session-1', pinned: false, archived: false, draft: '', draftAttachmentIds: [], lastEventCursor: 0, createdAt: '2026-09-02T00:00:00.000Z', updatedAt: '2026-09-02T00:00:00.000Z', ...overrides };

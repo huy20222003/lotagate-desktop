@@ -117,6 +117,7 @@ export interface DesktopWorkspaceApi {
   pickFolder(rootPath?: string): Promise<string | null>;
   pickFile(rootPath?: string, extensions?: string[]): Promise<string | null>;
   pickMultipleFile(rootPath?: string, extensions?: string[]): Promise<string[]>;
+  pickSaveFile(rootPath?: string, extensions?: string[]): Promise<string | null>;
   fileSize(rootPath: string | undefined, filePath: string): Promise<number>;
   add(rootPath: string): Promise<Workspace>;
   addRoot(workspaceId: string, rootPath: string): Promise<Workspace>;

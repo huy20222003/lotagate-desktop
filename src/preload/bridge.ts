@@ -66,6 +66,7 @@ const bridge: DesktopBridge = {
     pickFolder: (rootPath?: string) => ipcRenderer.invoke('workspace.pickFolder', rootPath),
     pickFile: (rootPath?: string, extensions?: string[]) => ipcRenderer.invoke('workspace.pickFile', rootPath, extensions),
     pickMultipleFile: (rootPath?: string, extensions?: string[]) => ipcRenderer.invoke('workspace.pickMultipleFile', rootPath, extensions),
+    pickSaveFile: (rootPath?: string, extensions?: string[]) => ipcRenderer.invoke('workspace.pickSaveFile', rootPath, extensions),
     fileSize: (rootPath: string | undefined, filePath: string) => ipcRenderer.invoke('workspace.fileSize', rootPath, filePath),
     add: rootPath => ipcRenderer.invoke('workspace.add', rootPath),
     addRoot: (workspaceId, rootPath) => ipcRenderer.invoke('workspace.addRoot', workspaceId, rootPath),

@@ -36,9 +36,6 @@ export function SandboxSettingsPage() {
     void persist(updated);
   };
   return <div className="appearance-page">
-    <section className="appearance-section">
-      <div className="appearance-section-heading"><div><h2>Sandbox</h2><p>Configure the isolated runtime for agent filesystem and shell operations. Host fallback never bypasses the shared approval coordinator or workspace trust.</p></div><span className="settings-status">Policy enforced by Desktop</span></div>
-    </section>
     <section className="appearance-section appearance-settings-card">
       <div className="appearance-section-heading"><div><h2>Runtime backend</h2><p>Select the container engine and image used for isolated execution.</p></div></div>
       <div className="appearance-setting-row"><div><strong>Backend</strong><span>Select the container engine used for isolated execution.</span></div><Dropdown ariaLabel="Sandbox backend" value={value.backend} options={[{ value: 'auto', label: 'Auto · Docker, then Podman' }, { value: 'docker', label: 'Docker only' }, { value: 'podman', label: 'Podman only' }, { value: 'disabled', label: 'Disabled' }]} onChange={next => set('backend', next as SandboxSettings['backend'])} /></div>

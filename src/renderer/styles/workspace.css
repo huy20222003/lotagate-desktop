@@ -418,9 +418,10 @@
 .voice-interim { min-width: 0; max-width: 100px; overflow: hidden; color: var(--color-text-tertiary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .composer-option { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--color-text-tertiary); font-size: 12px; }
 .composer-option:hover { color: var(--color-text); }
-.approval-mode { width: 145px; }
+.approval-mode { min-width: 0; flex: 0 1 auto; }
 .approval-mode .dropdown { gap: 0; }
-.approval-mode .model-select { width: 145px; min-height: 30px; padding: 0 7px; color: var(--color-text-tertiary); font-size: 12px; }
+.approval-mode .model-select { width: max-content; max-width: min(220px, 30vw); min-height: 30px; padding: 0 7px; color: var(--color-text-tertiary); font-size: 12px; }
+.approval-mode .model-select span { max-width: min(180px, 24vw); }
 .composer-approval { display: grid; gap: 13px; padding: 16px; background: var(--color-surface-elevated); }
 .composer-approval-header { display: grid; gap: 7px; min-width: 0; }
 .composer-approval strong { color: var(--color-text); font-size: 13px; line-height: 1.4; }

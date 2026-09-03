@@ -154,7 +154,7 @@ export function useWorkspaceController() {
     if (!initialTasksLoadedRef.current) { initialTasksLoadedRef.current = true; return; }
     void reloadTasks(workspace.id).catch(reason => setError(toMessage(reason)));
   }, [workspace, reloadTasks]);
-  const loadActivities = useCallback(async (taskId: string, reset = true): Promise<void> => {
+  const loadActivities = useCallback(async (taskId: string, reset = true, restorePlan = true): Promise<void> => {
     const requestId = ++activityRequestRef.current;
     const page = await window.lotagate.tasks.activitiesPage(taskId);
     const persisted = reset ? page.activities : mergeActivities(activitiesRef.current.filter(activity => activity.taskId === taskId), page.activities);
@@ -176,7 +176,7 @@ export function useWorkspaceController() {
       setActivityAttachments(nextActivityAttachments);
       setActivityArtifacts(nextActivityArtifacts);
       setFileChangesByTurn(current => mergeFileChangeSummaries(current, summaries));
-      setPlan(restoreWorkPlan(next));
+      setPlan(restorePlan ? restoreWorkPlan(next) : undefined);
       const liveTurnId = activeTurnRef.current?.turnId;
       if (liveTurnId === undefined) setFileChanges(EMPTY_FILE_CHANGE_SUMMARY);
       else setFileChanges(current => summaries[liveTurnId] === undefined ? current : mergeFileChangeSummaries({ [liveTurnId]: current }, summaries)[liveTurnId] ?? current);
@@ -245,15 +245,16 @@ export function useWorkspaceController() {
     const currentTaskId = currentTask?.id;
     const allowUnscopedFallback = allowsUnscopedTaskFallback(envelope.event.event, eventSessionId, turnId);
     const eventTask = currentTasks.find(item => eventSessionId !== undefined && item.sessionId === eventSessionId) ?? (currentTask?.sessionId === eventSessionId ? currentTask : undefined) ?? (allowUnscopedFallback ? currentTask : undefined) ?? (allowUnscopedFallback && currentTasks.length === 1 ? currentTasks[0] : undefined);
+    const isCurrentTask = eventTask !== undefined && eventTask.id === currentTaskId;
+    let currentTurn = isCurrentTask && (turnId === undefined || activeTurnRef.current?.turnId === turnId);
     if (eventTask !== undefined) {
-      if (envelope.event.event === 'turn.started') markTurnStarted(eventTask.id);
-      else if (terminal) markTurnFinished(eventTask.id, envelope.event.event === 'turn.completed', currentTaskId);
+      if (envelope.event.event === 'turn.started' && (!isCurrentTask || activeTurnRef.current === undefined || activeTurnRef.current.turnId === turnId)) markTurnStarted(eventTask.id);
+      else if (terminal && (!isCurrentTask || currentTurn)) markTurnFinished(eventTask.id, envelope.event.event === 'turn.completed', currentTaskId);
     }
-    if (eventTask !== undefined && eventTask.id === currentTaskId) {
+    if (isCurrentTask) {
       if (turnId && envelope.event.event === 'turn.started') setTurnTimings(current => ({ ...current, [turnId]: { startedAt: Date.now() } }));
       if (turnId && terminal) setTurnTimings(current => ({ ...current, [turnId]: { startedAt: current[turnId]?.startedAt ?? Date.now(), endedAt: Date.now() } }));
-      if (turnId && envelope.event.event === 'turn.started') { activeTurnRef.current = { taskId: eventTask.id, cwd: currentWorkspace.rootPath, turnId }; setActiveTurnId(turnId); }
-      const currentTurn = turnId === undefined || activeTurnRef.current?.turnId === turnId;
+      if (turnId && envelope.event.event === 'turn.started') { activeTurnRef.current = { taskId: eventTask.id, cwd: currentWorkspace.rootPath, turnId }; setActiveTurnId(turnId); currentTurn = true; }
       if (terminal && currentTurn) { activeTurnRef.current = undefined; setActiveTurnId(undefined); }
       const status = agentStatusForEvent(envelope.event.event, data);
       if (envelope.event.event.startsWith('mcp.server.')) {
@@ -284,13 +285,13 @@ export function useWorkspaceController() {
       }
       if (terminal && eventTask.id === currentTaskId) window.setTimeout(() => { void refreshCheckpointStatuses().catch(() => undefined); }, 150);
     }
-    if (eventTask !== undefined && eventTask.id === currentTaskId) {
-      if (envelope.event.event === 'trust.requested') setTrust({ trustRequestId: String(data['trustRequestId']), taskId: eventTask.id, sessionId: String(data['sessionId']), path: String(data['path']) });
-      if (envelope.event.event === 'file.changed') {
+    if (isCurrentTask) {
+      if (currentTurn && envelope.event.event === 'trust.requested') setTrust({ trustRequestId: String(data['trustRequestId']), taskId: eventTask.id, sessionId: String(data['sessionId']), path: String(data['path']) });
+      if (currentTurn && envelope.event.event === 'file.changed') {
         setFileChanges(current => mergeFileChange(current, data['change']));
         if (turnId !== undefined) setFileChangesByTurn(current => mergeFileChangeForTurn(current, turnId, data['change']));
       }
-      if (envelope.event.event === 'assistant.delta' && typeof data['content'] === 'string' && data['content'].length > 0) {
+      if (currentTurn && envelope.event.event === 'assistant.delta' && typeof data['content'] === 'string' && data['content'].length > 0) {
         const segmentId = typeof data['segmentId'] === 'string' ? data['segmentId'] : undefined;
         const iteration = typeof data['iteration'] === 'number' ? data['iteration'] : undefined;
         const input = { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), ...(segmentId === undefined ? {} : { segmentId }), ...(iteration === undefined ? {} : { iteration }), content: data['content'], createdAt: new Date().toISOString() };
@@ -302,20 +303,20 @@ export function useWorkspaceController() {
         activitiesRef.current = nextActivities;
         publishActivities(nextActivities);
       }
-      if (envelope.event.event === 'assistant.segment.completed' && typeof data['segmentId'] === 'string' && (data['phase'] === 'progress' || data['phase'] === 'final')) {
+      if (currentTurn && envelope.event.event === 'assistant.segment.completed' && typeof data['segmentId'] === 'string' && (data['phase'] === 'progress' || data['phase'] === 'final')) {
         const nextActivities = markAssistantSegmentPhase(activitiesRef.current, { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), segmentId: data['segmentId'], phase: data['phase'] });
         activitiesRef.current = nextActivities;
         publishActivities(nextActivities);
         if (data['phase'] === 'final') setFinalResponseReceived(true);
       }
-      if (envelope.event.event === 'context.compacting') showContextCompactionStatus('compacting');
-      if (envelope.event.event === 'context.compacted') showContextCompactionStatus('compacted');
-      if (envelope.event.event.startsWith('subagent.')) setSubagents(current => applySubagentEvent(current, envelope.event.event, data));
-      if (envelope.event.event === 'turn.failed' || envelope.event.event === 'turn.cancelled') setPlan(undefined);
-      else if (envelope.event.event.startsWith('work.')) setPlan(current => applyWorkPlanEvent(current, envelope.event.event, data));
+      if (currentTurn && envelope.event.event === 'context.compacting') showContextCompactionStatus('compacting');
+      if (currentTurn && envelope.event.event === 'context.compacted') showContextCompactionStatus('compacted');
+      if (currentTurn && envelope.event.event.startsWith('subagent.')) setSubagents(current => applySubagentEvent(current, envelope.event.event, data));
+      if (currentTurn && (envelope.event.event === 'turn.failed' || envelope.event.event === 'turn.cancelled')) { setPlan(undefined); setSubagents([]); }
+      else if (currentTurn && envelope.event.event.startsWith('work.')) setPlan(current => applyWorkPlanEvent(current, envelope.event.event, data));
     }
-    if (eventTask !== undefined && eventTask.id === currentTaskId && envelope.event.event !== 'assistant.delta') scheduleActivityRefresh(eventTask.id);
-    if (eventTask !== undefined && (terminal || envelope.event.event === 'turn.started')) scheduleTaskReload(currentWorkspace.id);
+    if (eventTask !== undefined && isCurrentTask && envelope.event.event !== 'assistant.delta') scheduleActivityRefresh(eventTask.id);
+    if (eventTask !== undefined && (!isCurrentTask || currentTurn) && (terminal || envelope.event.event === 'turn.started')) scheduleTaskReload(currentWorkspace.id);
   }), [markTurnFinished, markTurnStarted, publishActivities, refreshCheckpointStatuses, scheduleActivityRefresh, scheduleTaskReload]);
   useEffect(() => window.lotagate.agent.onDiagnostic(envelope => {
     if (envelope.cwd !== workspaceRef.current?.rootPath) return;
@@ -389,7 +390,7 @@ export function useWorkspaceController() {
 
   const startPrompt = useCallback(async (prompt: string, attachmentIdsOverride?: readonly string[], options?: PromptSendOptions): Promise<boolean> => {
     if (!prompt.trim() || workspace === undefined) return false;
-    setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setActiveTurnId(undefined); setPlan(undefined); setSubagents([]); setFinalResponseReceived(false);
+    setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setActiveTurnId(undefined); activeTurnRef.current = undefined; setPlan(undefined); setSubagents([]); setFinalResponseReceived(false);
     let failedTaskId: string | undefined;
     try {
       await flushDraft();
@@ -400,7 +401,7 @@ export function useWorkspaceController() {
       draftTaskRef.current = activeTask;
       const attachmentIds = [...(attachmentIdsOverride ?? activeTask.draftAttachmentIds)];
       if (!isNewTask) await window.lotagate.tasks.addActivity(activeTask.id, 'user', prompt, attachmentIds.length === 0 ? {} : { attachmentIds });
-      await loadActivities(activeTask.id, isNewTask);
+      await loadActivities(activeTask.id, isNewTask, false);
       const patch: { draft: string; draftAttachmentIds: string[]; title?: string } = { draft: '', draftAttachmentIds: [] };
       if (activeTask.titleSource === 'automatic' && activeTask.title === 'New chat') {
         patch.title = sessionSlugFromPrompt(prompt);
@@ -435,9 +436,8 @@ export function useWorkspaceController() {
       await reloadTasks(workspace.id);
       return true;
     } catch (reason) {
-      setThinking(false); setFinalResponseReceived(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); setActiveTurnId(undefined); setError(toMessage(reason));
+      setThinking(false); setFinalResponseReceived(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); setActiveTurnId(undefined); activeTurnRef.current = undefined; setPlan(undefined); setSubagents([]); setError(toMessage(reason));
       if (failedTaskId) {
-        if (activeTurnRef.current?.taskId === failedTaskId) activeTurnRef.current = undefined;
         await window.lotagate.tasks.setStatus(failedTaskId, 'failed');
       }
       return false;
@@ -483,7 +483,7 @@ export function useWorkspaceController() {
       activeTask = await window.lotagate.tasks.update(activeTask.id, { draft: '', draftAttachmentIds: [], ...(activeTask.titleSource === 'automatic' && activeTask.title === 'New chat' ? { title: sessionSlugFromPrompt(preview) } : {}) });
       draftTaskRef.current = activeTask;
       if (isCurrentCommand()) { setTask(activeTask); setAttachments([]); }
-      await loadActivities(activeTask.id, isNewTask);
+      await loadActivities(activeTask.id, isNewTask, false);
       await window.lotagate.tasks.setStatus(activeTask.id, 'active');
       await window.lotagate.agent.initialize(activeTask.cwd);
       const result = await executeDesktopCommandResult(activeTask.cwd, invocation);
@@ -502,7 +502,7 @@ export function useWorkspaceController() {
         await window.lotagate.tasks.addActivity(failedTaskId, 'error', toMessage(reason), { command: invocation.actionId, [DESKTOP_COMMAND_TIMING_METADATA_KEY]: { startedAt: commandStartedAt, endedAt: commandEndedAt } }).catch(() => undefined);
         await window.lotagate.tasks.setStatus(failedTaskId, 'failed').catch(() => undefined);
       }
-      if (isCurrentCommand()) setError(toMessage(reason));
+      if (isCurrentCommand()) { setPlan(undefined); setSubagents([]); setError(toMessage(reason)); }
       return false;
     } finally { if (isCurrentCommand()) { setBusy(false); setThinking(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); } }
   }, [createTask, loadActivities, reloadTasks, task, workspace]);
@@ -585,7 +585,7 @@ export function useWorkspaceController() {
     if (!task || !workspace) return;
     const activeTurn = activeTurnRef.current?.taskId === task.id && activeTurnRef.current.cwd === workspace.rootPath ? activeTurnRef.current : undefined;
     setError(undefined); suppressQueueRef.current = true; steeringQueueIdRef.current = undefined;
-    await cancelWorkspaceTask({ task, workspace, activeTurn, clearActiveTurn: () => { activeTurnRef.current = undefined; setActiveTurnId(undefined); }, resetLiveState: () => { setThinking(false); setFinalResponseReceived(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); setActiveTurnId(undefined); }, setTask, updateTasks: update => setTasks(update), reloadTasks, setError });
+    await cancelWorkspaceTask({ task, workspace, activeTurn, clearActiveTurn: () => { activeTurnRef.current = undefined; setActiveTurnId(undefined); }, resetLiveState: () => { setThinking(false); setFinalResponseReceived(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); setActiveTurnId(undefined); setPlan(undefined); setSubagents([]); }, setTask, updateTasks: update => setTasks(update), reloadTasks, setError });
   }, [reloadTasks, task, workspace]);
   const retryTask = useCallback(async () => { if (!task) return; const history = await window.lotagate.tasks.activities(task.id); const prompt = [...history].reverse().find(item => item.kind === 'user')?.text; if (prompt) await window.lotagate.tasks.retry(task.id); if (prompt) await sendPrompt(prompt); }, [sendPrompt, task]);
   const archiveTask = useCallback(async (taskId: string, archived: boolean) => { if (!workspace) return; await window.lotagate.tasks.archive(taskId, archived); await reloadTasks(workspace.id); }, [reloadTasks, workspace]);

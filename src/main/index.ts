@@ -100,7 +100,7 @@ app.whenReady().then(async () => {
   browserService = browser;
   const browserHost = new BrowserHostToolBroker(browser, (cwd, activity) => {
     logger.debug('agent.browser', { cwd, event: activity.event, action: activity.data['action'] });
-    const event = { version: 3 as const, type: 'event' as const, scope: 'session' as const, event: activity.event, data: activity.data };
+    const event = { version: 1 as const, type: 'event' as const, scope: 'session' as const, event: activity.event, data: activity.data };
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
   });
   const hostExecution = new DesktopHostExecutionBroker({

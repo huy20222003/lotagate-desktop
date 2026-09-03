@@ -11,7 +11,7 @@
 .settings-nav-item:hover, .settings-nav-item.selected { background: var(--color-surface-elevated); color: var(--color-text); }
 .settings-content-scrollbar { min-width: 0; min-height: 0; height: 100vh; }
 .settings-content { min-width: 0; min-height: 100%; padding: 44px 7vw; }
-.settings-header { border-bottom: 1px solid var(--color-border); padding-bottom: 14px; }
+.settings-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--color-border); padding-bottom: 14px; }
 .settings-header h1 { margin: 0; color: var(--color-text); font-size: 17px; font-weight: 550; }
 .profile-panel { width: min(920px, 100%); margin: 64px auto; text-align: center; }
 .profile-identity { display: grid; justify-items: center; }
@@ -132,9 +132,11 @@
 .settings-extension-error { display: grid; gap: 8px; }
 .settings-extension-error p { margin: 0; color: var(--color-text-tertiary); font-size: 13px; overflow-wrap: anywhere; }
 .settings-memory-page { display: grid; gap: 16px; width: min(920px, 100%); margin: 30px auto 50px; }
-.settings-memory-toolbar, .settings-memory-transfer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.settings-memory-transfer .text-input { min-width: 220px; flex: 1 1 320px; }
-.settings-memory-scope { min-height: 38px; border: 1px solid var(--color-border); border-radius: 7px; padding: 0 10px; background: var(--color-input-surface); color: var(--color-text); font: inherit; font-size: 12px; }
+.settings-memory-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.settings-memory-toolbar > .text-input { min-width: 220px; flex: 1 1 280px; }
+.settings-memory-filter { width: 150px; flex: 0 0 150px; }
+.settings-memory-filter .model-select { width: 100%; }
+.settings-memory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
 .settings-memory-table-skeleton { display: grid; gap: 12px; padding: 18px; }
 .settings-memory-skeleton-title { width: 36%; height: 13px; }
 .settings-memory-skeleton-row { width: 100%; height: 35px; }

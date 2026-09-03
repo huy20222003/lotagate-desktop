@@ -41,9 +41,6 @@ export function BrowserSettingsPage() {
     }
   };
   return <div className="appearance-page">
-    <section className="appearance-section">
-      <div className="appearance-section-heading"><div><h2>Browser</h2><p>Define the browser environment used by the agent and by manual Browser sessions. These defaults apply consistently to navigation, inspection, downloads, and evidence.</p></div><span className="settings-status">Desktop browser</span></div>
-    </section>
     <section className="appearance-section appearance-settings-card">
       <div className="appearance-section-heading"><div><h2>Viewport & device</h2><p>Choose the screen profile that browser pages should render against.</p></div></div>
       <div className="appearance-setting-row"><div><strong>Viewport profile</strong><span>Choose the screen profile that browser pages should render against.</span></div><Dropdown ariaLabel="Viewport profile" value={value.viewportProfile} options={viewportOptions} onChange={next => set('viewportProfile', next as BrowserSettings['viewportProfile'])} /></div>

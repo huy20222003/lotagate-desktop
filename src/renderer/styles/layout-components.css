@@ -36,4 +36,5 @@
 table { width: 100%; border-collapse: collapse; color: var(--color-text-secondary); font-size: 12px; }
 th, td { border-bottom: 1px solid var(--color-border); padding: 9px 10px; text-align: left; }
 th { color: var(--color-text-tertiary); font-weight: 550; }
+.table-empty { color: var(--color-text-tertiary); text-align: center; }
 tr:last-child td { border-bottom: 0; }

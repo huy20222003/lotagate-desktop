@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
 /**
- * Protocol v3 adds host-attested intent progress and local-memory command
- * support. The CLI standalone protocol is intentionally unaffected.
+ * The Desktop JSONL contract is v1. Local memory commands are exposed through
+ * the shared CLI command catalog and remain project-scoped.
  */
-export const DESKTOP_PROTOCOL_VERSION = 3 as const;
+export const DESKTOP_PROTOCOL_VERSION = 1 as const;
 
 const id = z.string().min(1).max(256);
 const params = z.record(z.string(), z.unknown());
@@ -103,7 +103,7 @@ export type DesktopResponse = z.infer<typeof desktopResponseSchema>;
 export type DesktopEvent = z.infer<typeof desktopEventSchema>;
 export type DesktopHostRequest = z.infer<typeof desktopHostRequestSchema>;
 export type DesktopHostResponse = z.infer<typeof desktopHostResponseSchema>;
-export type DesktopAgentResult = { protocol: 'lotagate.desktop'; version: 3; capabilities: string[] };
+export type DesktopAgentResult = { protocol: 'lotagate.desktop'; version: 1; capabilities: string[] };
 export type DesktopExecutionPolicy = {
   permissionPolicy: 'ask' | 'allowlist' | 'review' | 'autonomous';
   allowedTools?: readonly string[];

@@ -151,7 +151,7 @@ export class AgentManager {
         this.recordCommandEvent(event);
         this.handler.onEvent(projectRoot, event);
       },
-      onHostRequest: request => this.handler.onHostRequest === undefined ? Promise.resolve({ version: 3, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message: 'The Desktop host is unavailable.', retryable: false } }) : this.handler.onHostRequest(projectRoot, request),
+      onHostRequest: request => this.handler.onHostRequest === undefined ? Promise.resolve({ version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message: 'The Desktop host is unavailable.', retryable: false } }) : this.handler.onHostRequest(projectRoot, request),
       onDiagnostic: diagnostic => this.handler.onDiagnostic?.(projectRoot, diagnostic),
       onExit: error => {
         const approvalIds = [...this.approvalBindings.entries()].filter(([, candidate]) => candidate === binding).map(([approvalId]) => approvalId);

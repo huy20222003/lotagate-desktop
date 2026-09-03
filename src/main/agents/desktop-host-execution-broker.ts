@@ -34,7 +34,7 @@ export class DesktopHostExecutionBroker {
     try {
       const result = await this.options.sandbox.execute({ root: cwd, action: request.action, params: request.params, ...(signal === undefined ? {} : { signal }) });
       if (result.fileChange !== undefined) this.options.onFileChanged?.(cwd, { path: result.fileChange.path, kind: result.fileChange.deletions === 0 ? 'created' : 'modified' });
-      return { version: 3, type: 'host.response', requestId: request.requestId, tool: request.tool, executionBoundary: 'sandbox', ok: true, result: result.result, ...(result.fileChange === undefined ? {} : { fileChange: result.fileChange }) };
+      return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, executionBoundary: 'sandbox', ok: true, result: result.result, ...(result.fileChange === undefined ? {} : { fileChange: result.fileChange }) };
     } catch (error) {
       if (error instanceof SandboxUnavailableError) return this.sandboxFallback(cwd, request, signal, error.message);
       return this.errorResponse(request, 'SANDBOX_EXECUTION_FAILED', error instanceof Error ? error.message : 'Sandbox execution failed.', 'sandbox');
@@ -52,7 +52,7 @@ export class DesktopHostExecutionBroker {
             : this.unsupported('The requested host operation is not available through this broker.');
       const result = isFilesystemOutcome(outcome) ? outcome.result : outcome;
       const fileChange = isFilesystemOutcome(outcome) ? outcome.fileChange : undefined;
-      return { version: 3, type: 'host.response', requestId: request.requestId, tool: request.tool, executionBoundary: 'host', ok: true, result, ...(fileChange === undefined ? {} : { fileChange }) };
+      return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, executionBoundary: 'host', ok: true, result, ...(fileChange === undefined ? {} : { fileChange }) };
     } catch (error) {
       return this.errorResponse(request, 'HOST_EXECUTION_FAILED', error instanceof Error ? error.message : 'Host execution failed.', 'host');
     }
@@ -64,7 +64,7 @@ export class DesktopHostExecutionBroker {
   }
 
   private errorResponse(request: DesktopHostRequest, code: string, message: string, boundary: 'sandbox' | 'host', retryable = false): DesktopHostResponse {
-    return { version: 3, type: 'host.response', requestId: request.requestId, tool: request.tool, executionBoundary: boundary, ok: false, error: { code, category: 'execution', message: redact(message), retryable } };
+    return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, executionBoundary: boundary, ok: false, error: { code, category: 'execution', message: redact(message), retryable } };
   }
 
   private async filesystem(root: string, action: string, params: Record<string, unknown>): Promise<unknown> {

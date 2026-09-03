@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Avatar, Button, Checkbox, CopyTextButton, Dropdown, IconButton, Label, Modal, Skeleton, Tabs, TextArea, TextInput, Tooltip } from './ui.js';
+import { Avatar, Button, Checkbox, CopyTextButton, Dropdown, IconButton, Label, Modal, Skeleton, Table, Tabs, TextArea, TextInput, Tooltip } from './ui.js';
 import { Check } from 'lucide-react';
 
 describe('desktop UI primitives', () => {
@@ -68,6 +68,12 @@ describe('desktop UI primitives', () => {
     fireEvent.keyDown(trigger, { key: 'Enter' });
     await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));
     expect(screen.getByText('No item to select')).toBeVisible();
+  });
+
+  it('renders an empty table row when no data is available', () => {
+    render(<Table<{ id: string; name: string }> columns={[{ key: 'name', label: 'Name' }]} rows={[]} />);
+    expect(screen.getByText('No data available.')).toBeVisible();
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeVisible();
   });
 
   it('closes a modal when the user clicks outside it', () => {

@@ -1,6 +1,6 @@
 import { dialog } from 'electron';
 import { stat, realpath } from 'node:fs/promises';
-import { extname, isAbsolute, relative } from 'node:path';
+import { extname, isAbsolute, relative, sep } from 'node:path';
 import { z } from 'zod';
 import { assertTrustedRenderer } from './sender-policy.js';
 import { requireDirectory, requireExistingPath } from '../security/path-policy.js';
@@ -41,6 +41,22 @@ handle('workspace.pickFolder', async (event, rootPath?: unknown) => {
   };
 handle('workspace.pickFile', async (event, rootPath?: unknown, extensions?: unknown) => { const files = await pickFiles(event, rootPath, extensions, false); return files[0] ?? null; });
 handle('workspace.pickMultipleFile', async (event, rootPath?: unknown, extensions?: unknown) => pickFiles(event, rootPath, extensions, true));
+handle('workspace.pickSaveFile', async (event, rootPath?: unknown, extensions?: unknown) => {
+    assertTrustedRenderer(event);
+    const scope = rootPath === undefined ? undefined : await requireDirectory(cwdSchema.parse(rootPath));
+    const allowedExtensions = parseFileExtensions(extensions);
+    const selected = await dialog.showSaveDialog({ ...(scope === undefined ? {} : { defaultPath: scope }), ...(allowedExtensions.length === 0 ? {} : { filters: [{ name: 'Supported files', extensions: allowedExtensions }] }) });
+    if (selected.canceled || selected.filePath === undefined) return null;
+    const selectedPath = await realpath(selected.filePath).catch(() => selected.filePath);
+    const selectedExtension = extname(selectedPath).slice(1).toLowerCase();
+    const file = allowedExtensions.length > 0 && selectedExtension === '' ? `${selectedPath}.${allowedExtensions[0]}` : selectedPath;
+    if (!isAbsolute(file)) throw new Error('Selected file must use an absolute path.');
+    if (allowedExtensions.length > 0 && !allowedExtensions.includes(extname(file).slice(1).toLowerCase())) throw new Error(`Save the file with one of these extensions: ${allowedExtensions.join(', ')}.`);
+    if (scope === undefined) return file;
+    const scopedPath = relative(scope, file);
+    if (scopedPath === '..' || scopedPath.startsWith(`..${sep}`) || isAbsolute(scopedPath)) throw new Error('Selected file must remain inside the workspace.');
+    return scopedPath || '.';
+  });
 handle('workspace.fileSize', async (event, rootPath: unknown, filePath: unknown) => {
     assertTrustedRenderer(event);
     const scope = rootPath === undefined ? undefined : await requireDirectory(cwdSchema.parse(rootPath));

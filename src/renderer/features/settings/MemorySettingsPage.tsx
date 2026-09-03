@@ -1,45 +1,51 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Eye, RefreshCw, Trash2, Upload } from 'lucide-react';
-import { Button, Card, EmptyState, Icon, IconButton, Modal, Skeleton, Table, TextInput, useToast } from '../../components/ui.js';
+import { Download, Eye, Trash2, Upload } from 'lucide-react';
+import { Button, Card, Dropdown, EmptyState, Icon, IconButton, Modal, Skeleton, Table, TextInput, useToast } from '../../components/ui.js';
+import { Pagination } from '../../components/Pagination.js';
+import { useDebounce } from '../../hooks/use-debounce.js';
 import { toUserErrorMessage } from '../../utils/errors.js';
-import { MemoryCommandClient, type MemoryRow, type MemoryScope } from './memory-command-client.js';
+import { MemoryCommandClient, type MemoryRow } from './memory-command-client.js';
 
-export function MemorySettingsPage({ cwd }: { cwd?: string }) {
+const ALL_FILTER_VALUE = 'all';
+const MEMORY_PAGE_SIZE = 10;
+
+export function MemorySettingsPage({ cwd, refreshToken = 0 }: { cwd?: string; refreshToken?: number }) {
   const client = useMemo(() => new MemoryCommandClient(), []);
   const currentCwdRef = useRef(cwd);
   const requestRef = useRef(0);
   currentCwdRef.current = cwd;
   const [rows, setRows] = useState<MemoryRow[]>([]);
   const [loading, setLoading] = useState(Boolean(cwd));
-  const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
-  const [clearScope, setClearScope] = useState<MemoryScope | undefined>();
+  const [clearRequested, setClearRequested] = useState(false);
   const [selected, setSelected] = useState<MemoryRow | undefined>();
-  const [exportPath, setExportPath] = useState('');
-  const [importPath, setImportPath] = useState('');
-  const [importScope, setImportScope] = useState<MemoryScope>('project');
-  const [importRecords, setImportRecords] = useState<number | undefined>();
-  const { success } = useToast();
+  const [search, setSearch] = useState('');
+  const [kindFilter, setKindFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const debouncedSearch = useDebounce(search, 180);
+  const { success, error: showError } = useToast();
+  const showErrorRef = useRef(showError);
+  showErrorRef.current = showError;
 
   const reload = useCallback(async () => {
     const requestId = ++requestRef.current;
     const requestCwd = cwd;
     const isCurrent = () => requestId === requestRef.current && currentCwdRef.current === requestCwd;
     if (!requestCwd) {
-      if (isCurrent()) { setRows([]); setLoading(false); setError(undefined); }
+      if (isCurrent()) { setRows([]); setLoading(false); }
       return;
     }
     setLoading(true);
-    setError(undefined);
     try {
-      const [user, project] = await Promise.all([client.list(requestCwd, 'user'), client.list(requestCwd, 'project')]);
-      if (isCurrent()) setRows([...user, ...project]);
+      const project = await client.list(requestCwd);
+      if (isCurrent()) setRows(project);
     } catch (reason) {
-      if (isCurrent()) setError(toUserErrorMessage(reason));
+      if (isCurrent()) showErrorRef.current('Unable to load memory', toUserErrorMessage(reason));
     } finally {
       if (isCurrent()) setLoading(false);
     }
-  }, [client, cwd]);
+  }, [client, cwd, refreshToken]);
 
   useEffect(() => {
     void reload();
@@ -48,92 +54,102 @@ export function MemorySettingsPage({ cwd }: { cwd?: string }) {
 
   useEffect(() => {
     setBusy(false);
-    setClearScope(undefined);
+    setClearRequested(false);
     setSelected(undefined);
-    setImportRecords(undefined);
   }, [cwd]);
 
   const isCurrentCwd = (requestCwd: string | undefined) => currentCwdRef.current === requestCwd;
   const forget = async (row: MemoryRow) => {
     const requestCwd = cwd;
     if (!requestCwd) return;
-    setBusy(true); setError(undefined);
+    setBusy(true);
     try {
-      await client.forget(requestCwd, row.scope, row.id);
+      await client.forget(requestCwd, row.id);
       if (!isCurrentCwd(requestCwd)) return;
       success('Memory removed');
       await reload();
-    } catch (reason) { if (isCurrentCwd(requestCwd)) setError(toUserErrorMessage(reason)); }
+    } catch (reason) { if (isCurrentCwd(requestCwd)) showError('Unable to forget memory', toUserErrorMessage(reason)); }
     finally { if (isCurrentCwd(requestCwd)) setBusy(false); }
   };
   const show = async (row: MemoryRow) => {
     const requestCwd = cwd;
     if (!requestCwd) return;
-    setBusy(true); setError(undefined);
+    setBusy(true);
     try {
-      const result = await client.show(requestCwd, row.scope, row.id);
+      const result = await client.show(requestCwd, row.id);
       if (isCurrentCwd(requestCwd)) setSelected(result ?? row);
-    } catch (reason) { if (isCurrentCwd(requestCwd)) setError(toUserErrorMessage(reason)); }
+    } catch (reason) { if (isCurrentCwd(requestCwd)) showError('Unable to show memory', toUserErrorMessage(reason)); }
     finally { if (isCurrentCwd(requestCwd)) setBusy(false); }
   };
   const clear = async () => {
     const requestCwd = cwd;
-    const scope = clearScope;
-    if (!requestCwd || scope === undefined) return;
-    setBusy(true); setError(undefined);
+    if (!requestCwd || !clearRequested) return;
+    setBusy(true);
     try {
-      const count = await client.clear(requestCwd, scope);
+      const count = await client.clear(requestCwd);
       if (!isCurrentCwd(requestCwd)) return;
-      success(`Cleared ${count} ${scope} memories`);
-      setClearScope(undefined);
+      success(`Cleared ${count} memories`);
+      setClearRequested(false);
       await reload();
-    } catch (reason) { if (isCurrentCwd(requestCwd)) setError(toUserErrorMessage(reason)); }
+    } catch (reason) { if (isCurrentCwd(requestCwd)) showError('Unable to clear memory', toUserErrorMessage(reason)); }
     finally { if (isCurrentCwd(requestCwd)) setBusy(false); }
   };
-  const exportMemory = async (scope: MemoryScope) => {
+  const exportMemory = async () => {
     const requestCwd = cwd;
     if (!requestCwd) return;
-    setBusy(true); setError(undefined);
+    setBusy(true);
     try {
-      await client.export(requestCwd, scope, exportPath.trim() || undefined);
-      if (isCurrentCwd(requestCwd)) success(exportPath.trim() ? `Exported ${scope} memory bundle` : 'Memory bundle returned by the CLI command');
-    } catch (reason) { if (isCurrentCwd(requestCwd)) setError(toUserErrorMessage(reason)); }
+      const destination = await window.lotagate.workspaces.pickSaveFile(undefined, ['json']);
+      if (destination === null || !isCurrentCwd(requestCwd)) return;
+      await client.export(requestCwd, destination);
+      if (isCurrentCwd(requestCwd)) success('Memory exported');
+    } catch (reason) { if (isCurrentCwd(requestCwd)) showError('Unable to export memory', toUserErrorMessage(reason)); }
     finally { if (isCurrentCwd(requestCwd)) setBusy(false); }
   };
-  const previewImport = async () => {
+  const importMemory = async () => {
     const requestCwd = cwd;
-    if (!requestCwd || importPath.trim().length === 0) return;
-    setBusy(true); setError(undefined);
+    if (!requestCwd) return;
+    setBusy(true);
     try {
-      const records = await client.previewImport(requestCwd, importScope, importPath.trim());
-      if (isCurrentCwd(requestCwd)) setImportRecords(records);
-    } catch (reason) { if (isCurrentCwd(requestCwd)) setError(toUserErrorMessage(reason)); }
-    finally { if (isCurrentCwd(requestCwd)) setBusy(false); }
-  };
-  const applyImport = async () => {
-    const requestCwd = cwd;
-    if (!requestCwd || importPath.trim().length === 0) return;
-    setBusy(true); setError(undefined);
-    try {
-      const result = await client.import(requestCwd, importScope, importPath.trim());
+      const selectedPath = await window.lotagate.workspaces.pickFile(undefined, ['json']);
+      if (selectedPath === null || !isCurrentCwd(requestCwd)) return;
+      const records = await client.previewImport(requestCwd, selectedPath);
       if (!isCurrentCwd(requestCwd)) return;
-      success(`Imported ${result.imported}; skipped ${result.skipped}`);
-      setImportRecords(undefined);
-      setImportPath('');
+      if (records === 0) { success('No memories to import'); return; }
+      const result = await client.import(requestCwd, selectedPath);
+      if (!isCurrentCwd(requestCwd)) return;
+      success(`Imported ${result.imported}; skipped ${result.skipped}`, `Validated ${records} memory records.`);
       await reload();
-    } catch (reason) { if (isCurrentCwd(requestCwd)) setError(toUserErrorMessage(reason)); }
+    } catch (reason) { if (isCurrentCwd(requestCwd)) showError('Unable to import memory', toUserErrorMessage(reason)); }
     finally { if (isCurrentCwd(requestCwd)) setBusy(false); }
   };
 
+  const filteredRows = useMemo(() => {
+    const query = debouncedSearch.trim().toLocaleLowerCase();
+    return rows.filter(row => {
+      const matchesQuery = query.length === 0 || `${row.statement} ${row.rationale ?? ''} ${row.evidenceRefs.join(' ')}`.toLocaleLowerCase().includes(query);
+      const matchesKind = kindFilter === 'all' || row.kind === kindFilter;
+      const matchesStatus = statusFilter === 'all' || row.status === statusFilter;
+      return matchesQuery && matchesKind && matchesStatus;
+    });
+  }, [debouncedSearch, kindFilter, rows, statusFilter]);
+  const kindOptions = useMemo(() => buildFilterOptions(rows.map(row => row.kind), 'All types'), [rows]);
+  const statusOptions = useMemo(() => buildFilterOptions(rows.map(row => row.status), 'All statuses'), [rows]);
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / MEMORY_PAGE_SIZE));
+  const visibleRows = useMemo(() => filteredRows.slice((page - 1) * MEMORY_PAGE_SIZE, page * MEMORY_PAGE_SIZE), [filteredRows, page]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, kindFilter, statusFilter]);
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+    if (kindFilter !== ALL_FILTER_VALUE && !kindOptions.some(option => option.value === kindFilter)) setKindFilter(ALL_FILTER_VALUE);
+    if (statusFilter !== ALL_FILTER_VALUE && !statusOptions.some(option => option.value === statusFilter)) setStatusFilter(ALL_FILTER_VALUE);
+  }, [kindFilter, kindOptions, page, pageCount, statusFilter, statusOptions]);
+
   if (!cwd) return <EmptyState title="Open a workspace to manage local memory" detail="Memory remains on this device. Project memories are scoped to the selected workspace." />;
   return <div className="settings-memory-page">
-    <div className="settings-intro"><span className="settings-eyebrow">Local intelligence</span><h2>Agent memory</h2><p>Verified local outcomes can inform future agent turns. Imported bundles remain candidates until LotaGate verifies them locally.</p></div>
-    <Card className="settings-form-card"><div className="settings-card-heading"><div><h3>Manage local memory</h3><p>Memory is stored on this device. Clearing a scope is permanent unless you export it first.</p></div></div><div className="settings-memory-toolbar"><Button variant="secondary" disabled={loading || busy} onClick={() => void reload()}><Icon icon={RefreshCw} size={14} />Refresh</Button><Button variant="secondary" disabled={busy} onClick={() => setClearScope('project')}><Icon icon={Trash2} size={14} />Clear project</Button><Button variant="secondary" disabled={busy} onClick={() => setClearScope('user')}><Icon icon={Trash2} size={14} />Clear user</Button></div></Card>
-    {error ? <Card className="settings-extension-error"><strong>Memory action failed</strong><p>{error}</p></Card> : null}
-    <Card className="settings-form-card"><div className="settings-memory-transfer"><TextInput value={exportPath} onChange={event => setExportPath(event.target.value)} placeholder="Optional absolute export path (.json)" aria-label="Memory export path" /><Button variant="secondary" disabled={busy} onClick={() => void exportMemory('project')}><Icon icon={Download} size={14} />Export project</Button><Button variant="secondary" disabled={busy} onClick={() => void exportMemory('user')}><Icon icon={Download} size={14} />Export user</Button></div><div className="settings-memory-transfer"><TextInput value={importPath} onChange={event => { setImportPath(event.target.value); setImportRecords(undefined); }} placeholder="Absolute memory bundle path (.json)" aria-label="Memory import path" /><select className="settings-memory-scope" value={importScope} onChange={event => { setImportScope(event.target.value === 'user' ? 'user' : 'project'); setImportRecords(undefined); }} aria-label="Memory import scope"><option value="project">Project</option><option value="user">User</option></select><Button variant="secondary" disabled={busy || importPath.trim().length === 0} onClick={() => void previewImport()}><Icon icon={Upload} size={14} />Validate import</Button>{importRecords === undefined ? null : <Button variant="primary" disabled={busy} onClick={() => void applyImport()}>Import {importRecords}</Button>}</div></Card>
-    {loading ? <MemoryTableSkeleton /> : rows.length === 0 ? <EmptyState title="No local memories" detail="Verified task outcomes can be retained locally and managed here." /> : <Table columns={columns(show, forget, busy)} rows={rows} />}
-    {clearScope === undefined ? null : <Modal title={`Clear ${clearScope} memory`} onClose={() => setClearScope(undefined)}><p className="modal-copy">Remove all {clearScope}-scoped memories from this device? This cannot be undone unless you exported a bundle first.</p><div className="modal-actions"><Button variant="secondary" disabled={busy} onClick={() => setClearScope(undefined)}>Cancel</Button><Button variant="danger" disabled={busy} onClick={() => void clear()}>Clear memory</Button></div></Modal>}
-    {selected === undefined ? null : <Modal title="Memory details" onClose={() => setSelected(undefined)}><p className="modal-copy">{selected.statement}</p>{selected.rationale === undefined ? null : <p className="modal-copy">{selected.rationale}</p>}<p className="modal-copy">Scope: {selected.scope} · {selected.kind} · {selected.status} · used {selected.useCount} times</p><p className="modal-copy">Evidence: {selected.evidenceRefs.length === 0 ? 'none' : selected.evidenceRefs.join(', ')}</p><div className="modal-actions"><Button variant="secondary" onClick={() => setSelected(undefined)}>Close</Button></div></Modal>}
+    <div className="settings-memory-toolbar"><TextInput value={search} onChange={event => setSearch(event.target.value)} placeholder="Search memories" aria-label="Search memories" /><Dropdown className="settings-memory-filter" ariaLabel="Filter memory type" placeholder="Filter type" value={kindFilter} options={kindOptions} onChange={setKindFilter} /><Dropdown className="settings-memory-filter" ariaLabel="Filter memory status" placeholder="Filter status" value={statusFilter} options={statusOptions} onChange={setStatusFilter} /><div className="settings-memory-actions"><Button variant="secondary" disabled={busy} onClick={() => void importMemory()}><Icon icon={Upload} size={14} />Import</Button><Button variant="secondary" disabled={busy} onClick={() => void exportMemory()}><Icon icon={Download} size={14} />Export</Button><Button variant="secondary" disabled={busy} onClick={() => setClearRequested(true)}><Icon icon={Trash2} size={14} />Clear</Button></div></div>
+    {loading ? <MemoryTableSkeleton /> : <><Table columns={columns(show, forget, busy)} rows={visibleRows} emptyMessage={rows.length === 0 ? 'No local memories.' : 'No memories match the current filters.'} /><Pagination page={page} pageSize={MEMORY_PAGE_SIZE} total={filteredRows.length} onPageChange={setPage} /></>}
+    {clearRequested ? <Modal title="Clear project memory" onClose={() => setClearRequested(false)}><p className="modal-copy">Remove all project memories from this device? This cannot be undone unless you exported a bundle first.</p><div className="modal-actions"><Button variant="secondary" disabled={busy} onClick={() => setClearRequested(false)}>Cancel</Button><Button variant="danger" disabled={busy} onClick={() => void clear()}>Clear memory</Button></div></Modal> : null}
+    {selected === undefined ? null : <Modal title="Memory details" onClose={() => setSelected(undefined)}><p className="modal-copy">{selected.statement}</p>{selected.rationale === undefined ? null : <p className="modal-copy">{selected.rationale}</p>}<p className="modal-copy">{selected.kind} · {selected.status} · used {selected.useCount} times</p><p className="modal-copy">Evidence: {selected.evidenceRefs.length === 0 ? 'none' : selected.evidenceRefs.join(', ')}</p><div className="modal-actions"><Button variant="secondary" onClick={() => setSelected(undefined)}>Close</Button></div></Modal>}
   </div>;
 }
 
@@ -144,7 +160,17 @@ function MemoryTableSkeleton() {
 function columns(onShow: (row: MemoryRow) => Promise<void>, onForget: (row: MemoryRow) => Promise<void>, busy: boolean) {
   return [
     { key: 'statement', label: 'Memory', render: (row: MemoryRow) => <span title={row.rationale}>{row.statement}</span> },
-    { key: 'scope', label: 'Scope' }, { key: 'kind', label: 'Type' }, { key: 'status', label: 'Status' }, { key: 'useCount', label: 'Uses' },
+    { key: 'kind', label: 'Type' }, { key: 'status', label: 'Status' }, { key: 'useCount', label: 'Uses' },
     { key: 'actions', label: 'Actions', render: (row: MemoryRow) => <span><IconButton icon={Eye} iconSize={15} label={`Show ${row.statement}`} disabled={busy} onClick={() => void onShow(row)} /><IconButton icon={Trash2} iconSize={15} label={`Forget ${row.statement}`} disabled={busy} onClick={() => void onForget(row)} /></span> },
   ];
+}
+
+function buildFilterOptions(values: readonly string[], allLabel: string): Array<{ value: string; label: string }> {
+  const uniqueValues = [...new Set(values)].sort((left, right) => left.localeCompare(right));
+  if (uniqueValues.length === 0) return [];
+  return [{ value: ALL_FILTER_VALUE, label: allLabel }, ...uniqueValues.map(value => ({ value, label: valueLabel(value) }))];
+}
+
+function valueLabel(value: string): string {
+  return value.charAt(0).toLocaleUpperCase() + value.slice(1);
 }
