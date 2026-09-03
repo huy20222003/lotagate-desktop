@@ -4,7 +4,8 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../components/ui.js';
-import { MemorySettingsPage } from './MemorySettingsPage.js';
+import { MemorySettingsPage, MEMORY_STATEMENT_PREVIEW_LENGTH } from './MemorySettingsPage.js';
+import { formatTextClamp } from '../../utils/text.js';
 
 const clientMocks = vi.hoisted(() => ({ list: vi.fn(), forget: vi.fn(), show: vi.fn(), clear: vi.fn(), export: vi.fn(), previewImport: vi.fn(), import: vi.fn() }));
 
@@ -20,7 +21,7 @@ vi.mock('./memory-command-client.js', () => ({
   },
 }));
 
-const memory = (statement: string) => ({ id: statement, kind: 'episodic' as const, status: 'verified' as const, statement, evidenceRefs: [], updatedAt: '2026-09-03T00:00:00.000Z', useCount: 0 });
+const memory = (statement: string) => ({ id: statement, kind: 'episodic' as const, state: 'active' as const, statement, rationale: undefined, topics: [], source: 'host-evidence', evidenceRefs: [], supersedes: [], createdAt: '2026-09-02T00:00:00.000Z', updatedAt: '2026-09-03T00:00:00.000Z', retrievalCount: 0 });
 
 describe('MemorySettingsPage', () => {
   beforeEach(() => { clientMocks.list.mockReset(); });
@@ -46,6 +47,13 @@ describe('MemorySettingsPage', () => {
     await waitFor(() => expect(screen.getByText('No local memories.')).toBeVisible());
     expect(screen.getByRole('columnheader', { name: 'Memory' })).toBeVisible();
     expect(document.querySelector('.settings-form-card')).not.toBeInTheDocument();
+  });
+
+  it('clamps long statements in the table while preserving the full title', async () => {
+    const statement = 'This is a deliberately long memory statement that should be shortened in the table while remaining available to inspect.';
+    clientMocks.list.mockResolvedValue([memory(statement)]);
+    render(<ToastProvider><MemorySettingsPage cwd="C:\\workspace" /></ToastProvider>);
+    await waitFor(() => expect(screen.getByTitle(statement)).toHaveTextContent(formatTextClamp(MEMORY_STATEMENT_PREVIEW_LENGTH, statement)));
   });
 
   it('reports loading failures through the shared toast instead of an inline card', async () => {

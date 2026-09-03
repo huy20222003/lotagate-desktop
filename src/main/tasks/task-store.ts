@@ -120,6 +120,23 @@ export class TaskStore {
     });
   }
 
+  async interruptActive(reason: string): Promise<readonly Task[]> {
+    return this.withExclusive(async () => {
+      const interrupted: Task[] = [];
+      await this.taskStore.update(current => {
+        const now = new Date().toISOString();
+        const next = current.map(task => {
+          if (task.archived || task.status !== 'active') return task;
+          const updated = taskSchema.parse({ ...task, status: 'interrupted', turnId: undefined, interruptedReason: reason, updatedAt: now });
+          interrupted.push(updated);
+          return updated;
+        });
+        return next;
+      });
+      return interrupted;
+    });
+  }
+
   async appendActivity(taskId: string, kind: Activity['kind'], text: string, metadata: Record<string, unknown>): Promise<Activity> {
     return this.withExclusive(() => this.appendActivityInternal(taskId, kind, text, metadata));
   }

@@ -17,4 +17,14 @@ describe('useTaskSidebarStatus', () => {
     rerender({ selectedTaskId: 'other' });
     expect(result.current.unreadTaskIds.has('other')).toBe(false);
   });
+
+  it('clears a cancelled turn from the sidebar without marking it unread', () => {
+    const { result } = renderHook(() => useTaskSidebarStatus('current'));
+
+    act(() => result.current.markTurnStarted('current'));
+    act(() => result.current.markTurnFinished('current', false, 'current'));
+
+    expect(result.current.runningTaskIds.has('current')).toBe(false);
+    expect(result.current.unreadTaskIds.has('current')).toBe(false);
+  });
 });

@@ -86,6 +86,8 @@ app.whenReady().then(async () => {
   const workspaces = new WorkspaceRegistry();
   const extensionFiles = new ExtensionFileService(workspaces);
   const tasks = new TaskStore();
+  const interruptedTasks = await tasks.interruptActive('Desktop restarted before the previous turn completed.');
+  if (interruptedTasks.length > 0) logger.warn('tasks.reconciled.interrupted', { count: interruptedTasks.length, reason: 'app-restart' });
   const checkpoints = new CheckpointService({ onError: (error, cwd) => logger.warn('checkpoint.capture.failed', { cwd, message: error instanceof Error ? error.message : 'Unable to capture workspace checkpoint.' }) });
   const artifacts = new ArtifactService();
   const settings = new SettingsService();

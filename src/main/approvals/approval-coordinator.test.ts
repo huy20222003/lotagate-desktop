@@ -77,4 +77,16 @@ describe('ApprovalCoordinator', () => {
       vi.useRealTimers();
     }
   });
+
+  it('cancels a turn approval without calling back into an already-aborted agent', async () => {
+    const coordinator = new ApprovalCoordinator();
+    const onDecision = vi.fn().mockResolvedValue(undefined);
+    const pending = coordinator.request({ source: 'agent', surface: 'composer', turnId: 'turn-1', toolName: 'filesystem.write', detail: { summary: 'Write.' } }, onDecision);
+
+    await coordinator.cancelWhere(request => request.turnId === 'turn-1', { notifyDecision: false });
+
+    await expect(pending).resolves.toMatchObject({ approvalId: expect.any(String), approved: false });
+    expect(onDecision).not.toHaveBeenCalled();
+    expect(coordinator.listPending()).toEqual([]);
+  });
 });

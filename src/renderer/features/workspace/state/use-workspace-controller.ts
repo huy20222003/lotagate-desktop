@@ -390,7 +390,7 @@ export function useWorkspaceController() {
 
   const startPrompt = useCallback(async (prompt: string, attachmentIdsOverride?: readonly string[], options?: PromptSendOptions): Promise<boolean> => {
     if (!prompt.trim() || workspace === undefined) return false;
-    setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setActiveTurnId(undefined); activeTurnRef.current = undefined; setPlan(undefined); setSubagents([]); setFinalResponseReceived(false);
+    setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setActiveTurnId(undefined); activeTurnRef.current = undefined; setPlan(undefined); setSubagents([]); setFinalResponseReceived(false); setApproval(undefined); setTrust(undefined); showContextCompactionStatus(undefined); suppressQueueRef.current = false; steeringQueueIdRef.current = undefined;
     let failedTaskId: string | undefined;
     try {
       await flushDraft();
@@ -443,7 +443,7 @@ export function useWorkspaceController() {
       return false;
     }
     finally { setBusy(false); }
-  }, [createTask, flushDraft, loadActivities, reloadTasks, selectedEffort, selectedModel, task, workspace]);
+  }, [createTask, flushDraft, loadActivities, reloadTasks, selectedEffort, selectedModel, showContextCompactionStatus, task, workspace]);
   const enqueuePrompt = useCallback(async (prompt: string, options?: PromptSendOptions) => {
     const activeTask = draftTaskRef.current ?? task;
     if (!activeTask) return;
@@ -585,8 +585,8 @@ export function useWorkspaceController() {
     if (!task || !workspace) return;
     const activeTurn = activeTurnRef.current?.taskId === task.id && activeTurnRef.current.cwd === workspace.rootPath ? activeTurnRef.current : undefined;
     setError(undefined); suppressQueueRef.current = true; steeringQueueIdRef.current = undefined;
-    await cancelWorkspaceTask({ task, workspace, activeTurn, clearActiveTurn: () => { activeTurnRef.current = undefined; setActiveTurnId(undefined); }, resetLiveState: () => { setThinking(false); setFinalResponseReceived(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); setActiveTurnId(undefined); setPlan(undefined); setSubagents([]); }, setTask, updateTasks: update => setTasks(update), reloadTasks, setError });
-  }, [reloadTasks, task, workspace]);
+    await cancelWorkspaceTask({ task, workspace, activeTurn, clearActiveTurn: () => { activeTurnRef.current = undefined; setActiveTurnId(undefined); }, resetLiveState: () => { setThinking(false); setFinalResponseReceived(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); setActiveTurnId(undefined); setApproval(undefined); setTrust(undefined); showContextCompactionStatus(undefined); setPlan(undefined); setSubagents([]); suppressQueueRef.current = false; steeringQueueIdRef.current = undefined; }, markTurnFinished, setTask, updateTasks: update => setTasks(update), reloadTasks, setError });
+  }, [markTurnFinished, reloadTasks, showContextCompactionStatus, task, workspace]);
   const retryTask = useCallback(async () => { if (!task) return; const history = await window.lotagate.tasks.activities(task.id); const prompt = [...history].reverse().find(item => item.kind === 'user')?.text; if (prompt) await window.lotagate.tasks.retry(task.id); if (prompt) await sendPrompt(prompt); }, [sendPrompt, task]);
   const archiveTask = useCallback(async (taskId: string, archived: boolean) => { if (!workspace) return; await window.lotagate.tasks.archive(taskId, archived); await reloadTasks(workspace.id); }, [reloadTasks, workspace]);
   const pinTask = useCallback(async (pinned: boolean) => { if (!task || !workspace) return; await window.lotagate.tasks.pin(task.id, pinned); await reloadTasks(workspace.id); }, [reloadTasks, task, workspace]);

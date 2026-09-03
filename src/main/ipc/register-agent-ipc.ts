@@ -32,7 +32,15 @@ handle('agent.turnStart', async (event, cwd: unknown, input: unknown) => {
     const skills = value['skills'] === undefined ? undefined : z.array(z.string().min(1).max(256)).max(32).parse(value['skills']);
     return agents.turnStart(canonicalCwd, { sessionId, prompt: z.string().min(1).max(512 * 1024).parse(value['prompt']), ...(value['model'] === undefined ? {} : { model: z.string().min(1).max(256).parse(value['model']) }), ...(taskId === undefined ? {} : { taskId }), ...(skills === undefined ? {} : { skills }), ...(attachments.length === 0 ? {} : { attachments }) });
   });
-handle('agent.turnCancel', async (event, cwd: unknown, turnId: unknown) => { assertTrustedRenderer(event); return agents.turnCancel(await requireWorkspaceCwd(cwd), idSchema.parse(turnId)); });
+handle('agent.turnCancel', async (event, cwd: unknown, turnId: unknown) => {
+    assertTrustedRenderer(event);
+    const projectRoot = await requireWorkspaceCwd(cwd);
+    const requestedTurnId = idSchema.parse(turnId);
+    const cancelPendingApprovals = () => approvals.cancelWhere(request => request.workspaceCwd === projectRoot && request.turnId === requestedTurnId, { notifyDecision: false });
+    await cancelPendingApprovals();
+    try { return await agents.turnCancel(projectRoot, requestedTurnId); }
+    finally { await cancelPendingApprovals(); }
+  });
 handle('agent.trustRespond', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.trustRespond(await requireWorkspaceCwd(cwd), objectSchema.parse(input) as { trustRequestId: string; trusted: boolean }); });
 handle('agent.modelList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.modelList(await requireWorkspaceCwd(cwd)); });
 handle('agent.commandList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.commandList(await requireWorkspaceCwd(cwd)); });

@@ -4,10 +4,12 @@ import { Button, Card, Dropdown, EmptyState, Icon, IconButton, Modal, Skeleton, 
 import { Pagination } from '../../components/Pagination.js';
 import { useDebounce } from '../../hooks/use-debounce.js';
 import { toUserErrorMessage } from '../../utils/errors.js';
+import { formatTextClamp } from '../../utils/text.js';
 import { MemoryCommandClient, type MemoryRow } from './memory-command-client.js';
 
 const ALL_FILTER_VALUE = 'all';
 const MEMORY_PAGE_SIZE = 10;
+export const MEMORY_STATEMENT_PREVIEW_LENGTH = 96;
 
 export function MemorySettingsPage({ cwd, refreshToken = 0 }: { cwd?: string; refreshToken?: number }) {
   const client = useMemo(() => new MemoryCommandClient(), []);
@@ -21,7 +23,6 @@ export function MemorySettingsPage({ cwd, refreshToken = 0 }: { cwd?: string; re
   const [selected, setSelected] = useState<MemoryRow | undefined>();
   const [search, setSearch] = useState('');
   const [kindFilter, setKindFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
   const debouncedSearch = useDebounce(search, 180);
   const { success, error: showError } = useToast();
@@ -129,27 +130,24 @@ export function MemorySettingsPage({ cwd, refreshToken = 0 }: { cwd?: string; re
     return rows.filter(row => {
       const matchesQuery = query.length === 0 || `${row.statement} ${row.rationale ?? ''} ${row.evidenceRefs.join(' ')}`.toLocaleLowerCase().includes(query);
       const matchesKind = kindFilter === 'all' || row.kind === kindFilter;
-      const matchesStatus = statusFilter === 'all' || row.status === statusFilter;
-      return matchesQuery && matchesKind && matchesStatus;
+      return matchesQuery && matchesKind;
     });
-  }, [debouncedSearch, kindFilter, rows, statusFilter]);
+  }, [debouncedSearch, kindFilter, rows]);
   const kindOptions = useMemo(() => buildFilterOptions(rows.map(row => row.kind), 'All types'), [rows]);
-  const statusOptions = useMemo(() => buildFilterOptions(rows.map(row => row.status), 'All statuses'), [rows]);
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / MEMORY_PAGE_SIZE));
   const visibleRows = useMemo(() => filteredRows.slice((page - 1) * MEMORY_PAGE_SIZE, page * MEMORY_PAGE_SIZE), [filteredRows, page]);
-  useEffect(() => { setPage(1); }, [debouncedSearch, kindFilter, statusFilter]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, kindFilter]);
   useEffect(() => {
     if (page > pageCount) setPage(pageCount);
     if (kindFilter !== ALL_FILTER_VALUE && !kindOptions.some(option => option.value === kindFilter)) setKindFilter(ALL_FILTER_VALUE);
-    if (statusFilter !== ALL_FILTER_VALUE && !statusOptions.some(option => option.value === statusFilter)) setStatusFilter(ALL_FILTER_VALUE);
-  }, [kindFilter, kindOptions, page, pageCount, statusFilter, statusOptions]);
+  }, [kindFilter, kindOptions, page, pageCount]);
 
   if (!cwd) return <EmptyState title="Open a workspace to manage local memory" detail="Memory remains on this device. Project memories are scoped to the selected workspace." />;
   return <div className="settings-memory-page">
-    <div className="settings-memory-toolbar"><TextInput value={search} onChange={event => setSearch(event.target.value)} placeholder="Search memories" aria-label="Search memories" /><Dropdown className="settings-memory-filter" ariaLabel="Filter memory type" placeholder="Filter type" value={kindFilter} options={kindOptions} onChange={setKindFilter} /><Dropdown className="settings-memory-filter" ariaLabel="Filter memory status" placeholder="Filter status" value={statusFilter} options={statusOptions} onChange={setStatusFilter} /><div className="settings-memory-actions"><Button variant="secondary" disabled={busy} onClick={() => void importMemory()}><Icon icon={Upload} size={14} />Import</Button><Button variant="secondary" disabled={busy} onClick={() => void exportMemory()}><Icon icon={Download} size={14} />Export</Button><Button variant="secondary" disabled={busy} onClick={() => setClearRequested(true)}><Icon icon={Trash2} size={14} />Clear</Button></div></div>
+    <div className="settings-memory-toolbar"><TextInput value={search} onChange={event => setSearch(event.target.value)} placeholder="Search memories" aria-label="Search memories" /><Dropdown className="settings-memory-filter" ariaLabel="Filter memory type" placeholder="Filter type" value={kindFilter} options={kindOptions} onChange={setKindFilter} /><div className="settings-memory-actions"><Button variant="secondary" disabled={busy} onClick={() => void importMemory()}><Icon icon={Upload} size={14} />Import</Button><Button variant="secondary" disabled={busy} onClick={() => void exportMemory()}><Icon icon={Download} size={14} />Export</Button><Button variant="secondary" disabled={busy} onClick={() => setClearRequested(true)}><Icon icon={Trash2} size={14} />Clear</Button></div></div>
     {loading ? <MemoryTableSkeleton /> : <><Table columns={columns(show, forget, busy)} rows={visibleRows} emptyMessage={rows.length === 0 ? 'No local memories.' : 'No memories match the current filters.'} /><Pagination page={page} pageSize={MEMORY_PAGE_SIZE} total={filteredRows.length} onPageChange={setPage} /></>}
     {clearRequested ? <Modal title="Clear project memory" onClose={() => setClearRequested(false)}><p className="modal-copy">Remove all project memories from this device? This cannot be undone unless you exported a bundle first.</p><div className="modal-actions"><Button variant="secondary" disabled={busy} onClick={() => setClearRequested(false)}>Cancel</Button><Button variant="danger" disabled={busy} onClick={() => void clear()}>Clear memory</Button></div></Modal> : null}
-    {selected === undefined ? null : <Modal title="Memory details" onClose={() => setSelected(undefined)}><p className="modal-copy">{selected.statement}</p>{selected.rationale === undefined ? null : <p className="modal-copy">{selected.rationale}</p>}<p className="modal-copy">{selected.kind} · {selected.status} · used {selected.useCount} times</p><p className="modal-copy">Evidence: {selected.evidenceRefs.length === 0 ? 'none' : selected.evidenceRefs.join(', ')}</p><div className="modal-actions"><Button variant="secondary" onClick={() => setSelected(undefined)}>Close</Button></div></Modal>}
+    {selected === undefined ? null : <Modal title="Memory details" onClose={() => setSelected(undefined)}><p className="modal-copy">{selected.statement}</p>{selected.rationale === undefined ? null : <p className="modal-copy">{selected.rationale}</p>}<p className="modal-copy">{selected.kind} · {selected.state} · {selected.source}</p><p className="modal-copy">Topics: {selected.topics.length === 0 ? 'none' : selected.topics.join(', ')}</p><p className="modal-copy">Evidence: {selected.evidenceRefs.length === 0 ? 'none' : selected.evidenceRefs.join(', ')}</p><p className="modal-copy">Retrievals: {selected.retrievalCount}{selected.lastRetrievedAt === undefined ? '' : ` · last retrieved ${selected.lastRetrievedAt}`}</p><div className="modal-actions"><Button variant="secondary" onClick={() => setSelected(undefined)}>Close</Button></div></Modal>}
   </div>;
 }
 
@@ -159,8 +157,8 @@ function MemoryTableSkeleton() {
 
 function columns(onShow: (row: MemoryRow) => Promise<void>, onForget: (row: MemoryRow) => Promise<void>, busy: boolean) {
   return [
-    { key: 'statement', label: 'Memory', render: (row: MemoryRow) => <span title={row.rationale}>{row.statement}</span> },
-    { key: 'kind', label: 'Type' }, { key: 'status', label: 'Status' }, { key: 'useCount', label: 'Uses' },
+    { key: 'statement', label: 'Memory', render: (row: MemoryRow) => <span title={row.statement}>{formatTextClamp(MEMORY_STATEMENT_PREVIEW_LENGTH, row.statement)}</span> },
+    { key: 'kind', label: 'Type' }, { key: 'state', label: 'State' }, { key: 'retrievalCount', label: 'Retrievals' },
     { key: 'actions', label: 'Actions', render: (row: MemoryRow) => <span><IconButton icon={Eye} iconSize={15} label={`Show ${row.statement}`} disabled={busy} onClick={() => void onShow(row)} /><IconButton icon={Trash2} iconSize={15} label={`Forget ${row.statement}`} disabled={busy} onClick={() => void onForget(row)} /></span> },
   ];
 }

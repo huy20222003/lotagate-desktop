@@ -76,11 +76,23 @@ export class ApprovalCoordinator {
     await this.cancelWhere(() => true);
   }
 
-  async cancelWhere(predicate: (request: DesktopApprovalRequest) => boolean): Promise<void> {
+  async cancelWhere(predicate: (request: DesktopApprovalRequest) => boolean, options: { notifyDecision?: boolean } = {}): Promise<void> {
     const pending = [...this.pending.values()].filter(item => predicate(item.request));
     await Promise.all(pending.map(async item => {
+      if (options.notifyDecision === false) {
+        this.resolveCancelled(item);
+        return;
+      }
       try { await this.respond(item.request.approvalId, false, { ...(item.request.taskId === undefined ? {} : { taskId: item.request.taskId }), ...(item.request.sessionId === undefined ? {} : { sessionId: item.request.sessionId }) }); } catch { /* already resolved */ }
     }));
+  }
+
+  private resolveCancelled(pending: PendingApproval): void {
+    if (!this.pending.delete(pending.request.approvalId)) return;
+    clearTimeout(pending.timer);
+    const resolution = { approvalId: pending.request.approvalId, approved: false };
+    pending.resolve(resolution);
+    for (const listener of this.resolutionListeners) listener(resolution);
   }
 }
 

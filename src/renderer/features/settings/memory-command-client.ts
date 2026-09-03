@@ -1,17 +1,22 @@
 import { executeDesktopCommandResult, findDesktopCommand, listDesktopCommands } from '../../services/desktop-command-client.js';
 
-export type MemoryStatus = 'candidate' | 'verified';
+export type MemoryState = 'active' | 'superseded' | 'expired';
 
 export interface MemoryRow {
   id: string;
-  kind: 'episodic' | 'procedural' | 'preference';
-  status: MemoryStatus;
+  kind: string;
+  state: MemoryState;
   statement: string;
   rationale?: string;
+  topics: string[];
+  source: string;
   evidenceRefs: string[];
+  supersedes: string[];
+  createdAt: string;
   updatedAt: string;
-  lastUsedAt?: string;
-  useCount: number;
+  expiresAt?: string;
+  lastRetrievedAt?: string;
+  retrievalCount: number;
 }
 
 export interface MemoryExport { bundle: Record<string, unknown>; }
@@ -70,14 +75,17 @@ export function parseMemoryRows(value: unknown): MemoryRow[] {
 function parseRow(value: unknown): MemoryRow[] {
   const record = readRecord(value);
   if (record === undefined) return [];
-  const id = readString(record['id']); const kind = readKind(record['kind']); const status = readStatus(record['status']); const statement = readString(record['statement']); const updatedAt = readString(record['updatedAt']); const useCount = readNonNegativeInteger(record['useCount']);
-  if (id === undefined || kind === undefined || status === undefined || statement === undefined || updatedAt === undefined || useCount === undefined) return [];
-  const rationale = readString(record['rationale']); const lastUsedAt = readString(record['lastUsedAt']); const evidenceRefs = Array.isArray(record['evidenceRefs']) ? record['evidenceRefs'].filter((item): item is string => typeof item === 'string') : [];
-  return [{ id, kind, status, statement, updatedAt, useCount, evidenceRefs, ...(rationale === undefined ? {} : { rationale }), ...(lastUsedAt === undefined ? {} : { lastUsedAt }) }];
+  const id = readString(record['id']); const kind = readKind(record['kind']); const state = readState(record['state']); const statement = readString(record['statement']); const updatedAt = readString(record['updatedAt']); const createdAt = readString(record['createdAt']); const source = readIdentifier(record['source']); const retrievalCount = readNonNegativeInteger(record['retrievalCount']);
+  if (id === undefined || kind === undefined || state === undefined || statement === undefined || updatedAt === undefined || createdAt === undefined || source === undefined || retrievalCount === undefined) return [];
+  const rationale = readString(record['rationale']); const expiresAt = readString(record['expiresAt']); const lastRetrievedAt = readString(record['lastRetrievedAt']); const topics = readStringList(record['topics']); const evidenceRefs = readStringList(record['evidenceRefs']); const supersedes = readStringList(record['supersedes']);
+  if (topics === undefined || evidenceRefs === undefined || supersedes === undefined) return [];
+  return [{ id, kind, state, statement, createdAt, updatedAt, source, topics, evidenceRefs, supersedes, retrievalCount, ...(rationale === undefined ? {} : { rationale }), ...(expiresAt === undefined ? {} : { expiresAt }), ...(lastRetrievedAt === undefined ? {} : { lastRetrievedAt }) }];
 }
 
 function readRecord(value: unknown): Record<string, unknown> | undefined { return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }
 function readString(value: unknown): string | undefined { return typeof value === 'string' && value.length > 0 ? value : undefined; }
 function readNonNegativeInteger(value: unknown): number | undefined { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined; }
-function readKind(value: unknown): MemoryRow['kind'] | undefined { return value === 'episodic' || value === 'procedural' || value === 'preference' ? value : undefined; }
-function readStatus(value: unknown): MemoryStatus | undefined { return value === 'candidate' || value === 'verified' ? value : undefined; }
+function readKind(value: unknown): MemoryRow['kind'] | undefined { return readIdentifier(value); }
+function readState(value: unknown): MemoryState | undefined { return value === 'active' || value === 'superseded' || value === 'expired' ? value : undefined; }
+function readIdentifier(value: unknown): string | undefined { return typeof value === 'string' && /^[A-Za-z][A-Za-z0-9._-]{0,63}$/u.test(value) ? value : undefined; }
+function readStringList(value: unknown): string[] | undefined { return Array.isArray(value) && value.every(item => typeof item === 'string') ? value : undefined; }

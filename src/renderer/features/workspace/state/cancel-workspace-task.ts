@@ -3,12 +3,13 @@ import { toUserErrorMessage } from '../../../utils/errors.js';
 
 type ActiveTurn = { taskId: string; cwd: string; turnId: string };
 
-export async function cancelWorkspaceTask({ task, workspace, activeTurn, clearActiveTurn, resetLiveState, setTask, updateTasks, reloadTasks, setError }: {
+export async function cancelWorkspaceTask({ task, workspace, activeTurn, clearActiveTurn, resetLiveState, markTurnFinished, setTask, updateTasks, reloadTasks, setError }: {
   task: Task;
   workspace: Workspace;
   activeTurn: ActiveTurn | undefined;
   clearActiveTurn: () => void;
   resetLiveState: () => void;
+  markTurnFinished: (taskId: string, completed: boolean, viewedTaskId?: string) => void;
   setTask: (task: Task) => void;
   updateTasks: (update: (tasks: Task[]) => Task[]) => void;
   reloadTasks: (workspaceId: string) => Promise<void>;
@@ -21,6 +22,7 @@ export async function cancelWorkspaceTask({ task, workspace, activeTurn, clearAc
     clearActiveTurn();
     setTask(cancelled);
     updateTasks(items => items.map(item => item.id === cancelled.id ? cancelled : item));
+    markTurnFinished(task.id, false);
     resetLiveState();
     await reloadTasks(workspace.id);
   } catch (reason) {
@@ -28,6 +30,7 @@ export async function cancelWorkspaceTask({ task, workspace, activeTurn, clearAc
     const refreshedTask = refreshed.find(item => item.id === task.id);
     if (refreshedTask?.turnId === undefined && refreshedTask?.status !== 'active') {
       clearActiveTurn();
+      markTurnFinished(task.id, false);
       resetLiveState();
       if (refreshedTask !== undefined) {
         updateTasks(items => items.map(item => item.id === refreshedTask.id ? refreshedTask : item));
