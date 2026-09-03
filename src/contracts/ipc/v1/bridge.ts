@@ -26,7 +26,7 @@ export interface DesktopBridge {
     sessionCreate(cwd: string, input: { model?: string; name?: string }): Promise<unknown>;
     sessionList(cwd: string): Promise<unknown>;
     sessionResume(cwd: string, sessionId: string): Promise<unknown>;
-    turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; runId?: string; taskId?: string; execution?: import('../../agent-protocol/v1/desktop.js').DesktopExecutionPolicy; skills?: string[]; attachmentIds?: string[] }): Promise<unknown>;
+    turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; reasoningEffort?: import('../../agent-protocol/v1/desktop.js').DesktopReasoningEffort; runId?: string; taskId?: string; execution?: import('../../agent-protocol/v1/desktop.js').DesktopExecutionPolicy; skills?: string[]; attachmentIds?: string[] }): Promise<unknown>;
     turnCancel(cwd: string, turnId: string): Promise<unknown>;
     trustRespond(cwd: string, input: { trustRequestId: string; trusted: boolean }): Promise<unknown>;
     modelList(cwd: string): Promise<unknown>;

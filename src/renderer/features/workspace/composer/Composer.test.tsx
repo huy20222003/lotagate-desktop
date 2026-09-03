@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Task, Workspace } from '../../../../contracts/ipc/v1/workspace.js';
@@ -28,7 +28,9 @@ describe('Composer overlays', () => {
       queuedMessages={[]}
       models={[]}
       selectedModel=""
+      selectedEffort="medium"
       onModel={vi.fn()}
+      onEffort={vi.fn()}
       busy={false}
       onSend={vi.fn().mockResolvedValue(undefined)}
       onRunCommand={vi.fn().mockResolvedValue(false)}
@@ -69,7 +71,9 @@ describe('Composer overlays', () => {
       queuedMessages={[]}
       models={[]}
       selectedModel=""
+      selectedEffort="medium"
       onModel={vi.fn()}
+      onEffort={vi.fn()}
       busy={false}
       onSend={vi.fn().mockResolvedValue(undefined)}
       onRunCommand={vi.fn().mockResolvedValue(false)}
@@ -116,7 +120,9 @@ describe('Composer overlays', () => {
       queuedMessages={[]}
       models={[]}
       selectedModel=""
+      selectedEffort="medium"
       onModel={vi.fn()}
+      onEffort={vi.fn()}
       busy={false}
       onSend={vi.fn().mockResolvedValue(undefined)}
       onRunCommand={vi.fn().mockResolvedValue(false)}
@@ -151,7 +157,9 @@ describe('Composer overlays', () => {
       queuedMessages={[]}
       models={[]}
       selectedModel=""
+      selectedEffort="medium"
       onModel={vi.fn()}
+      onEffort={vi.fn()}
       busy={false}
       onSend={onSend}
       onRunCommand={vi.fn().mockResolvedValue(false)}
@@ -173,5 +181,51 @@ describe('Composer overlays', () => {
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('');
     expect(onSend).toHaveBeenCalledWith('hello', undefined);
     resolveSend?.();
+  });
+
+  it('reveals the selected picker menu on hover and uses the shared scrollbar', () => {
+    const onModel = vi.fn();
+    const onEffort = vi.fn();
+    render(<Composer
+      disabled={false}
+      thinking={false}
+      task={taskWithDraft('')}
+      attachments={[]}
+      queuedMessages={[]}
+      models={[{ id: 'internal-model-id', label: 'Friendly model' }]}
+      selectedModel="internal-model-id"
+      selectedEffort="medium"
+      onModel={onModel}
+      onEffort={onEffort}
+      busy={false}
+      onSend={vi.fn().mockResolvedValue(undefined)}
+      onRunCommand={vi.fn().mockResolvedValue(false)}
+      onCancel={vi.fn().mockResolvedValue(undefined)}
+      onDraft={vi.fn().mockResolvedValue(undefined)}
+      onAttach={vi.fn().mockResolvedValue(undefined)}
+      onAttachImage={vi.fn().mockResolvedValue(undefined)}
+      onRemoveAttachment={vi.fn().mockResolvedValue(undefined)}
+      onSteerQueued={vi.fn().mockResolvedValue(undefined)}
+      onRemoveQueued={vi.fn().mockResolvedValue(undefined)}
+      onEditQueued={vi.fn().mockResolvedValue(undefined)}
+      approvalMode="auto"
+      onApprovalMode={vi.fn()}
+      onApproval={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select model and effort' }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /Model Friendly model/u }));
+    const modelMenu = screen.getByRole('menu', { name: 'Models' });
+    expect(modelMenu).toBeVisible();
+    expect(within(modelMenu).getByText('Friendly model')).toBeVisible();
+    expect(document.querySelector('.composer-model-options .scrollbar-viewport')).toBeInTheDocument();
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /Effort medium/u }));
+    expect(screen.getByRole('menu', { name: 'Reasoning effort' })).toBeVisible();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'high' }));
+    expect(onEffort).toHaveBeenCalledWith('high');
+    expect(onModel).not.toHaveBeenCalled();
   });
 });

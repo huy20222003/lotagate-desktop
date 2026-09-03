@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { CliAgentProcess, type CliAgentEventHandler } from './cli-agent-process.js';
 import { resolveCliInvocation } from './cli-resolver.js';
-import type { DesktopAgentResult, DesktopEvent, DesktopExecutionPolicy, DesktopHostRequest, DesktopHostResponse, DesktopSkillSelection } from '../../contracts/agent-protocol/v1/desktop.js';
+import type { DesktopAgentResult, DesktopEvent, DesktopExecutionPolicy, DesktopHostRequest, DesktopHostResponse, DesktopReasoningEffort, DesktopSkillSelection } from '../../contracts/agent-protocol/v1/desktop.js';
 import { requireDirectory } from '../security/path-policy.js';
 import { CACHE_TTL_MS } from '../cache/cache-policy.js';
 import type { PersistentCache } from '../cache/persistent-cache.js';
@@ -82,13 +82,13 @@ export class AgentManager {
     catch (error) { this.removeBinding(binding); await binding.process.shutdown('session-resume-failed'); throw error; }
   }
 
-  async turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; runId?: string; taskId?: string; execution?: DesktopExecutionPolicy; skills?: DesktopSkillSelection; attachments?: CliAttachmentInput[] }): Promise<unknown> {
+  async turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; reasoningEffort?: DesktopReasoningEffort; runId?: string; taskId?: string; execution?: DesktopExecutionPolicy; skills?: DesktopSkillSelection; attachments?: CliAttachmentInput[] }): Promise<unknown> {
     const projectRoot = await requireDirectory(cwd);
     const binding = await this.sessionProcess(projectRoot, input.sessionId);
     const attachmentIds: string[] = [];
     for (const attachment of input.attachments ?? []) { await binding.process.uploadAttachment(attachment); attachmentIds.push(attachment.id); }
     this.touch(binding);
-    const result = await binding.process.request('turn.start', { sessionId: input.sessionId, prompt: input.prompt, ...(input.model === undefined ? {} : { model: input.model }), ...(input.runId === undefined ? {} : { runId: input.runId }), ...(input.taskId === undefined ? {} : { taskId: input.taskId }), ...(input.skills === undefined ? {} : { skills: [...input.skills] }), execution: input.execution ?? await this.getInteractiveExecutionPolicy(), ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
+    const result = await binding.process.request('turn.start', { sessionId: input.sessionId, prompt: input.prompt, ...(input.model === undefined ? {} : { model: input.model }), ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }), ...(input.runId === undefined ? {} : { runId: input.runId }), ...(input.taskId === undefined ? {} : { taskId: input.taskId }), ...(input.skills === undefined ? {} : { skills: [...input.skills] }), execution: input.execution ?? await this.getInteractiveExecutionPolicy(), ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
     const turnId = extractTurnId(result); if (turnId !== undefined) this.turnBindings.set(turnId, binding); return result;
   }
 

@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Task, Workspace } from '../../../../contracts/ipc/v1/workspace.js';
+import { DEFAULT_DESKTOP_REASONING_EFFORT, type DesktopReasoningEffort } from '../../../../contracts/agent-protocol/v1/desktop.js';
 import { extractWorkspaceModels, type WorkspaceModelOption } from '../../../services/model-catalog.js';
-import { readSelectedModel } from '../../../services/model-preference.js';
+import { readSelectedEffort, readSelectedModel } from '../../../services/model-preference.js';
 
-export function useWorkspaceModelCatalog(workspace: Workspace | undefined, task: Task | undefined): { models: WorkspaceModelOption[]; selectedModel: string; setSelectedModel: (model: string) => void } {
+export type WorkspaceReasoningEffort = DesktopReasoningEffort;
+
+export function useWorkspaceModelCatalog(workspace: Workspace | undefined, task: Task | undefined): { models: WorkspaceModelOption[]; selectedModel: string; setSelectedModel: (model: string) => void; selectedEffort: WorkspaceReasoningEffort; setSelectedEffort: (effort: WorkspaceReasoningEffort) => void } {
   const [models, setModels] = useState<WorkspaceModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
+  const [selectedEffort, setSelectedEffort] = useState<WorkspaceReasoningEffort>(() => readSelectedEffort() ?? DEFAULT_DESKTOP_REASONING_EFFORT);
   const requestGeneration = useRef(0);
 
   useEffect(() => {
@@ -27,5 +31,5 @@ export function useWorkspaceModelCatalog(workspace: Workspace | undefined, task:
     setSelectedModel(current => current === next ? current : next);
   }, [models, task?.id, task?.model]);
 
-  return { models, selectedModel, setSelectedModel };
+  return { models, selectedModel, setSelectedModel, selectedEffort, setSelectedEffort };
 }

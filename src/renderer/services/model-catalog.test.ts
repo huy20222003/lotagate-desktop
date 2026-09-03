@@ -9,4 +9,8 @@ describe('workspace model catalog', () => {
   it('accepts the CLI model field as the option id', () => {
     expect(extractWorkspaceModels({ models: [{ model: 'model-1', context_window: '64000' }] })).toEqual([{ id: 'model-1', label: 'model-1' }]);
   });
+
+  it('uses display_name for presentation while preserving the model id', () => {
+    expect(extractWorkspaceModels({ models: [{ id: 'model-1', display_name: 'Friendly model name' }] })).toEqual([{ id: 'model-1', label: 'Friendly model name' }]);
+  });
 });

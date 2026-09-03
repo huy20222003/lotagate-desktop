@@ -16,7 +16,9 @@ export function extractWorkspaceModels(value: unknown): WorkspaceModelOption[] {
     const record = item as Record<string, unknown>;
     const id = typeof record['id'] === 'string' ? record['id'] : typeof record['model'] === 'string' ? record['model'] : undefined;
     const category = typeof record['model_category'] === 'string' ? record['model_category'] : typeof record['modelCategory'] === 'string' ? record['modelCategory'] : undefined;
-    return id === undefined ? [] : [{ id, label: typeof record['label'] === 'string' ? record['label'] : id, ...(category === undefined ? {} : { category }) }];
+    if (id === undefined) return [];
+    const label = typeof record['display_name'] === 'string' ? record['display_name'] : typeof record['displayName'] === 'string' ? record['displayName'] : typeof record['label'] === 'string' ? record['label'] : id;
+    return [{ id, label, ...(category === undefined ? {} : { category }) }];
   });
 }
 

@@ -115,6 +115,9 @@ export type DesktopExecutionPolicy = {
 };
 
 export type DesktopSkillSelection = readonly string[];
+export const DESKTOP_REASONING_EFFORTS = ['low', 'medium', 'high'] as const;
+export type DesktopReasoningEffort = typeof DESKTOP_REASONING_EFFORTS[number];
+export const DEFAULT_DESKTOP_REASONING_EFFORT: DesktopReasoningEffort = 'medium';
 
 export function parseDesktopResponse(value: unknown): DesktopResponse {
   return desktopResponseSchema.parse(value);
