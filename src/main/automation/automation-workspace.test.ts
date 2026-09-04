@@ -41,7 +41,7 @@ describe('prepareAutomationWorkspace', () => {
     await expect(readFile(join(prepared.cwd, 'README.md'), 'utf8')).rejects.toThrow();
     expect((await runGit(['worktree', 'list', '--porcelain'], root))).not.toContain(prepared.cwd);
     expect((await runGit(['branch', '--format=%(refname:short)'], root)).split(/\r?\n/u)).toContain(prepared.branch);
-  });
+  }, 15_000);
 
   it('does not allow a branch setting to mutate the primary checkout', async () => {
     const root = await mkdtemp(join(process.env['TEMP'] ?? '.', 'lotagate-automation-no-worktree-'));

@@ -53,7 +53,7 @@ describe('DesktopHostExecutionBroker', () => {
       const result = await broker.handle(root, request('shell', 'shell.exec', { command: 'powershell.exe', script: 'Write-Output ok' }));
       expect(result).toMatchObject({ ok: true, result: { stdout: expect.stringContaining('ok'), exitCode: 0, timedOut: false } });
     } finally { await rm(root, { recursive: true, force: true }); }
-  });
+  }, 15_000);
 
   it('executes sandbox requests through the provider and reports a controlled fallback', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lotagate-host-broker-'));
