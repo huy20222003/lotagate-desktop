@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Activity } from '../../../../contracts/ipc/v1/workspace.js';
+import { formatTextClamp } from '../../../utils/text.js';
 import { WorkedForDetails } from './WorkedForDetails.js';
 
 function toolActivity(id: string, text: string, metadata: Record<string, unknown>): Activity {
@@ -46,6 +47,15 @@ describe('WorkedForDetails', () => {
 
     expect(container.querySelector('.worked-tool')).toHaveTextContent('Ran Get-Content test.md');
     expect(container.querySelector('.worked-tool-terminal-icon')).toBeInTheDocument();
+  });
+
+  it('clamps long command text without changing the full command metadata', () => {
+    const command = `powershell.exe -NoProfile -NonInteractive -Command ${'Get-ChildItem -Recurse -Force; '.repeat(12)}`.trim();
+    const { container } = render(<WorkedForDetails activities={[toolActivity('tool-start', 'Running shell.exec.', { actionId: 'action-long-shell', toolName: 'shell.exec', displayName: 'shell.exec', command })]} />);
+    const label = container.querySelector('.worked-tool > span');
+
+    expect(label).toHaveTextContent(`Run ${formatTextClamp(160, command)}`);
+    expect(label).toHaveAttribute('title', command);
   });
 
   it('uses the canonical formatter for MCP tools', () => {

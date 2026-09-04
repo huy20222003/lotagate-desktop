@@ -41,4 +41,11 @@ describe('ExtensionsPage', () => {
 
     await waitFor(() => expect(screen.getByText('review')).toBeVisible());
   });
+
+  it('does not render a runtime connection card on the MCP page', async () => {
+    render(<ToastProvider><ExtensionsPage kind="mcp" cwd="C:\\workspace" /></ToastProvider>);
+
+    await waitFor(() => expect(screen.getByText('review')).toBeVisible());
+    expect(screen.queryByText('Runtime connections')).not.toBeInTheDocument();
+  });
 });

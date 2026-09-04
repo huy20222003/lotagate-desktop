@@ -140,16 +140,6 @@
 .settings-memory-table-skeleton { display: grid; gap: 12px; padding: 18px; }
 .settings-memory-skeleton-title { width: 36%; height: 13px; }
 .settings-memory-skeleton-row { width: 100%; height: 35px; }
-.settings-mcp-status { display: grid; gap: 10px; }
-.settings-mcp-status-list { display: grid; gap: 7px; }
-.settings-mcp-status-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--color-border-subtle); padding-top: 8px; }
-.settings-mcp-status-row > span:first-child { display: grid; min-width: 0; gap: 3px; }
-.settings-mcp-status-row small { color: var(--color-text-tertiary); font-size: 11px; }
-.settings-mcp-status-value { max-width: 62%; color: var(--color-text-tertiary); font-size: 11px; text-align: right; overflow-wrap: anywhere; }
-.settings-mcp-status-connected { color: var(--color-success); }
-.settings-mcp-status-failed { color: var(--color-danger); }
-.settings-mcp-status-disconnected { color: var(--color-mcp-disconnected); }
-.settings-mcp-status-connecting { color: var(--color-accent); }
 .appearance-page { display: grid; gap: 28px; width: min(920px, 100%); margin: 30px auto; }
 .appearance-section { display: grid; gap: 14px; }
 .appearance-section-heading { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid var(--color-border-subtle); padding-bottom: 12px; }

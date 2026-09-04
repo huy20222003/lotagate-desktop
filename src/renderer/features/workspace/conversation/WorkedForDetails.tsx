@@ -4,6 +4,9 @@ import { formatToolDisplayName } from '../../../../shared/tool-display.js';
 import { AgentMarkdown } from './markdown-renderer.js';
 import { isAssistantProgressActivity } from './conversation-activities.js';
 import { useSmoothStreamingText } from './use-smooth-streaming-text.js';
+import { formatTextClamp } from '../../../utils/text.js';
+
+const TOOL_COMMAND_PREVIEW_LENGTH = 160;
 
 interface ToolStep {
   actionId: string;
@@ -52,7 +55,7 @@ export function WorkedForDetails({ active = false, statusText, activities }: Wor
 }
 
 function WorkedTool({ step }: { step: ToolStep }) {
-  return <div className={`worked-tool worked-tool-${step.state}`}><WorkedToolIcon /><span className={step.state === 'running' ? 'typing-label' : undefined}>{toolLabel(step)}</span></div>;
+  return <div className={`worked-tool worked-tool-${step.state}`}><WorkedToolIcon /><span className={step.state === 'running' ? 'typing-label' : undefined} title={step.command ?? step.displayName}>{toolLabel(step)}</span></div>;
 }
 
 function WorkedToolGroup({ steps }: { steps: ToolStep[] }) {
@@ -143,7 +146,9 @@ function mergeToolSteps(previous: ToolStep, current: ToolStep): ToolStep {
 }
 
 function toolLabel(step: ToolStep): string {
-  const actionName = normalizeActionName(step.displayName);
+  const actionName = step.command === undefined
+    ? normalizeActionName(step.displayName)
+    : formatTextClamp(TOOL_COMMAND_PREVIEW_LENGTH, normalizeActionName(step.command));
   if (step.state === 'running') return `Run ${actionName}`;
   if (step.state === 'failed') return `Failed ${actionName}`;
   const counts = step.additions === undefined || step.deletions === undefined ? '' : ` +${step.additions} -${step.deletions}`;
