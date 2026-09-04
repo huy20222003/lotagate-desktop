@@ -38,7 +38,7 @@ function PlanProgressRing({ plan }: { plan: WorkPlanSnapshot }) {
 }
 
 function PlanPopover({ plan }: { plan: WorkPlanSnapshot }) {
-  return <div className="change-summary-popover change-summary-plan-popover" role="tooltip"><strong>{plan.goal}</strong>{plan.steps.map(step => <div className={`change-summary-plan-step plan-step-${step.status}`} key={step.id}>{step.status === 'completed' ? <Check size={13} /> : step.status === 'active' ? <LoaderCircle size={13} className="spin" /> : step.status === 'failed' || step.status === 'blocked' ? <Circle size={11} /> : <Circle size={11} />}<span>{step.title}</span></div>)}</div>;
+  return <div className="change-summary-popover change-summary-plan-popover" role="tooltip">{plan.steps.map(step => <div className={`change-summary-plan-step plan-step-${step.status}`} key={step.id}>{step.status === 'completed' ? <Check size={13} /> : step.status === 'active' ? <LoaderCircle size={13} className="spin" /> : step.status === 'failed' || step.status === 'blocked' ? <Circle size={11} /> : <Circle size={11} />}<span>{step.title}</span></div>)}</div>;
 }
 
 function FileChangesPopover({ summary, onOpenFile }: { summary: FileChangeSummary; onOpenFile: (path: string) => void }) {

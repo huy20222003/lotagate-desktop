@@ -106,6 +106,8 @@ describe('FileChangesDrawer', () => {
     expect(document.querySelector('.file-change-item-header .file-icon-typescript')).toBeInTheDocument();
     expect(document.querySelector('.file-change-counts .change-additions')).toHaveTextContent('1');
     expect(document.querySelector('.file-change-counts .change-deletions')).toHaveTextContent('1');
+    expect(document.querySelector('.file-change-path-wrap .file-change-counts')).toBeInTheDocument();
+    expect(document.querySelectorAll('.file-change-actions .ui-icon-button')).toHaveLength(3);
     expect(document.querySelector('.file-change-item > header > .file-change-toggle')).not.toBeInTheDocument();
     const fileHeader = document.querySelector<HTMLElement>('.file-change-item-header.is-expandable');
     expect(fileHeader).not.toBeNull();

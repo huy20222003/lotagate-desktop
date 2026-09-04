@@ -38,22 +38,25 @@ describe('agent markdown renderer', () => {
     expect(screen.getByRole('link', { name: 'generated.png' })).toHaveClass('message-file-reference');
   });
 
-  it('marks file references inside inline markdown elements', () => {
+  it('does not link a bare file name even when a known absolute path exists', () => {
     const path = 'D:\\workspace\\test.md';
     render(<AgentMarkdown content="The file is `test.md`." filePaths={[path]} />);
 
-    expect(screen.getByRole('link', { name: 'test.md' })).toHaveClass('message-file-reference');
+    expect(screen.queryByRole('link', { name: 'test.md' })).not.toBeInTheDocument();
+    expect(screen.getByText('test.md')).toBeInTheDocument();
   });
 
-  it('recognizes a bare file name in an agent response using the workspace path', () => {
+  it('does not link a bare file name in an agent response', () => {
     render(<AgentMarkdown content="File test.md hiện tại chứa các nội dung sau:" workspaceCwd="D:\\workspace" />);
 
-    expect(screen.getByRole('link', { name: 'test.md' })).toHaveClass('message-file-reference');
+    expect(screen.queryByRole('link', { name: 'test.md' })).not.toBeInTheDocument();
+    expect(screen.getByText('File test.md hiện tại chứa các nội dung sau:')).toBeInTheDocument();
   });
 
-  it('recognizes relative files with extensions outside the common file list', () => {
+  it('does not link a relative file path in an agent response', () => {
     render(<AgentMarkdown content="Đã ghi src/custom.template vào workspace." workspaceCwd="D:\\workspace" />);
 
-    expect(screen.getByRole('link', { name: 'custom.template' })).toHaveClass('message-file-reference');
+    expect(screen.queryByRole('link', { name: 'custom.template' })).not.toBeInTheDocument();
+    expect(screen.getByText('Đã ghi src/custom.template vào workspace.')).toBeInTheDocument();
   });
 });

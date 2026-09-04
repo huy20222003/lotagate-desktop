@@ -32,6 +32,7 @@ describe('ChangeSummaryChip', () => {
     expect(container.querySelector('.change-summary-plan')).not.toHaveTextContent('Update the workspace');
     fireEvent.mouseEnter(container.querySelector('.change-summary-plan')!);
     expect(screen.getByText('Inspect files')).toBeInTheDocument();
+    expect(screen.queryByText('Update the workspace')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open plan, step 2 of 3' }));
     expect(onPlanClick).toHaveBeenCalledOnce();
 

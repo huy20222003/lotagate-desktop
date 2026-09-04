@@ -35,11 +35,21 @@ describe('message markup', () => {
     expect(image).toHaveAttribute('src', expect.stringContaining('google.com/s2/favicons'));
   });
 
-  it('renders an @ workspace file mention with its basename and file-type badge', () => {
-    render(<MessageMarkup content="@src/index.ts file này chứa nội dung gì" workspaceCwd="D:\\workspace" highlightPromptTokens />);
+  it('keeps bare and relative file names as plain message text', () => {
+    render(<MessageMarkup content="Đọc file.ts và src/index.ts giúp anh." workspaceCwd="D:\\workspace" />);
 
-    expect(screen.getByRole('link', { name: 'index.ts' })).toHaveClass('message-file-reference');
-    expect(screen.getByRole('link', { name: 'index.ts' }).querySelector('.file-icon-typescript')).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByText('Đọc file.ts và src/index.ts giúp anh.')).toBeInTheDocument();
+  });
+
+  it('renders an absolute file path with only its basename', async () => {
+    const path = 'D:\\workspace\\src\\index.ts';
+    render(<MessageMarkup content={`Open ${path} now.`} />);
+
+    const link = screen.getByRole('link', { name: 'index.ts' });
+    expect(link.querySelector('.file-icon-typescript')).toBeInTheDocument();
+    fireEvent.pointerMove(link, { pointerType: 'mouse' });
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(path));
   });
 
   it('does not treat numeric amounts as file references', () => {
