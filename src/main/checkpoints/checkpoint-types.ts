@@ -31,15 +31,6 @@ export interface CheckpointRecord {
   sourceCheckpointId?: string;
 }
 
-export interface CheckpointTurnStatus {
-  checkpointId: string;
-  taskId: string;
-  turnId: string;
-  state: Exclude<CheckpointState, 'active' | 'recovery'>;
-  fileCount: number;
-  createdAt: string;
-}
-
 export interface WorkspaceEntry {
   kind: CheckpointEntryKind;
   bytes: Buffer;

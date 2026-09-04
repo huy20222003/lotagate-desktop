@@ -2,11 +2,6 @@ import { useEffect, useState } from 'react';
 import type { Artifact } from '../../../../contracts/ipc/v1/workspace.js';
 import { artifactMediaBlob } from './source-view.js';
 
-export function useArtifactMediaUrl(taskId: string, artifact: Artifact, enabled = true): { url?: string; error?: string } {
-  const media = useArtifactMediaUrls(taskId, enabled ? [artifact] : []);
-  return media[artifact.id] ?? {};
-}
-
 export function useArtifactMediaUrls(taskId: string, artifacts: readonly Artifact[]): Record<string, { url?: string; error?: string }> {
   const [media, setMedia] = useState<Record<string, { url?: string; error?: string }>>({});
   const artifactKey = artifacts.map(artifact => `${artifact.id}:${artifact.kind}`).join('|');

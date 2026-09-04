@@ -19,7 +19,7 @@ export interface CliAttachmentInput { id: string; name: string; mimeType: string
 interface ProcessBinding { key: string; projectRoot: string; sessionId?: string; process: CliAgentProcess; }
 interface CommandEventBuffer { events: DesktopEvent[]; bytes: number; resolve: (events: DesktopEvent[]) => void; operation: Promise<DesktopEvent[]>; timer: ReturnType<typeof setTimeout> }
 
-export interface AgentManagerOptions { idleTimeoutMs?: number; now?: () => number; }
+export interface AgentManagerOptions { idleTimeoutMs?: number; }
 const DEFAULT_AGENT_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
 const COMMAND_EVENT_BUFFER_TTL_MS = 30_000;
 const MAX_COMMAND_EVENT_BUFFER_BYTES = 256 * 1024;
@@ -38,11 +38,9 @@ export class AgentManager {
   private readonly commandEventBuffers = new Map<string, CommandEventBuffer>();
   private readonly protocolCacheLoads = new Map<string, Promise<unknown>>();
   private readonly idleTimeoutMs: number;
-  private readonly now: () => number;
 
   constructor(private readonly handler: AgentManagerHandler, private readonly cache?: PersistentCache, private readonly getInteractiveExecutionPolicy: () => Promise<DesktopExecutionPolicy> = async () => buildInteractiveDesktopExecutionPolicy(), options: AgentManagerOptions = {}) {
     this.idleTimeoutMs = Number.isFinite(options.idleTimeoutMs) ? Math.max(1_000, Math.floor(options.idleTimeoutMs!)) : DEFAULT_AGENT_IDLE_TIMEOUT_MS;
-    this.now = options.now ?? Date.now;
   }
 
   async initialize(cwd: string): Promise<DesktopAgentResult> { return (await this.initializedProcess(await requireDirectory(cwd), undefined)).initialize(); }

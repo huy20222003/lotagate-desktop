@@ -28,20 +28,6 @@ export const loginInputSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginInputSchema>;
 
-export type AuthErrorCode =
-  | 'API_NOT_CONFIGURED'
-  | 'AUTH_REQUIRED'
-  | 'AUTH_FAILED'
-  | 'AUTH_UNSUPPORTED'
-  | 'API_UNAVAILABLE'
-  | 'API_PROTOCOL_ERROR';
-
-export interface AuthErrorPayload {
-  code: AuthErrorCode;
-  message: string;
-  retryable: boolean;
-}
-
 export interface DesktopAuthApi {
   getCurrentUser(): Promise<UserProfile | null>;
   restoreSession(): Promise<UserProfile | null>;

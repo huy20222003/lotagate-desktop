@@ -98,7 +98,6 @@ export const desktopHostResponseSchema = z.object({
   }).optional(),
 });
 
-export type DesktopRequest = z.infer<typeof desktopRequestSchema>;
 export type DesktopResponse = z.infer<typeof desktopResponseSchema>;
 export type DesktopEvent = z.infer<typeof desktopEventSchema>;
 export type DesktopHostRequest = z.infer<typeof desktopHostRequestSchema>;

@@ -87,16 +87,13 @@ export const automationCreateInputSchema = automationSchema.omit({ id: true, ena
 }).strict();
 export const automationUpdateInputSchema = automationCreateInputSchema.partial().extend({ enabled: z.boolean().optional() }).strict();
 
-export type AutomationPermissionPolicy = z.infer<typeof automationPermissionPolicySchema>;
 export type AutomationBrowserAccess = z.infer<typeof automationBrowserAccessSchema>;
 export type AutomationTool = z.infer<typeof automationToolSchema>;
 export type AutomationSchedule = z.infer<typeof automationScheduleSchema>;
-export type AutomationRetryPolicy = z.infer<typeof automationRetryPolicySchema>;
 export type Automation = z.infer<typeof automationSchema>;
 export type AutomationCreateInput = z.input<typeof automationCreateInputSchema>;
 export type AutomationUpdateInput = z.input<typeof automationUpdateInputSchema>;
 export type AutomationRunStatus = z.infer<typeof automationRunStatusSchema>;
-export type AutomationReviewStatus = z.infer<typeof automationReviewStatusSchema>;
 export type AutomationRun = z.infer<typeof automationRunSchema>;
 export type AutomationApproval = z.infer<typeof automationApprovalSchema>;
 export type AutomationStateEvent = { type: 'created' | 'updated' | 'removed' | 'started' | 'completed' | 'failed' | 'cancelled' | 'approval_requested' | 'paused' | 'resumed' | 'reviewed'; automationId: string; automation?: Automation; run?: AutomationRun };

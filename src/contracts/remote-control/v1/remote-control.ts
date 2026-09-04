@@ -42,8 +42,6 @@ export const remoteControlSessionSchema = z.object({
   lastError: z.string().max(1_024).optional(),
 }).strict();
 
-export type RemoteControlStatus = z.infer<typeof remoteControlStatusSchema>;
-export type RemoteEnvelope = z.infer<typeof remoteEnvelopeSchema>;
 export type RemoteCommand = z.infer<typeof remoteCommandSchema>;
 export type RemoteControlSession = z.infer<typeof remoteControlSessionSchema>;
 

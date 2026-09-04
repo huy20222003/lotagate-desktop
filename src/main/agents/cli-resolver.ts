@@ -41,10 +41,6 @@ export function resolveCliInvocation(): CliInvocation {
   throw new CliResolutionError(`The @lotagate/cli executable was not installed at ${CLI_EXECUTABLE}.`);
 }
 
-export function resolveCliExecutable(): string {
-  return resolveCliInvocation().executable;
-}
-
 function resolveNodeExecutable(): string {
   const configuredExecutables = [process.env['npm_node_execpath'], process.env['NODE']].flatMap(value => typeof value === 'string' && value.trim() !== '' ? [value.trim()] : []);
   const configuredNode = configuredExecutables.find(isNodeExecutable);

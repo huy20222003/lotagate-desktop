@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import type { DesktopEvent } from '../../agent-protocol/v1/desktop.js';
 import type { Automation, AutomationCreateInput, AutomationRun, AutomationStateEvent, AutomationUpdateInput } from './automation.js';
 import type { DesktopSettingsSnapshot } from './settings.js';
 
@@ -20,7 +19,6 @@ export const taskTitleSourceSchema = z.enum(['automatic', 'manual']);
 export const taskTitleSummaryStatusSchema = z.enum(['not_started', 'generating', 'completed', 'failed']);
 export const DESKTOP_TURN_TIMING_METADATA_KEY = 'desktopTurnTiming' as const;
 export const DESKTOP_COMMAND_TIMING_METADATA_KEY = 'desktopCommandTiming' as const;
-export interface DesktopCommandTiming { startedAt: number; endedAt: number }
 export type DesktopTurnTimingPhase = 'started' | 'completed' | 'failed' | 'cancelled';
 export interface DesktopTurnTimingMarker { phase: DesktopTurnTimingPhase; timestampMs: number }
 export const taskSchema = z.object({
@@ -93,7 +91,6 @@ export interface ArtifactPreview { artifact: Artifact; content?: string; dataUrl
 export interface ArtifactMedia { artifact: Artifact; mimeType: string; bytes: Uint8Array; }
 export type TrustRequest = z.infer<typeof trustRequestSchema>;
 export type AgentEventEnvelope = z.infer<typeof agentEventEnvelopeSchema>;
-export type AgentEvent = DesktopEvent;
 export interface AgentDiagnosticEnvelope { cwd: string; diagnostic: { kind: 'stderr' | 'protocol'; message: string } }
 
 export type FileDiffLineKind = 'context' | 'addition' | 'deletion';
@@ -218,7 +215,6 @@ export const terminalSessionResizeSchema = z.object({ sessionId: z.string().uuid
 export const terminalSessionWriteSchema = z.object({ sessionId: z.string().uuid(), data: z.string().min(1).max(128 * 1024) });
 export const terminalSessionIdSchema = z.string().uuid();
 export type TerminalSessionOpenInput = z.infer<typeof terminalSessionOpenSchema>;
-export type TerminalSessionResizeInput = z.infer<typeof terminalSessionResizeSchema>;
 
 export const terminalExecutionInputSchema = z.object({
   cwd: z.string().min(1).max(4_096),

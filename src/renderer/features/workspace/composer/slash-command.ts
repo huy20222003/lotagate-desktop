@@ -3,8 +3,6 @@ import { z } from 'zod';
 import { filterModelsByCategory, modelCategoryForCommand, type MediaModelCategory, type WorkspaceModelOption } from '../../../services/model-catalog.js';
 import { REMOTE_SLASH_COMMAND_DEFINITIONS, type RemoteSlashCommandDefinition, type RemoteSlashCommandField } from '../../../../contracts/remote-control/v1/slash-command-catalog.js';
 
-export type SlashCommandId = RemoteSlashCommandDefinition['id'];
-export type SlashFieldType = RemoteSlashCommandField['type'];
 export type SlashCommandField = RemoteSlashCommandField;
 export type SlashCommandDefinition = Omit<RemoteSlashCommandDefinition, 'modelCategory' | 'fields' | 'advancedFields'> & { modelCategory?: MediaModelCategory; fields: SlashCommandField[]; advancedFields: SlashCommandField[] };
 export { REMOTE_SLASH_COMMAND_DEFINITIONS as SLASH_COMMAND_DEFINITIONS };
