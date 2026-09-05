@@ -23,6 +23,19 @@ describe('useAgentResponseNotifications', () => {
     expect(notify).toHaveBeenCalledWith('Research session', 'The workspace check is complete.');
   });
 
+  it('waits for task synchronization when the terminal event arrives first', () => {
+    const notify = vi.fn();
+    let listener: ((envelope: { event: { event: string; data: Record<string, unknown> } }) => void) | undefined;
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { agent: { onEvent: vi.fn(callback => { listener = callback; return () => undefined; }) }, operations: { notify } } });
+    const view = renderHook(({ tasks }) => useAgentResponseNotifications(tasks, 'other-task'), { initialProps: { tasks: [] as Task[] } });
+
+    act(() => listener?.({ event: { event: 'turn.completed', data: { sessionId: task.sessionId, turnId: 'turn-1', content: 'The background session is complete.' } } }));
+    expect(notify).not.toHaveBeenCalled();
+
+    act(() => view.rerender({ tasks: [task] }));
+    expect(notify).toHaveBeenCalledWith('Research session', 'The background session is complete.');
+  });
+
   it('does not notify for the focused active session', () => {
     const notify = vi.fn();
     let listener: ((envelope: { event: { event: string; data: Record<string, unknown> } }) => void) | undefined;
@@ -35,6 +48,20 @@ describe('useAgentResponseNotifications', () => {
 
     expect(notify).not.toHaveBeenCalled();
   });
+
+  it('uses the currently displayed title without waiting for title generation', () => {
+    const notify = vi.fn();
+    let listener: ((envelope: { cwd: string; event: { event: string; data: Record<string, unknown> } }) => void) | undefined;
+    const automaticTask = { ...task, cwd: 'C:\\workspace', title: 'Initial prompt', titleSource: 'automatic', titleSummaryStatus: 'generating' } as Task;
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { agent: { onEvent: vi.fn(callback => { listener = callback; return () => undefined; }) }, operations: { notify } } });
+    const view = renderHook(({ tasks }) => useAgentResponseNotifications(tasks, 'other-task'), { initialProps: { tasks: [automaticTask] } });
+
+    act(() => listener?.({ cwd: automaticTask.cwd, event: { event: 'turn.completed', data: { taskId: automaticTask.id, turnId: 'turn-1', content: '**Finished**' } } }));
+    expect(notify).toHaveBeenCalledWith('Initial prompt', 'Finished');
+
+    act(() => view.rerender({ tasks: [{ ...automaticTask, title: 'Generated session title', titleSummaryStatus: 'completed' } as Task] }));
+    expect(notify).toHaveBeenCalledOnce();
+  });
 });
 
 describe('agentResponseNotification', () => {
@@ -42,5 +69,6 @@ describe('agentResponseNotification', () => {
     expect(agentResponseNotification('  first\nsecond  ')).toBe('first second');
     expect(agentResponseNotification('x'.repeat(300))).toBe(formatTextClamp(240, 'x'.repeat(300)));
     expect(agentResponseNotification('')).toBe('Agent response completed.');
+    expect(agentResponseNotification('**Bold** and `code` with [a link](https://example.com).')).toBe('Bold and code with a link.');
   });
 });

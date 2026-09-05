@@ -100,14 +100,14 @@ export class TaskEventProjector {
       else await this.tasks.appendEvent(task.id, activityKind(event.event), text, metadata);
     }
     if (event.event === 'turn.started') {
-      this.activeTasks.set(cwd, task.id);
+      this.activeTasks.set(activeTaskKey(cwd, data), task.id);
       await this.tasks.setStatus(task.id, 'active');
       const turnId = typeof data['turnId'] === 'string' ? data['turnId'] : undefined;
       if (turnId !== undefined) await this.tasks.update(task.id, { turnId });
     }
-    if (event.event === 'turn.completed') { await this.tasks.setStatus(task.id, 'completed'); await this.tasks.update(task.id, { turnId: undefined, interruptedReason: undefined }); this.clearActiveTask(cwd, task.id); }
-    if (event.event === 'turn.failed') { await this.tasks.setStatus(task.id, 'failed'); await this.tasks.update(task.id, { turnId: undefined, interruptedReason: typeof data['error'] === 'string' ? redactString(data['error']) : 'The CLI reported a failed turn.' }); this.clearActiveTask(cwd, task.id); }
-    if (event.event === 'turn.cancelled') { await this.tasks.setStatus(task.id, 'cancelled'); await this.tasks.update(task.id, { turnId: undefined }); this.clearActiveTask(cwd, task.id); }
+    if (event.event === 'turn.completed') { await this.tasks.setStatus(task.id, 'completed'); await this.tasks.update(task.id, { turnId: undefined, interruptedReason: undefined }); this.clearActiveTask(cwd, data, task.id); }
+    if (event.event === 'turn.failed') { await this.tasks.setStatus(task.id, 'failed'); await this.tasks.update(task.id, { turnId: undefined, interruptedReason: failedTurnReason(data) }); this.clearActiveTask(cwd, data, task.id); }
+    if (event.event === 'turn.cancelled') { await this.tasks.setStatus(task.id, 'cancelled'); await this.tasks.update(task.id, { turnId: undefined }); this.clearActiveTask(cwd, data, task.id); }
   }
 
   private async selectTask(cwd: string, event: DesktopEvent): Promise<Awaited<ReturnType<TaskStore['require']>> | undefined> {
@@ -116,7 +116,7 @@ export class TaskEventProjector {
     if (directTask !== undefined) return directTask;
     const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
     const sessionTask = sessionId === undefined ? undefined : await this.tasks.findBySession(sessionId);
-    const activeTaskId = this.activeTasks.get(cwd);
+    const activeTaskId = this.activeTasks.get(activeTaskKey(cwd, event.data)) ?? (sessionId === undefined ? this.activeTasks.get(cwd) : undefined);
     const activeTask = activeTaskId === undefined ? undefined : await this.tasks.require(activeTaskId).then(value => value.archived || value.cwd !== cwd ? undefined : value).catch(() => undefined);
     const taskCandidate = sessionTask?.cwd === cwd ? sessionTask : sessionTask === undefined ? (sessionId === undefined ? activeTask : undefined) : undefined;
     const selectedTask = taskCandidate ?? (event.event === 'turn.started' ? await this.tasks.findByCwd(cwd) : undefined);
@@ -124,7 +124,11 @@ export class TaskEventProjector {
     return selectedTask;
   }
 
-  private clearActiveTask(cwd: string, taskId: string): void { if (this.activeTasks.get(cwd) === taskId) this.activeTasks.delete(cwd); }
+  private clearActiveTask(cwd: string, data: Record<string, unknown>, taskId: string): void {
+    const key = activeTaskKey(cwd, data);
+    if (this.activeTasks.get(key) === taskId) this.activeTasks.delete(key);
+    if (key !== cwd && this.activeTasks.get(cwd) === taskId) this.activeTasks.delete(cwd);
+  }
 }
 
 function eventText(event: string, data: Record<string, unknown>): string | undefined {
@@ -178,6 +182,16 @@ function failedTurnText(data: Record<string, unknown>): string {
   const error = data['error'];
   if (typeof error === 'object' && error !== null && typeof (error as Record<string, unknown>)['message'] === 'string') return `Agent turn failed: ${redactString((error as Record<string, unknown>)['message'] as string)}`;
   return 'Agent turn failed.';
+}
+
+function failedTurnReason(data: Record<string, unknown>): string {
+  const error = data['error'];
+  if (typeof error === 'object' && error !== null && typeof (error as Record<string, unknown>)['message'] === 'string') return redactString((error as Record<string, unknown>)['message'] as string);
+  return typeof error === 'string' && error.trim() ? redactString(error) : 'The CLI reported a failed turn.';
+}
+
+function activeTaskKey(cwd: string, data: Record<string, unknown>): string {
+  return typeof data['sessionId'] === 'string' && data['sessionId'].length > 0 ? `${cwd}\u0000${data['sessionId']}` : cwd;
 }
 
 function activityKind(event: string): 'assistant' | 'tool' | 'approval' | 'trust' | 'file' | 'command' | 'context' | 'usage' | 'error' | 'verification' {

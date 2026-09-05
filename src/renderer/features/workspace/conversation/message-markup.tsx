@@ -18,8 +18,9 @@ export function resolveWorkspacePath(path: string, workspaceCwd?: string): strin
   return `${workspaceCwd.replace(/[\\/]+$/u, '')}${separator}${relativePath}`;
 }
 
-export function MessageMarkup({ content, fileReferences = [], workspaceCwd: _workspaceCwd, highlightPromptTokens = false }: { content: string; fileReferences?: readonly MessageFileReference[]; workspaceCwd?: string; highlightPromptTokens?: boolean }): ReactNode {
-  const references = mergeFileReferences(fileReferences, extractAbsoluteFilePaths(content).map(path => ({ path })));
+export function MessageMarkup({ content, fileReferences = [], workspaceCwd, executionCwd, highlightPromptTokens = false }: { content: string; fileReferences?: readonly MessageFileReference[]; workspaceCwd?: string; executionCwd?: string; highlightPromptTokens?: boolean }): ReactNode {
+  const taggedFileReferences = highlightPromptTokens ? extractTaggedFileReferences(content, workspaceCwd) : [];
+  const references = mergeFileReferences([...fileReferences, ...taggedFileReferences], extractAbsoluteFilePaths(content).map(path => ({ path })), workspaceCwd, executionCwd);
   const tokens = tokenizeMessage(content, references, highlightPromptTokens);
   return <>{tokens.map((token, index) => token.kind === 'text' ? <span key={`text:${index}`}>{token.value}</span> : token.kind === 'file' ? <MessageFileLink key={`file:${token.path}:${index}`} reference={token.reference} /> : token.kind === 'prompt' ? <span className="prompt-token" key={`prompt:${index}`}>{token.value}</span> : <MessageExternalLink key={`url:${token.url}:${index}`} href={token.url} />)}</>;
 }
@@ -57,8 +58,11 @@ function tokenizeMessage(content: string, references: readonly MessageFileRefere
 function findNextToken(content: string, cursor: number, references: readonly MessageFileReference[], highlightPromptTokens: boolean): { index: number; length: number; token: MessageToken } | undefined {
   const candidates: Array<{ index: number; length: number; token: MessageToken }> = [];
   for (const reference of references) {
-    const start = content.indexOf(reference.path, cursor);
-    if (start >= 0 && isFileBoundary(content, start, reference.path.length)) candidates.push({ index: start, length: reference.path.length, token: { kind: 'file', path: reference.path, reference } });
+    const matchPaths = [...new Set([reference.mention, reference.path].filter((value): value is string => value !== undefined))];
+    for (const matchPath of matchPaths) {
+      const start = content.indexOf(matchPath, cursor);
+      if (start >= 0 && isFileBoundary(content, start, matchPath.length)) candidates.push({ index: start, length: matchPath.length, token: { kind: 'file', path: matchPath, reference } });
+    }
   }
   for (const match of content.slice(cursor).matchAll(/https?:\/\/[^\s<>()]+/giu)) {
     const raw = match[0];
@@ -74,10 +78,13 @@ function findNextToken(content: string, cursor: number, references: readonly Mes
   return candidates.sort((left, right) => left.index - right.index || right.length - left.length)[0];
 }
 
-function mergeFileReferences(references: readonly MessageFileReference[], extractedReferences: readonly MessageFileReference[]): MessageFileReference[] {
+function mergeFileReferences(references: readonly MessageFileReference[], extractedReferences: readonly MessageFileReference[], workspaceCwd?: string, executionCwd?: string): MessageFileReference[] {
   const byPath = new Map<string, MessageFileReference>();
   for (const reference of [...references, ...extractedReferences]) {
-    if (isAbsoluteFilePath(reference.path) && !byPath.has(reference.path)) byPath.set(reference.path, reference);
+    if (!isAbsoluteFilePath(reference.path)) continue;
+    const displayPath = projectPathForDisplay(reference.path, workspaceCwd, executionCwd);
+    const normalized = displayPath === reference.path ? reference : { ...reference, path: displayPath, mention: reference.mention ?? reference.path };
+    if (!byPath.has(normalized.path)) byPath.set(normalized.path, normalized);
   }
   return [...byPath.values()].sort((left, right) => right.path.length - left.path.length);
 }
@@ -85,6 +92,19 @@ function mergeFileReferences(references: readonly MessageFileReference[], extrac
 function extractAbsoluteFilePaths(content: string): string[] {
   const matches = content.matchAll(/(?:[A-Za-z]:[\\/]|\\\\|\/(?!\/))[^<>`\r\n]*?\.[A-Za-z0-9][A-Za-z0-9_-]{0,15}(?=$|[\s),.;:!?])/gu);
   return [...matches].map(match => match[0]!.trim()).filter(path => !/^https?:/iu.test(path) && isAbsoluteFilePath(path));
+}
+
+function extractTaggedFileReferences(content: string, workspaceCwd?: string): MessageFileReference[] {
+  if (workspaceCwd === undefined) return [];
+  const references: MessageFileReference[] = [];
+  for (const match of content.matchAll(/(?:^|\s)(@[^\s@]+)/gu)) {
+    const mention = match[1];
+    if (mention === undefined) continue;
+    const path = resolveWorkspacePath(mention.slice(1), workspaceCwd);
+    if (!isAbsoluteFilePath(path)) continue;
+    references.push({ path, mention });
+  }
+  return references;
 }
 
 function isFileBoundary(content: string, start: number, length: number): boolean {
@@ -105,5 +125,27 @@ function faviconUrl(href: string): string { const url = new URL(href); return ne
 function faviconProxyUrl(href: string): string { const url = new URL(href); return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url.origin)}&sz=32`; }
 function websiteLabel(href: string): string { return new URL(href).hostname.replace(/^www\./iu, ''); }
 function textContent(value: ReactNode): string { return Children.toArray(value).filter((item): item is string => typeof item === 'string').join('').trim(); }
+
+function projectPathForDisplay(path: string, projectRoot?: string, executionCwd?: string): string {
+  if (projectRoot === undefined || executionCwd === undefined || !isAbsolutePath(path)) return path;
+  const relativePath = relativePathIfInside(path, executionCwd);
+  if (relativePath === undefined) return path;
+  return joinWorkspacePath(projectRoot, relativePath);
+}
+
+function relativePathIfInside(candidate: string, root: string): string | undefined {
+  const normalizedCandidate = candidate.replace(/\\/gu, '/').replace(/\/+$/u, '');
+  const normalizedRoot = root.replace(/\\/gu, '/').replace(/\/+$/u, '');
+  const candidateKey = normalizedCandidate.toLowerCase();
+  const rootKey = normalizedRoot.toLowerCase();
+  if (candidateKey === rootKey) return '';
+  if (!candidateKey.startsWith(`${rootKey}/`)) return undefined;
+  return normalizedCandidate.slice(normalizedRoot.length + 1);
+}
+
+function joinWorkspacePath(root: string, relativePath: string): string {
+  const separator = root.includes('\\') ? '\\' : '/';
+  return `${root.replace(/[\\/]+$/u, '')}${separator}${relativePath.replace(/[\\/]+/gu, separator)}`;
+}
 
 type MessageToken = { kind: 'text'; value: string } | { kind: 'file'; path: string; reference: MessageFileReference } | { kind: 'url'; url: string } | { kind: 'prompt'; value: string };

@@ -33,9 +33,9 @@ export class TaskTitleGenerationService {
       if (title === undefined) throw new Error('The title model returned an invalid session title.');
       return await this.tasks.completeAutomaticTitleSummary(claimed.id, title);
     } catch (error) {
-      await this.tasks.failAutomaticTitleSummary(claimed.id).catch(failure => this.logger.warn('task.title.summary.state.failed', { taskId: claimed.id, message: failure instanceof Error ? failure.message : 'Unable to mark title summary as failed.' }));
+      const failed = await this.tasks.failAutomaticTitleSummary(claimed.id).catch(failure => { this.logger.warn('task.title.summary.state.failed', { taskId: claimed.id, message: failure instanceof Error ? failure.message : 'Unable to mark title summary as failed.' }); return undefined; });
       this.logger.warn('task.title.summary.failed', { taskId: claimed.id, message: error instanceof Error ? error.message : 'Unable to generate a session title.' });
-      return undefined;
+      return failed;
     } finally {
       this.inFlight.delete(claimed.id);
     }

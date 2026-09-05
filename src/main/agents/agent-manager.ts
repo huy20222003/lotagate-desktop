@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { CliAgentProcess, type CliAgentEventHandler } from './cli-agent-process.js';
+import { CliAgentProcess, type CliAgentDiagnostic, type CliAgentEventHandler } from './cli-agent-process.js';
 import { resolveCliInvocation } from './cli-resolver.js';
 import type { DesktopAgentResult, DesktopEvent, DesktopExecutionPolicy, DesktopHostRequest, DesktopHostResponse, DesktopReasoningEffort, DesktopSkillSelection } from '../../contracts/agent-protocol/v1/desktop.js';
 import { requireDirectory } from '../security/path-policy.js';
@@ -10,7 +10,7 @@ import { buildInteractiveDesktopExecutionPolicy } from './desktop-execution-poli
 export interface AgentManagerHandler {
   onEvent(projectRoot: string, event: DesktopEvent): void;
   onHostRequest?(projectRoot: string, request: DesktopHostRequest): Promise<DesktopHostResponse>;
-  onDiagnostic?(projectRoot: string, diagnostic: { kind: 'stderr' | 'protocol'; message: string }): void;
+  onDiagnostic?(projectRoot: string, diagnostic: CliAgentDiagnostic): void;
   onExit?(projectRoot: string, error: Error, sessionId?: string, approvalIds?: readonly string[]): void;
 }
 
@@ -150,7 +150,7 @@ export class AgentManager {
         this.handler.onEvent(projectRoot, event);
       },
       onHostRequest: request => this.handler.onHostRequest === undefined ? Promise.resolve({ version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message: 'The Desktop host is unavailable.', retryable: false } }) : this.handler.onHostRequest(projectRoot, request),
-      onDiagnostic: diagnostic => this.handler.onDiagnostic?.(projectRoot, diagnostic),
+      onDiagnostic: diagnostic => this.handler.onDiagnostic?.(projectRoot, { ...diagnostic, ...(diagnostic.sessionId === undefined && binding.sessionId === undefined ? {} : { sessionId: diagnostic.sessionId ?? binding.sessionId }) }),
       onExit: error => {
         const approvalIds = [...this.approvalBindings.entries()].filter(([, candidate]) => candidate === binding).map(([approvalId]) => approvalId);
         for (const approvalId of approvalIds) this.approvalBindings.delete(approvalId);
@@ -173,7 +173,7 @@ export class AgentManager {
   private async bindingForApproval(cwd: string, approvalId: string): Promise<ProcessBinding> { return this.bindingForId(await requireDirectory(cwd), this.approvalBindings.get(approvalId), 'approval'); }
   private async bindingForTrust(cwd: string, trustRequestId: string): Promise<ProcessBinding> { return this.bindingForId(await requireDirectory(cwd), this.trustBindings.get(trustRequestId), 'trust'); }
   private async bindingForId(projectRoot: string, binding: ProcessBinding | undefined, kind: string): Promise<ProcessBinding> { if (binding === undefined || binding.projectRoot !== projectRoot) throw new Error(`The requested ${kind} does not belong to this project.`); return binding; }
-  private scheduleRecovery(binding: ProcessBinding): void { const attempt = this.recoveryAttempts.get(binding.key) ?? 0; if (attempt >= 3 || this.recoveryTimers.has(binding.key)) return; const delayMs = 1_000 * 2 ** attempt; this.recoveryAttempts.set(binding.key, attempt + 1); this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', message: `CLI recovery scheduled in ${delayMs}ms (attempt ${attempt + 1}/3).` }); const timer = setTimeout(() => { this.recoveryTimers.delete(binding.key); void binding.process.initialize().then(() => { this.recoveryAttempts.delete(binding.key); }).catch(error => { this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', message: error instanceof Error ? error.message : 'CLI recovery failed.' }); this.scheduleRecovery(binding); }); }, delayMs); this.recoveryTimers.set(binding.key, timer); }
+  private scheduleRecovery(binding: ProcessBinding): void { const attempt = this.recoveryAttempts.get(binding.key) ?? 0; if (attempt >= 3 || this.recoveryTimers.has(binding.key)) return; const delayMs = 1_000 * 2 ** attempt; this.recoveryAttempts.set(binding.key, attempt + 1); this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', message: `CLI recovery scheduled in ${delayMs}ms (attempt ${attempt + 1}/3).` }); const timer = setTimeout(() => { this.recoveryTimers.delete(binding.key); void binding.process.initialize().then(() => { this.recoveryAttempts.delete(binding.key); }).catch(error => { this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', severity: 'error', message: error instanceof Error ? error.message : 'CLI recovery failed.' }); this.scheduleRecovery(binding); }); }, delayMs); this.recoveryTimers.set(binding.key, timer); }
   private removeBinding(binding: ProcessBinding): void { this.processes.delete(binding.key); if (binding.sessionId !== undefined) this.sessionBindings.delete(binding.sessionId); for (const [id, candidate] of this.turnBindings) if (candidate === binding) this.turnBindings.delete(id); for (const [id, candidate] of this.approvalBindings) if (candidate === binding) this.approvalBindings.delete(id); for (const [id, candidate] of this.trustBindings) if (candidate === binding) this.trustBindings.delete(id); this.clearIdle(binding.key); }
   private async shutdownBinding(binding: ProcessBinding, reason: string): Promise<void> { this.removeBinding(binding); this.clearRecovery(binding.key); await binding.process.shutdown(reason); }
   private clearRecovery(key: string): void { const timer = this.recoveryTimers.get(key); if (timer !== undefined) clearTimeout(timer); this.recoveryTimers.delete(key); this.recoveryAttempts.delete(key); }
@@ -181,7 +181,7 @@ export class AgentManager {
   private async expireIdle(binding: ProcessBinding): Promise<void> {
     if (this.processes.get(binding.key) !== binding || this.recoveryTimers.has(binding.key)) return;
     if ([...this.turnBindings.values(), ...this.approvalBindings.values(), ...this.trustBindings.values()].includes(binding)) { this.touch(binding); return; }
-    await this.shutdownBinding(binding, 'idle-timeout').catch(error => this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', message: error instanceof Error ? error.message : 'Idle CLI process shutdown failed.' }));
+    await this.shutdownBinding(binding, 'idle-timeout').catch(error => this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', severity: 'error', message: error instanceof Error ? error.message : 'Idle CLI process shutdown failed.' }));
   }
   private clearIdle(key: string): void { const timer = this.idleTimers.get(key); if (timer !== undefined) clearTimeout(timer); this.idleTimers.delete(key); }
   private recordCommandEvent(event: DesktopEvent): void {

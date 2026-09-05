@@ -17,7 +17,8 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "npm run cli:build && electron-vite dev",
+    "cli:build": "npm --prefix ../cli run build",
     "build": "electron-vite build",
     "cli:link": "node scripts/link-cli.mjs",
     "cli:unlink": "node scripts/unlink-cli.mjs",

@@ -23,7 +23,7 @@ interface TurnActivityDetails {
   tools: Activity[];
 }
 
-export function TaskConversation({ task, activities, activityAttachments, activityArtifacts, fileChangesByTurn, checkpointStatuses = {}, undoingTurns = {}, onUndoFileChanges = async () => undefined, onOpenFileChanges, statusText, contextCompactionStatus, thinking, finalResponseReceived, thinkingStartedAt, turnTimings, trust, onTrust }: { task?: Task | undefined; activities: Activity[]; activityAttachments: Record<string, AttachmentPreview[]>; activityArtifacts: Record<string, Artifact[]>; fileChangesByTurn: FileChangeSummariesByTurn; checkpointStatuses?: Record<string, CheckpointStatus>; undoingTurns?: Record<string, boolean>; onUndoFileChanges?: (turnId: string) => Promise<void>; onOpenFileChanges: OpenFileChangesHandler; statusText?: string | undefined; contextCompactionStatus?: 'compacting' | 'compacted' | 'failed' | undefined; thinking: boolean; finalResponseReceived: boolean; thinkingStartedAt?: number | undefined; turnTimings: Record<string, TurnTiming>; trust?: TrustRequest | undefined; onTrust: (trusted: boolean) => Promise<void> }) {
+export function TaskConversation({ task, projectRoot, activities, activityAttachments, activityArtifacts, fileChangesByTurn, checkpointStatuses = {}, undoingTurns = {}, onUndoFileChanges = async () => undefined, onOpenFileChanges, statusText, contextCompactionStatus, thinking, finalResponseReceived, thinkingStartedAt, turnTimings, trust, onTrust }: { task?: Task | undefined; projectRoot?: string | undefined; activities: Activity[]; activityAttachments: Record<string, AttachmentPreview[]>; activityArtifacts: Record<string, Artifact[]>; fileChangesByTurn: FileChangeSummariesByTurn; checkpointStatuses?: Record<string, CheckpointStatus>; undoingTurns?: Record<string, boolean>; onUndoFileChanges?: (turnId: string) => Promise<void>; onOpenFileChanges: OpenFileChangesHandler; statusText?: string | undefined; contextCompactionStatus?: 'compacting' | 'compacted' | 'failed' | undefined; thinking: boolean; finalResponseReceived: boolean; thinkingStartedAt?: number | undefined; turnTimings: Record<string, TurnTiming>; trust?: TrustRequest | undefined; onTrust: (trusted: boolean) => Promise<void> }) {
   const transcript = useMemo(() => mergeChatActivities(activities), [activities]);
   const activityDetailsByTurn = useMemo(() => {
     const grouped = new Map<string, TurnActivityDetails>();
@@ -54,12 +54,13 @@ export function TaskConversation({ task, activities, activityAttachments, activi
     const timing = messageTiming(activity, turnTimings).timing;
     return timing !== undefined && timing.endedAt === undefined;
   });
+  const messageWorkspaceRoot = projectRoot ?? task.cwd;
   const messages = transcript.map(activity => {
     const turnId = activityTurnId(activity);
     const turnDetails = turnId === undefined ? undefined : activityDetailsByTurn.get(turnId);
     const turnActivities = turnDetails?.all ?? EMPTY_ACTIVITIES;
     const fileChangeSummary = !thinking && (activity.kind === 'assistant' || activity.kind === 'error') && turnId !== undefined ? fileChangesByTurn[turnId] : undefined;
-    return <ChatMessage key={activity.id} activity={activity} attachments={activityAttachments[activity.id] ?? EMPTY_ATTACHMENTS} artifacts={activityArtifacts[activity.id] ?? EMPTY_ARTIFACTS} workspaceCwd={task.cwd} onUndoFileChanges={onUndoFileChanges} undoState={turnId === undefined ? undefined : checkpointStatuses[turnId]?.state} undoBusy={turnId === undefined ? false : undoingTurns[turnId] === true} onOpenFileChanges={onOpenFileChanges} activities={turnActivities} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...messageTiming(activity, turnTimings)} />;
+    return <ChatMessage key={activity.id} activity={activity} attachments={activityAttachments[activity.id] ?? EMPTY_ATTACHMENTS} artifacts={activityArtifacts[activity.id] ?? EMPTY_ARTIFACTS} workspaceCwd={messageWorkspaceRoot} onUndoFileChanges={onUndoFileChanges} undoState={turnId === undefined ? undefined : checkpointStatuses[turnId]?.state} undoBusy={turnId === undefined ? false : undoingTurns[turnId] === true} onOpenFileChanges={onOpenFileChanges} activities={turnActivities} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...messageTiming(activity, turnTimings)} />;
   });
   const showLiveWorkedFor = thinking && workingTiming !== undefined && !hasActiveAssistant;
   const showTypingIndicator = thinking && !finalResponseReceived && !hasRunningTool && !hasActiveAssistant;

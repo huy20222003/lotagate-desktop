@@ -91,7 +91,16 @@ export interface ArtifactPreview { artifact: Artifact; content?: string; dataUrl
 export interface ArtifactMedia { artifact: Artifact; mimeType: string; bytes: Uint8Array; }
 export type TrustRequest = z.infer<typeof trustRequestSchema>;
 export type AgentEventEnvelope = z.infer<typeof agentEventEnvelopeSchema>;
-export interface AgentDiagnosticEnvelope { cwd: string; diagnostic: { kind: 'stderr' | 'protocol'; message: string } }
+export interface AgentDiagnosticEnvelope {
+  cwd: string;
+  diagnostic: {
+    kind: 'stderr' | 'protocol';
+    message: string;
+    severity?: 'info' | 'error';
+    sessionId?: string;
+    turnId?: string;
+  };
+}
 
 export type FileDiffLineKind = 'context' | 'addition' | 'deletion';
 export interface FileDiffLine { kind: FileDiffLineKind; text: string; oldLine?: number; newLine?: number }

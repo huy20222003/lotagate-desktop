@@ -35,6 +35,13 @@ describe('streaming activity projection', () => {
     expect(assistantStreamKey('task-1', 'turn-1', 'run-1:1')).not.toBe(assistantStreamKey('task-1', 'turn-1', 'run-1:2'));
   });
 
+  it('keeps execution workspace metadata on a streamed assistant activity', () => {
+    const first = appendAssistantDelta([], { taskId: 'task-1', turnId: 'turn-1', content: 'Saved D:\\session\\file.ts', createdAt, metadata: { projectRoot: 'D:\\project', executionCwd: 'D:\\session' } });
+    const next = appendAssistantDelta(first, { taskId: 'task-1', turnId: 'turn-1', content: ' successfully.', createdAt });
+
+    expect(next[0]?.metadata).toMatchObject({ projectRoot: 'D:\\project', executionCwd: 'D:\\session', turnId: 'turn-1' });
+  });
+
   it('overlays a stream while persistence is catching up, then allows reconciliation', () => {
     const stream: PendingAssistantStream = { taskId: 'task-1', turnId: 'turn-1', segmentId: 'run-1:1', text: 'Hello world', createdAt };
     const stale = [{ ...activity('assistant-1', 'Hello', 'turn-1'), metadata: { turnId: 'turn-1', segmentId: 'run-1:1' } }];
@@ -42,5 +49,12 @@ describe('streaming activity projection', () => {
 
     expect(overlay[0]?.text).toBe('Hello world');
     expect(isAssistantStreamPersisted([{ ...activity('assistant-1', 'Hello world', 'turn-1'), metadata: { turnId: 'turn-1', segmentId: 'run-1:1' } }], stream)).toBe(true);
+  });
+
+  it('retains workspace metadata when a pending stream is reconciled without persistence', () => {
+    const stream: PendingAssistantStream = { taskId: 'task-1', turnId: 'turn-1', text: 'Saved D:\\session\\file.ts', createdAt, metadata: { projectRoot: 'D:\\project', executionCwd: 'D:\\session' } };
+    const overlay = reconcilePendingAssistantStreams([], [stream]);
+
+    expect(overlay[0]?.metadata).toMatchObject({ projectRoot: 'D:\\project', executionCwd: 'D:\\session' });
   });
 });

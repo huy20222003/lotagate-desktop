@@ -3,14 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   supported: true,
   show: vi.fn(),
-  options: undefined as { title?: string; body?: string } | undefined,
+  options: undefined as { title?: string; body?: string; icon?: string } | undefined,
 }));
 
 vi.mock('electron', () => ({
   app: { isPackaged: false, getAppPath: () => process.cwd() },
   Notification: class {
     static isSupported(): boolean { return mocks.supported; }
-    constructor(options: { title?: string; body?: string }) { mocks.options = options; }
+    constructor(options: { title?: string; body?: string; icon?: string }) { mocks.options = options; }
     show(): void { mocks.show(); }
   },
 }));

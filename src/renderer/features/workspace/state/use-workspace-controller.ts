@@ -17,7 +17,7 @@ import { agentStatusForEvent, commandStatusForAction } from './agent-status.js';
 import { turnTimingsFromActivities } from '../conversation/turn-timings.js';
 import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, markAssistantSegmentPhase, reconcilePendingAssistantStreams, type PendingAssistantStream } from '../conversation/streaming-activity.js';
 import { discardQueuedAttachments, extractSessionId, extractTurnId, loadActivityArtifactPreviews, loadActivityAttachmentPreviews, loadAttachmentPreviews, mergeActivities } from './workspace-controller-helpers.js';
-import { allowsUnscopedTaskFallback } from './agent-event-routing.js';
+import { allowsUnscopedTaskFallback, shouldSurfaceAgentDiagnostic } from './agent-event-routing.js';
 import { persistDesktopCommandResult } from './desktop-command-result-persistence.js';
 import { cancelWorkspaceTask } from './cancel-workspace-task.js';
 import { useDeferredStatePublisher } from './deferred-state-publisher.js';
@@ -255,6 +255,7 @@ export function useWorkspaceController() {
       if (terminal && currentTurn) { activeTurnRef.current = undefined; setActiveTurnId(undefined); }
       const status = agentStatusForEvent(envelope.event.event, data);
       if (envelope.event.event === 'mcp.server.failed' && typeof data['error'] === 'string') setError(data['error']);
+      if (envelope.event.event === 'turn.failed') setError(readAgentError(data['error']) ?? 'The agent turn failed.');
       if (envelope.event.event === 'turn.started') { setAgentStatus(undefined); setContextCompactionStatus(undefined); }
       else if (status !== undefined) setAgentStatus(status);
       if (envelope.event.event === 'turn.started') {
@@ -282,12 +283,12 @@ export function useWorkspaceController() {
       if (currentTurn && envelope.event.event === 'assistant.delta' && typeof data['content'] === 'string' && data['content'].length > 0) {
         const segmentId = typeof data['segmentId'] === 'string' ? data['segmentId'] : undefined;
         const iteration = typeof data['iteration'] === 'number' ? data['iteration'] : undefined;
-        const input = { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), ...(segmentId === undefined ? {} : { segmentId }), ...(iteration === undefined ? {} : { iteration }), content: data['content'], createdAt: new Date().toISOString() };
+        const input = { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), ...(segmentId === undefined ? {} : { segmentId }), ...(iteration === undefined ? {} : { iteration }), content: data['content'], createdAt: new Date().toISOString(), metadata: { ...(typeof data['projectRoot'] === 'string' ? { projectRoot: data['projectRoot'] } : {}), ...(typeof data['executionCwd'] === 'string' ? { executionCwd: data['executionCwd'] } : {}) } };
         const nextActivities = appendAssistantDelta(activitiesRef.current, input);
         const streamed = segmentId === undefined
           ? [...nextActivities].reverse().find(activity => activity.taskId === eventTask.id && activity.kind === 'assistant' && activity.metadata['turnId'] === turnId)
           : [...nextActivities].reverse().find(activity => activity.taskId === eventTask.id && activity.kind === 'assistant' && activity.metadata['segmentId'] === segmentId);
-        if (streamed !== undefined) pendingAssistantStreamsRef.current.set(assistantStreamKey(eventTask.id, turnId, segmentId), { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), ...(segmentId === undefined ? {} : { segmentId }), text: streamed.text, createdAt: streamed.createdAt });
+        if (streamed !== undefined) pendingAssistantStreamsRef.current.set(assistantStreamKey(eventTask.id, turnId, segmentId), { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), ...(segmentId === undefined ? {} : { segmentId }), metadata: { ...(typeof streamed.metadata['projectRoot'] === 'string' ? { projectRoot: streamed.metadata['projectRoot'] } : {}), ...(typeof streamed.metadata['executionCwd'] === 'string' ? { executionCwd: streamed.metadata['executionCwd'] } : {}) }, text: streamed.text, createdAt: streamed.createdAt });
         activitiesRef.current = nextActivities;
         publishActivities(nextActivities);
       }
@@ -307,8 +308,10 @@ export function useWorkspaceController() {
     if (eventTask !== undefined && (!isCurrentTask || currentTurn) && (terminal || envelope.event.event === 'turn.started')) scheduleTaskReload(currentWorkspace.id);
   }), [markTurnFinished, markTurnStarted, publishActivities, refreshCheckpointStatuses, scheduleActivityRefresh, scheduleTaskReload]);
   useEffect(() => window.lotagate.agent.onDiagnostic(envelope => {
-    if (envelope.cwd !== workspaceRef.current?.rootPath) return;
-    if (envelope.diagnostic.kind === 'protocol' && /failed|timed out|invalid|not available|exited/iu.test(envelope.diagnostic.message)) setError(envelope.diagnostic.message);
+    const currentWorkspace = workspaceRef.current;
+    const currentTask = draftTaskRef.current;
+    if (currentTask === undefined || !shouldSurfaceAgentDiagnostic({ cwd: envelope.cwd, workspaceRoot: currentWorkspace?.rootPath, taskSessionId: currentTask.sessionId, activeTurnId: activeTurnRef.current?.turnId, diagnostic: envelope.diagnostic })) return;
+    setError(envelope.diagnostic.message);
   }), []);
 
   const selectWorkspace = useCallback((next: Workspace) => {
@@ -584,4 +587,11 @@ export function useWorkspaceController() {
     setTask(current => current?.id === updated.id ? updated : current);
   }, []);
   return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, activeTurnId, checkpointStatuses, undoingTurns, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode: updateApprovalMode, trust, models, selectedModel, setSelectedModel: selectModel, selectedEffort, setSelectedEffort: selectEffort, loading, busy, thinking, finalResponseReceived, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, runningTaskIds, unreadTaskIds, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, undoFileChanges, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, activeTurnId, checkpointStatuses, approvalMode, trust, models, selectedModel, selectModel, selectedEffort, selectEffort, loading, busy, thinking, finalResponseReceived, thinkingStartedAt, agentStatus, contextCompactionStatus, turnTimings, runningTaskIds, unreadTaskIds, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, undoFileChanges, retryTask, archiveTask, pinTask, pinTaskById, updateApprovalMode]);
+}
+
+function readAgentError(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim().length > 0) return value;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const message = (value as Record<string, unknown>)['message'];
+  return typeof message === 'string' && message.trim().length > 0 ? message : undefined;
 }

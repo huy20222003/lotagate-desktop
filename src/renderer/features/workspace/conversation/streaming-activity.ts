@@ -4,6 +4,7 @@ export interface PendingAssistantStream {
   taskId: string;
   turnId?: string;
   segmentId?: string;
+  metadata?: Readonly<Record<string, unknown>>;
   text: string;
   createdAt: string;
 }
@@ -15,6 +16,7 @@ export interface AssistantDeltaInput {
   iteration?: number;
   content: string;
   createdAt: string;
+  metadata?: Readonly<Record<string, unknown>>;
 }
 
 export interface AssistantSegmentPhaseInput {
@@ -31,7 +33,7 @@ export function appendAssistantDelta(activities: readonly Activity[], input: Ass
     const activity = activities[index];
     if (activity === undefined) return [...activities];
     const next = [...activities];
-    next[index] = { ...activity, text: `${activity.text}${input.content}`, metadata: { ...activity.metadata, ...(input.turnId === undefined ? {} : { turnId: input.turnId }), ...(input.segmentId === undefined ? {} : { segmentId: input.segmentId, assistantPhase: 'progress' }), ...(input.iteration === undefined ? {} : { iteration: input.iteration }) } };
+    next[index] = { ...activity, text: `${activity.text}${input.content}`, metadata: { ...activity.metadata, ...input.metadata, ...(input.turnId === undefined ? {} : { turnId: input.turnId }), ...(input.segmentId === undefined ? {} : { segmentId: input.segmentId, assistantPhase: 'progress' }), ...(input.iteration === undefined ? {} : { iteration: input.iteration }) } };
     return next;
   }
   return [...activities, {
@@ -39,7 +41,7 @@ export function appendAssistantDelta(activities: readonly Activity[], input: Ass
     taskId: input.taskId,
     kind: 'assistant',
     text: input.content,
-    metadata: { ...(input.turnId === undefined ? {} : { turnId: input.turnId }), ...(input.segmentId === undefined ? {} : { segmentId: input.segmentId, assistantPhase: 'progress' }), ...(input.iteration === undefined ? {} : { iteration: input.iteration }) },
+    metadata: { ...input.metadata, ...(input.turnId === undefined ? {} : { turnId: input.turnId }), ...(input.segmentId === undefined ? {} : { segmentId: input.segmentId, assistantPhase: 'progress' }), ...(input.iteration === undefined ? {} : { iteration: input.iteration }) },
     createdAt: input.createdAt,
   }];
 }
@@ -47,7 +49,7 @@ export function appendAssistantDelta(activities: readonly Activity[], input: Ass
 export function reconcilePendingAssistantStreams(activities: readonly Activity[], streams: readonly PendingAssistantStream[]): Activity[] {
   return streams.reduce((current, stream) => {
     const index = findAssistantIndex(current, stream.taskId, stream.turnId, stream.segmentId);
-    if (index < 0) return appendAssistantDelta(current, { taskId: stream.taskId, ...(stream.turnId === undefined ? {} : { turnId: stream.turnId }), ...(stream.segmentId === undefined ? {} : { segmentId: stream.segmentId }), content: stream.text, createdAt: stream.createdAt });
+    if (index < 0) return appendAssistantDelta(current, { taskId: stream.taskId, ...(stream.turnId === undefined ? {} : { turnId: stream.turnId }), ...(stream.segmentId === undefined ? {} : { segmentId: stream.segmentId }), ...(stream.metadata === undefined ? {} : { metadata: stream.metadata }), content: stream.text, createdAt: stream.createdAt });
     const activity = current[index];
     if (activity === undefined || activity.text.length >= stream.text.length) return current;
     const next = [...current];

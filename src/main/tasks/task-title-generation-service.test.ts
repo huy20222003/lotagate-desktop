@@ -65,4 +65,16 @@ describe('TaskTitleGenerationService', () => {
 
     expect(tasks.completeAutomaticTitleSummary).toHaveBeenCalledWith('task-1', 'Tóm tắt yêu cầu của phiên làm việc');
   });
+
+  it('returns the failed title state so pending notifications can use the existing title', async () => {
+    const { service, tasks, agents } = createService('Summarize this request');
+    const failedTask = task({ titleSummaryStatus: 'failed' });
+    agents.generateTitle = vi.fn().mockResolvedValue({ title: 123 }) as never;
+    tasks.failAutomaticTitleSummary = vi.fn().mockResolvedValue(failedTask) as never;
+
+    const updated = await service.observeTurnCompleted('C:\\workspace', completedEvent);
+
+    expect(updated).toEqual(failedTask);
+    expect(tasks.failAutomaticTitleSummary).toHaveBeenCalledWith('task-1');
+  });
 });

@@ -37,7 +37,8 @@ import { ApprovalCoordinator } from './approvals/approval-coordinator.js';
 import { CheckpointService } from './checkpoints/checkpoint-service.js';
 import type { DesktopApprovalInput } from '../contracts/ipc/v1/approval.js';
 import { automationNotification } from './automation/automation-notification.js';
-import { configureWindowsAppIdentity } from './windows/windows-app-identity.js';
+import { configureWindowsAppIdentity, configureWindowsDevelopmentShortcut } from './windows/windows-app-identity.js';
+import { desktopAssetPath } from './app-assets.js';
 import { AutomationExecutionService } from './automation/automation-execution-service.js';
 import { RemoteControlService } from './remote-control/remote-control-service.js';
 
@@ -74,6 +75,7 @@ else app.on('second-instance', (_event, commandLine) => {
 
 app.whenReady().then(async () => {
   logger.info('app.ready', { platform: process.platform, arch: process.arch });
+  await configureWindowsDevelopmentShortcut(desktopAssetPath('lotagate.ico')).catch(error => logger.warn('windows.dev.notification.shortcut.failed', { message: error instanceof Error ? error.message : 'Unable to register the development notification shortcut.' }));
   if (!automationDispatchRequested) { configureMediaPermissions(); setApplicationMenu('login'); }
   const transport = new ApiTransport({
     baseUrl: runtimeConfig.apiBaseUrl,
@@ -149,7 +151,7 @@ app.whenReady().then(async () => {
         for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd: projectRoot, event });
       }
     },
-    onDiagnostic: (projectRoot, diagnostic) => { logger.warn('agent.diagnostic', { projectRoot, kind: diagnostic.kind, message: diagnostic.message }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic }); },
+    onDiagnostic: (projectRoot, diagnostic) => { logger[diagnostic.severity === 'error' ? 'error' : 'warn']('agent.diagnostic', { projectRoot, kind: diagnostic.kind, message: diagnostic.message, ...(diagnostic.sessionId === undefined ? {} : { sessionId: diagnostic.sessionId }), ...(diagnostic.turnId === undefined ? {} : { turnId: diagnostic.turnId }) }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic }); },
     onHostRequest: async (projectRoot, request) => {
       if (request.tool === 'browser') return browserHost.handle(projectRoot, request);
       if (request.executionCwd === undefined) throw new Error('The CLI host request is missing its execution workspace.');
@@ -162,7 +164,7 @@ app.whenReady().then(async () => {
         void tasks.interruptActiveBySession(sessionId, error.message).catch(() => undefined);
       }
       logger.error('agent.process.exit', { projectRoot, sessionId, approvalCount: approvalIds.length, error: error.message });
-      for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic: { kind: 'protocol', message: error.message } });
+      for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic: { kind: 'protocol', severity: 'error', message: error.message, ...(sessionId === undefined ? {} : { sessionId }) } });
     },
   }, cache, async () => {
     const configured = await settings.get();

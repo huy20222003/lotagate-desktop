@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MessageMarkup } from './message-markup.js';
 
 describe('message markup', () => {
@@ -50,6 +50,45 @@ describe('message markup', () => {
     expect(link.querySelector('.file-icon-typescript')).toBeInTheDocument();
     fireEvent.pointerMove(link, { pointerType: 'mouse' });
     await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(path));
+  });
+
+  it('renders an explicit @file tag as an interactive file reference', async () => {
+    const path = 'D:\\workspace\\test.md';
+    const revealPath = vi.fn().mockResolvedValue(undefined);
+    window.lotagate = { operations: { revealPath } } as unknown as typeof window.lotagate;
+    render(<MessageMarkup content="Thêm dòng vào @test.md" workspaceCwd={'D:\\workspace'} highlightPromptTokens />);
+
+    const link = screen.getByRole('link', { name: 'test.md' });
+    expect(link).toHaveClass('message-file-reference');
+    fireEvent.pointerMove(link, { pointerType: 'mouse' });
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(path));
+    fireEvent.click(link);
+    expect(revealPath).toHaveBeenCalledWith(path);
+  });
+
+  it('maps an execution-worktree path to the project-root path for the UI', async () => {
+    const projectRoot = 'D:\\project';
+    const executionCwd = 'D:\\session-worktree';
+    const worktreePath = `${executionCwd}\\src\\index.ts`;
+    const projectPath = `${projectRoot}\\src\\index.ts`;
+    render(<MessageMarkup content={`Open ${worktreePath} now.`} workspaceCwd={projectRoot} executionCwd={executionCwd} />);
+
+    const link = screen.getByRole('link', { name: 'index.ts' });
+    fireEvent.pointerMove(link, { pointerType: 'mouse' });
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(projectPath));
+  });
+
+  it('reveals the project-root path when a worktree reference is clicked', () => {
+    const revealPath = vi.fn().mockResolvedValue(undefined);
+    window.lotagate = { operations: { revealPath } } as unknown as typeof window.lotagate;
+    const projectRoot = 'D:\\project';
+    const executionCwd = 'D:\\session-worktree';
+    const worktreePath = `${executionCwd}\\src\\index.ts`;
+    const projectPath = `${projectRoot}\\src\\index.ts`;
+    render(<MessageMarkup content={`Open ${worktreePath} now.`} workspaceCwd={projectRoot} executionCwd={executionCwd} />);
+
+    fireEvent.click(screen.getByRole('link', { name: 'index.ts' }));
+    expect(revealPath).toHaveBeenCalledWith(projectPath);
   });
 
   it('does not treat numeric amounts as file references', () => {
