@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { once } from 'node:events';
-import { desktopRequestSchema, parseDesktopEvent, parseDesktopHostRequest, parseDesktopResponse, type DesktopAgentResult, type DesktopEvent, type DesktopHostRequest, type DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
+import { desktopHostCancelSchema, desktopRequestSchema, parseDesktopEvent, parseDesktopHostRequest, parseDesktopResponse, type DesktopAgentResult, type DesktopEvent, type DesktopHostCancel, type DesktopHostRequest, type DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
 import { cliRequestTimeout, CLI_PROCESS_CLOSE_TIMEOUT_MS } from './cli-agent-timeouts.js';
 
 const MAX_JSONL_LINE_BYTES = 4 * 1024 * 1024;
@@ -15,11 +15,12 @@ export interface CliAgentProcessOptions {
   executable: string;
   executableArgs?: readonly string[];
   environment?: NodeJS.ProcessEnv;
+  computerHost?: boolean;
 }
 
 export interface CliAgentEventHandler {
   onEvent(event: DesktopEvent): void;
-  onHostRequest?(request: DesktopHostRequest): Promise<DesktopHostResponse>;
+  onHostRequest?(request: DesktopHostRequest, signal?: AbortSignal): Promise<DesktopHostResponse>;
   onDiagnostic?(diagnostic: CliAgentDiagnostic): void;
   onExit?(error: CliAgentProcessError): void;
 }
@@ -36,6 +37,7 @@ export class CliAgentProcess {
   private child: ChildProcessWithoutNullStreams | undefined;
   private lineBuffer = Buffer.alloc(0);
   private readonly pending = new Map<string, PendingRequest>();
+  private readonly activeHostRequests = new Map<string, AbortController>();
   private stopping = false;
   private initialized = false;
   private initialization: Promise<DesktopAgentResult> | undefined;
@@ -63,10 +65,10 @@ export class CliAgentProcess {
   private async performInitialization(): Promise<DesktopAgentResult> {
     if (this.initialized && this.initializationResult !== undefined) return this.initializationResult;
     this.ensureStarted();
-    const result = await this.request('initialize', { client: 'lotagate-desktop', version: 1, browserHost: true, executionBroker: true });
+    const result = await this.request('initialize', { client: 'lotagate-desktop', version: 1, browserHost: true, executionBroker: true, computerHost: this.options.computerHost === true });
     if (!isDesktopAgentResult(result)) throw new CliAgentProcessError('The CLI returned an invalid Desktop protocol handshake.');
     if (result.version !== 1) throw new CliAgentProcessError(`Unsupported Desktop protocol version: ${String(result.version)}.`);
-    const missing = REQUIRED_DESKTOP_CAPABILITIES.filter(capability => !result.capabilities.includes(capability));
+    const missing = [...REQUIRED_DESKTOP_CAPABILITIES, ...(this.options.computerHost === true ? ['computer-host'] : [])].filter(capability => !result.capabilities.includes(capability));
     if (missing.length > 0) {
       await this.shutdown();
       throw new CliAgentProcessError(`The CLI does not support the required Desktop execution protocol. Missing capabilities: ${missing.join(', ')}.`);
@@ -121,6 +123,7 @@ export class CliAgentProcess {
   async shutdown(reason = 'unspecified'): Promise<void> {
     const child = this.child;
     if (child === undefined) return;
+    this.abortActiveHostRequests();
     this.handler.onDiagnostic?.({ kind: 'protocol', message: `CLI shutdown requested (reason=${reason}, pid=${child.pid ?? 'unknown'}).` });
     try {
       await Promise.race([this.request('shutdown', {}), delay(cliRequestTimeout('shutdown'))]);
@@ -203,6 +206,14 @@ export class CliAgentProcess {
         void this.handleHostRequest(request);
         return;
       }
+      if (isHostCancel(value)) {
+        this.activeHostRequests.get(parseHostCancel(value).requestId)?.abort();
+        return;
+      }
+      if (isHostCancel(value)) {
+        this.activeHostRequests.get(parseHostCancel(value).requestId)?.abort();
+        return;
+      }
       if (isResponse(value)) {
         const response = parseDesktopResponse(value);
         const pending = this.pending.get(response.id);
@@ -238,20 +249,25 @@ export class CliAgentProcess {
     const child = this.child;
     if (child === undefined || this.stopping) return;
     let response: DesktopHostResponse;
+    const controller = new AbortController();
+    this.activeHostRequests.set(request.requestId, controller);
     try {
       response = this.handler.onHostRequest === undefined
-        ? deniedHostResponse(request, 'The Desktop browser host is unavailable.')
-        : await this.handler.onHostRequest(request);
+        ? deniedHostResponse(request, 'The Desktop host is unavailable.')
+        : await this.handler.onHostRequest(request, controller.signal);
     } catch (error) {
-      response = deniedHostResponse(request, error instanceof Error ? error.message : 'The Desktop browser host failed.');
+      response = deniedHostResponse(request, error instanceof Error ? error.message : 'The Desktop host failed.');
+    } finally {
+      if (this.activeHostRequests.get(request.requestId) === controller) this.activeHostRequests.delete(request.requestId);
     }
     try { await writeLine(child, response); }
-    catch (error) { this.failProcess(new CliAgentProcessError('Unable to respond to the CLI browser request.', error)); }
+    catch (error) { this.failProcess(new CliAgentProcessError('Unable to respond to the CLI host request.', error)); }
   }
 
   private failProcess(error: CliAgentProcessError): void {
     if (this.child === undefined && !this.initialized) return;
     const child = this.child;
+    this.abortActiveHostRequests();
     this.rejectPending(error);
     this.child = undefined;
     this.initialized = false;
@@ -263,6 +279,11 @@ export class CliAgentProcess {
   private rejectPending(error: CliAgentProcessError): void {
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(error); }
     this.pending.clear();
+  }
+
+  private abortActiveHostRequests(): void {
+    for (const controller of this.activeHostRequests.values()) controller.abort();
+    this.activeHostRequests.clear();
   }
 }
 
@@ -281,6 +302,8 @@ function isDesktopAgentResult(value: unknown): value is DesktopAgentResult {
 }
 function isResponse(value: unknown): value is { type: 'response'; id: string } { return typeof value === 'object' && value !== null && (value as Record<string, unknown>)['type'] === 'response'; }
 function isHostRequest(value: unknown): boolean { return typeof value === 'object' && value !== null && (value as Record<string, unknown>)['type'] === 'host.request'; }
+function isHostCancel(value: unknown): boolean { return typeof value === 'object' && value !== null && (value as Record<string, unknown>)['type'] === 'host.cancel'; }
+function parseHostCancel(value: unknown): DesktopHostCancel { return desktopHostCancelSchema.parse(value); }
 function deniedHostResponse(request: DesktopHostRequest, message: string): DesktopHostResponse { return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message, retryable: false } }; }
 async function writeLine(child: ChildProcessWithoutNullStreams, value: unknown): Promise<void> { if (child.stdin.write(`${JSON.stringify(value)}\n`)) return; await once(child.stdin, 'drain'); }
 function delay(milliseconds: number): Promise<void> { return new Promise(resolve => setTimeout(resolve, milliseconds)); }

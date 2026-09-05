@@ -62,7 +62,7 @@ export const desktopHostRequestSchema = z.object({
   version: z.literal(DESKTOP_PROTOCOL_VERSION),
   type: z.literal('host.request'),
   requestId: id,
-  tool: z.enum(['browser', 'filesystem', 'shell', 'git', 'artifact']),
+  tool: z.enum(['browser', 'computer', 'filesystem', 'shell', 'git', 'artifact']),
   sessionId: id,
   runId: id,
   action: z.string().min(1).max(128),
@@ -74,11 +74,19 @@ export const desktopHostRequestSchema = z.object({
   executionWorkspaceId: id.optional(),
 });
 
+export const desktopHostCancelSchema = z.object({
+  version: z.literal(DESKTOP_PROTOCOL_VERSION),
+  type: z.literal('host.cancel'),
+  requestId: id,
+  tool: z.enum(['browser', 'computer', 'filesystem', 'shell', 'git', 'artifact']),
+  sessionId: id,
+});
+
 export const desktopHostResponseSchema = z.object({
   version: z.literal(DESKTOP_PROTOCOL_VERSION),
   type: z.literal('host.response'),
   requestId: id,
-  tool: z.enum(['browser', 'filesystem', 'shell', 'git', 'artifact']),
+  tool: z.enum(['browser', 'computer', 'filesystem', 'shell', 'git', 'artifact']),
   ok: z.boolean(),
   result: z.unknown().optional(),
   error: z.object({
@@ -101,6 +109,7 @@ export const desktopHostResponseSchema = z.object({
 export type DesktopResponse = z.infer<typeof desktopResponseSchema>;
 export type DesktopEvent = z.infer<typeof desktopEventSchema>;
 export type DesktopHostRequest = z.infer<typeof desktopHostRequestSchema>;
+export type DesktopHostCancel = z.infer<typeof desktopHostCancelSchema>;
 export type DesktopHostResponse = z.infer<typeof desktopHostResponseSchema>;
 export type DesktopAgentResult = { protocol: 'lotagate.desktop'; version: 1; capabilities: string[] };
 export type DesktopExecutionPolicy = {

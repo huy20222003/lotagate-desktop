@@ -23,6 +23,10 @@ export interface BrowserSettings {
   evidenceRetentionDays: number;
 }
 
+export interface ComputerSettings {
+  applicationAllowlist: string[];
+}
+
 export type SandboxBackend = 'auto' | 'docker' | 'podman' | 'disabled';
 export type SandboxNetworkPolicy = 'none' | 'full';
 export type SandboxMountMode = 'read-only' | 'read-write';
@@ -56,6 +60,7 @@ export interface DesktopSettingsSnapshot {
   executionPolicy: 'ask' | 'allowlist' | 'review' | 'autonomous';
   approvalMode: ApprovalMode;
   browser: BrowserSettings;
+  computer: ComputerSettings;
   sandbox: SandboxSettings;
   notifications: boolean;
   telemetry: boolean;

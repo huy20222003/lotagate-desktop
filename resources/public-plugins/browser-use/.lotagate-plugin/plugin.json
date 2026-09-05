@@ -1,0 +1,10 @@
+{
+  "name": "browser-use",
+  "version": "1.0.0",
+  "description": "Browse, inspect, and interact with web pages through LotaGate's governed browser runtime.",
+  "author": "LotaGate",
+  "license": "MIT",
+  "homepage": "https://lotagate.com/",
+  "repository": "https://github.com/huy20222003/lotagate-desktop",
+  "keywords": ["browser", "web", "browser-use", "automation"]
+}

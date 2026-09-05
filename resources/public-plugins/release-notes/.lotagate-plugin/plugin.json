@@ -1,8 +1,0 @@
-{
-  "name": "release-notes",
-  "version": "1.0.0",
-  "description": "Turn completed work and verification evidence into concise release notes.",
-  "author": "LotaGate",
-  "license": "MIT",
-  "keywords": ["release", "documentation", "verification"]
-}

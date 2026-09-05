@@ -9,6 +9,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   skill: 'Skills',
   plugin: 'Plugins',
   mcp: 'MCP',
+  'computer-use': 'Computer Use',
 };
 
 export function Breadcrumb({ path, currentHeading = false, onNavigate, labels }: { path: string; currentHeading?: boolean; onNavigate?: (path: string) => void; labels?: Readonly<Record<string, string>> }) {

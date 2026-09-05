@@ -7,6 +7,7 @@ export function registerGitExtensionIpcHandlers(context: IpcRegistrationContext)
   const { handle, extensionFiles, git, requireWorkspaceCwd, cwdSchema, idSchema } = context;
 handle('extension.readDetail', async (event, input: unknown) => { assertTrustedRenderer(event); return extensionFiles.readDetail(extensionDetailInputSchema.parse(input)); });
 handle('extension.readPluginIcon', async (event, input: unknown) => { assertTrustedRenderer(event); return extensionFiles.readPluginIcon(pluginIconInputSchema.parse(input)); });
+handle('extension.listPublicPlugins', async (event) => { assertTrustedRenderer(event); return extensionFiles.listPublicPlugins(); });
 handle('extension.resolvePublicPluginSource', async (event, name: unknown) => { assertTrustedRenderer(event); return extensionFiles.resolvePublicPluginSource(idSchema.parse(name)); });
 handle('extension.readPublicPluginContribution', async (event, input: unknown) => { assertTrustedRenderer(event); return extensionFiles.readPublicPluginContribution(publicPluginContributionInputSchema.parse(input)); });
 handle('extension.writeDetail', async (event, input: unknown) => { assertTrustedRenderer(event); await extensionFiles.writeDetail(extensionDetailWriteInputSchema.parse(input)); });

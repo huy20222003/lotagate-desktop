@@ -1,5 +1,5 @@
 import type { DesktopRendererAuthApi } from './auth.js';
-import type { ExtensionDetail, ExtensionDetailInput, ExtensionDetailWriteInput, HookCreateInput, HookRemoveInput, PluginIcon, PluginIconInput, PublicPluginContributionInput } from './extensions.js';
+import type { ExtensionDetail, ExtensionDetailInput, ExtensionDetailWriteInput, HookCreateInput, HookRemoveInput, PluginIcon, PluginIconInput, PublicPluginCatalogEntry, PublicPluginContributionInput } from './extensions.js';
 import type { DesktopAgentResult } from '../../agent-protocol/v1/desktop.js';
 import type { DesktopWorkspaceApi, DesktopTaskApi, DesktopCheckpointApi, AgentEventEnvelope, AgentDiagnosticEnvelope, DesktopGitApi, DesktopTerminalApi, DesktopSettingsApi, DesktopAutomationApi, DesktopBrowserApi } from './workspace.js';
 import type { DesktopApprovalApi } from './approval.js';
@@ -44,6 +44,7 @@ export interface DesktopBridge {
   extensions: {
     readDetail(input: ExtensionDetailInput): Promise<ExtensionDetail>;
     readPluginIcon(input: PluginIconInput): Promise<PluginIcon | undefined>;
+    listPublicPlugins(): Promise<readonly PublicPluginCatalogEntry[]>;
     resolvePublicPluginSource(name: string): Promise<string>;
     readPublicPluginContribution(input: PublicPluginContributionInput): Promise<ExtensionDetail>;
     writeDetail(input: ExtensionDetailWriteInput): Promise<void>;

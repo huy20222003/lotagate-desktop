@@ -8,13 +8,13 @@ function activity(kind: Activity['kind'], text: string, turnId?: string): Activi
 
 describe('mergeChatActivities', () => {
   it('keeps a failed turn error in the same assistant message', () => {
-    const result = mergeChatActivities([activity('user', 'Change the file'), activity('assistant', 'I changed it.', 'turn-1'), activity('error', 'Agent turn failed.', 'turn-1')]);
+    const result = mergeChatActivities([activity('user', 'Change the file'), activity('assistant', 'I changed it.', 'turn-1'), activity('error', 'The response could not be completed: Agent failed.', 'turn-1')]);
     expect(result).toHaveLength(2);
-    expect(result[1]?.text).toBe('I changed it.\n\nAgent turn failed.');
+    expect(result[1]?.text).toBe('I changed it.\n\nThe response could not be completed: Agent failed.');
   });
 
   it('keeps a failed turn as one message when no assistant text exists', () => {
-    const result = mergeChatActivities([activity('user', 'Read the file'), activity('error', 'Agent turn failed.', 'turn-2')]);
+    const result = mergeChatActivities([activity('user', 'Read the file'), activity('error', 'The response could not be completed: Agent failed.', 'turn-2')]);
     expect(result).toHaveLength(2);
     expect(result[1]?.kind).toBe('error');
   });

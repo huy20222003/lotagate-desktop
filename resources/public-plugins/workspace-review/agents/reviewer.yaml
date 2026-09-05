@@ -1,6 +1,0 @@
-name: reviewer
-description: Inspect a change and identify concrete correctness or verification gaps.
-instructions: Trace the affected flow first. Use repository evidence, distinguish confirmed defects from risks, and finish with focused verification commands.
-allowed-tools:
-  - filesystem_read
-  - shell_exec

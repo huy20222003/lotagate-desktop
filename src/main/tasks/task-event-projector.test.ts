@@ -41,6 +41,13 @@ describe('TaskEventProjector turn lifecycle', () => {
     expect(tasks.setStatus).toHaveBeenCalledWith('task-1', 'failed');
     expect(tasks.update).toHaveBeenCalledWith('task-1', { turnId: undefined, interruptedReason: 'Agent failed.' });
     expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Desktop turn timing marker.', expect.objectContaining({ turnId: 'turn-1', desktopTurnTiming: expect.objectContaining({ phase: 'failed', timestampMs: expect.any(Number) }) }));
+    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'error', 'The response could not be completed: Agent failed.', expect.objectContaining({ turnId: 'turn-1' }));
+  });
+
+  it('uses a user-facing message when an approval denial fails the turn', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 1, type: 'event', scope: 'session', event: 'turn.failed', data: { sessionId: 'session-1', turnId: 'turn-1', error: { message: 'The tool action was denied by the active workspace policy.' } } });
+    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'error', 'The requested action was not completed because approval was declined.', expect.objectContaining({ turnId: 'turn-1' }));
   });
 
   it('persists the compacted marker emitted by the CLI context manager', async () => {

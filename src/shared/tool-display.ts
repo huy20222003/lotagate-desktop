@@ -47,6 +47,18 @@ export const BUILTIN_TOOL_DISPLAY_NAMES = {
   'browser.reload': 'Reload webpage',
   'browser.waitFor': 'Wait for webpage',
   'browser.tabs': 'List browser tabs',
+  'computer.listWindows': 'List application windows',
+  'computer.inspect': 'Inspect application window',
+  'computer.screenshot': 'Capture application window',
+  'computer.focus': 'Focus application window',
+  'computer.click': 'Click application control',
+  'computer.type': 'Type into application',
+  'computer.keypress': 'Press application key',
+  'computer.scroll': 'Scroll application',
+  'computer.drag': 'Drag application control',
+  'computer.launch': 'Launch application',
+  'computer.wait': 'Wait for application',
+  'computer.move': 'Move application pointer',
 } as const;
 
 export function formatToolDisplayName(toolName: unknown, displayName: unknown): string {

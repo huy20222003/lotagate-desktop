@@ -1,0 +1,10 @@
+{
+  "name": "computer-use",
+  "version": "1.0.0",
+  "description": "Control approved Windows applications directly through LotaGate.",
+  "author": "LotaGate",
+  "license": "MIT",
+  "homepage": "https://lotagate.com/",
+  "repository": "https://github.com/huy20222003/lotagate-desktop",
+  "keywords": ["windows", "computer-use", "ui-automation"]
+}

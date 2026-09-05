@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 import { normalizeOriginAllowlist } from '../../contracts/ipc/v1/origin-allowlist.js';
+import { DEFAULT_COMPUTER_APPLICATION_ALLOWLIST, normalizeComputerApplicationAllowlist } from '../../contracts/ipc/v1/computer-application-allowlist.js';
 
 const browserSettingsSchema = z.object({
   viewportProfile: z.enum(['desktop', 'laptop', 'tablet', 'mobile', 'custom']).default('desktop'),
@@ -27,6 +28,10 @@ const sandboxSettingsSchema = z.object({
   diagnosticsRetentionDays: z.number().int().min(1).max(365).default(30),
 });
 
+const computerSettingsSchema = z.object({
+  applicationAllowlist: z.array(z.string().trim().min(1).max(4_096)).default([...DEFAULT_COMPUTER_APPLICATION_ALLOWLIST]).transform(normalizeComputerApplicationAllowlist).pipe(z.array(z.string().min(1).max(4_096)).max(256)),
+});
+
 export const settingsSchema = z.object({
   appearance: z.enum(['system', 'light', 'dark']).default('system'),
   language: z.enum(['en', 'vi']).default('en'),
@@ -41,6 +46,7 @@ export const settingsSchema = z.object({
   executionPolicy: z.enum(['ask', 'allowlist', 'review', 'autonomous']).default('ask'),
   approvalMode: z.enum(['auto', 'ask']).default('auto'),
   browser: browserSettingsSchema.default({}),
+  computer: computerSettingsSchema.default({}),
   sandbox: sandboxSettingsSchema.default({}),
   notifications: z.boolean().default(true),
   telemetry: z.boolean().default(false),

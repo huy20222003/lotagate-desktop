@@ -13,6 +13,7 @@ import type { AttachmentPreview } from '../../../services/attachment-types.js';
 import { executeDesktopCommandResult, type DesktopCommandInvocation } from '../../../services/desktop-command-client.js';
 import { useWorkspaceModelCatalog } from './use-workspace-model-catalog.js';
 import { toUserErrorMessage as toMessage } from '../../../utils/errors.js';
+import { formatTurnFailure } from '../../../../shared/turn-failure.js';
 import { agentStatusForEvent, commandStatusForAction } from './agent-status.js';
 import { turnTimingsFromActivities } from '../conversation/turn-timings.js';
 import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, markAssistantSegmentPhase, reconcilePendingAssistantStreams, type PendingAssistantStream } from '../conversation/streaming-activity.js';
@@ -255,7 +256,7 @@ export function useWorkspaceController() {
       if (terminal && currentTurn) { activeTurnRef.current = undefined; setActiveTurnId(undefined); }
       const status = agentStatusForEvent(envelope.event.event, data);
       if (envelope.event.event === 'mcp.server.failed' && typeof data['error'] === 'string') setError(data['error']);
-      if (envelope.event.event === 'turn.failed') setError(readAgentError(data['error']) ?? 'The agent turn failed.');
+      if (envelope.event.event === 'turn.failed') setError(formatTurnFailure(readAgentError(data['error'])));
       if (envelope.event.event === 'turn.started') { setAgentStatus(undefined); setContextCompactionStatus(undefined); }
       else if (status !== undefined) setAgentStatus(status);
       if (envelope.event.event === 'turn.started') {

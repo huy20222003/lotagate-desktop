@@ -3,7 +3,13 @@ import { lstat, mkdir, readdir, readFile, realpath, unlink, writeFile } from 'no
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import type { ExtensionDetail, ExtensionDetailInput, ExtensionDetailWriteInput, HookCreateInput, PublicPluginContributionInput } from '../../contracts/ipc/v1/extensions.js';
+import { discoverHooks } from '@lotagate/cli/dist/infrastructure/extensions/hook-runtime.js';
+import { loadPluginMcpConfig } from '@lotagate/cli/dist/application/extensions/plugin-contribution-registry.js';
+import { PluginAgentDiscovery } from '@lotagate/cli/dist/infrastructure/extensions/plugin-agent-discovery.js';
+import { PluginDiscovery } from '@lotagate/cli/dist/infrastructure/extensions/plugin-discovery.js';
+import { PLUGIN_LAYOUT } from '@lotagate/cli/dist/domain/extensions/plugin-manifest.js';
+import { SkillDiscovery } from '@lotagate/cli/dist/infrastructure/extensions/skill-discovery.js';
+import type { ExtensionDetail, ExtensionDetailInput, ExtensionDetailWriteInput, HookCreateInput, PublicPluginCatalogEntry, PublicPluginContributionInput } from '../../contracts/ipc/v1/extensions.js';
 import { requireDirectory } from '../security/path-policy.js';
 import { ensureProjectConfig, resolveProjectConfigPaths } from '../workspaces/project-config-layout.js';
 
@@ -13,6 +19,38 @@ const require = createRequire(import.meta.url);
 
 export class ExtensionFileService {
   constructor(private readonly workspaceTrust?: WorkspaceTrust, private readonly publicPluginRoot?: string) {}
+
+  async listPublicPlugins(): Promise<readonly PublicPluginCatalogEntry[]> {
+    if (this.publicPluginRoot === undefined) return [];
+    const root = await realpath(this.publicPluginRoot);
+    const manifests = await new PluginDiscovery().discover([root]);
+    return Promise.all(manifests.map(async manifest => {
+      const icon = await this.readSvgIcon(manifest.directory);
+      const skills = await new SkillDiscovery().discover([join(manifest.directory, PLUGIN_LAYOUT.skillsDirectory)]);
+      const mcp = await loadPluginMcpConfig([manifest]);
+      const hooks = await discoverHooks(join(manifest.directory, PLUGIN_LAYOUT.hooksDirectory));
+      const agents = await new PluginAgentDiscovery().discover(join(manifest.directory, PLUGIN_LAYOUT.agentsDirectory));
+      const contributions = [
+        ...skills.map(skill => ({ kind: 'skill' as const, sourceName: skill.name, description: skill.description })),
+        ...mcp.contributions.map(contribution => ({ kind: 'mcp' as const, sourceName: contribution.sourceName, description: describePublicMcp(mcp.config[contribution.qualifiedName]?.config) })),
+        ...hooks.map(hook => ({ kind: 'hook' as const, sourceName: hook.id, description: `${hook.event} hook` })),
+        ...agents.map(agent => ({ kind: 'agent' as const, sourceName: agent.name, description: agent.description })),
+      ].sort((left, right) => left.kind.localeCompare(right.kind) || left.sourceName.localeCompare(right.sourceName));
+      return {
+        directory: basename(manifest.directory),
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description ?? 'No description provided.',
+        ...(manifest.author === undefined ? {} : { author: manifest.author }),
+        ...(manifest.license === undefined ? {} : { license: manifest.license }),
+        homepage: manifest.homepage ?? 'https://lotagate.com/',
+        privacyPolicy: 'https://lotagate.com/privacy',
+        termsOfService: 'https://lotagate.com/terms',
+        ...(icon === undefined ? {} : { icon: `data:${icon.mimeType};base64,${icon.data}` }),
+        contributions,
+      };
+    }));
+  }
 
   async resolvePublicPluginSource(name: string): Promise<string> {
     assertSafeName(name, 'public plugin');
@@ -81,6 +119,10 @@ export class ExtensionFileService {
     const cwd = await requireDirectory(input.cwd);
     const pluginRoot = await findPluginRoot(cwd, input.name, input.scope);
     if (pluginRoot === undefined) return undefined;
+    return this.readSvgIcon(pluginRoot);
+  }
+
+  private async readSvgIcon(pluginRoot: string): Promise<{ mimeType: 'image/svg+xml'; data: string } | undefined> {
     const iconPath = join(pluginRoot, 'icon.svg');
     try {
       const stat = await lstat(iconPath);
@@ -249,6 +291,10 @@ function isContainedPath(root: string, candidate: string): boolean {
 }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
 function escapeRegExp(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'); }
+function describePublicMcp(config: { type?: string } | undefined): string {
+  if (config?.type === 'stdio' || config?.type === 'http' || config?.type === 'sse') return `${config.type} MCP server`;
+  return 'MCP server contribution';
+}
 function redactSecrets(value: unknown, key?: string): unknown {
   if (typeof value === 'string' && key !== undefined && isSensitiveKey(key)) return '[REDACTED]';
   if (Array.isArray(value)) return value.map(item => redactSecrets(item));

@@ -1,6 +1,7 @@
 import { DESKTOP_TURN_TIMING_METADATA_KEY, type DesktopTurnTimingMarker } from '../../contracts/ipc/v1/workspace.js';
 import type { DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js';
 import { formatToolDisplayName } from '../../shared/tool-display.js';
+import { formatTurnFailure } from '../../shared/turn-failure.js';
 import type { TaskStore } from './task-store.js';
 
 const ASSISTANT_DELTA_BATCH_WINDOW_MS = 32;
@@ -179,9 +180,7 @@ function turnTimingMarker(event: string, data: Record<string, unknown>): Desktop
 }
 
 function failedTurnText(data: Record<string, unknown>): string {
-  const error = data['error'];
-  if (typeof error === 'object' && error !== null && typeof (error as Record<string, unknown>)['message'] === 'string') return `Agent turn failed: ${redactString((error as Record<string, unknown>)['message'] as string)}`;
-  return 'Agent turn failed.';
+  return formatTurnFailure(failedTurnReason(data));
 }
 
 function failedTurnReason(data: Record<string, unknown>): string {

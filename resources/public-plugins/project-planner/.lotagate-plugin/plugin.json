@@ -1,8 +1,0 @@
-{
-  "name": "project-planner",
-  "version": "1.0.0",
-  "description": "Create focused implementation plans that follow the project architecture.",
-  "author": "LotaGate",
-  "license": "MIT",
-  "keywords": ["planning", "architecture", "implementation"]
-}

@@ -150,7 +150,11 @@ export class BrowserHostToolBroker {
         return this.browser.resetResponsiveViewport(sessionId, activeTabId);
       case 'browser.screenshot': {
         const screenshot = await this.browser.screenshot(sessionId, activeTabId);
-        return { evidenceId: screenshot.evidenceId, path: screenshot.path };
+        return {
+          evidenceId: screenshot.evidenceId,
+          path: screenshot.path,
+          dataUrl: screenshot.dataUrl,
+        };
       }
       case 'browser.click':
         return this.browser.click(sessionId, activeTabId, requiredTarget(params['target']));

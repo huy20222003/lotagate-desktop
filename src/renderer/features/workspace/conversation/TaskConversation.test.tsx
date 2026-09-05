@@ -121,7 +121,7 @@ describe('TaskConversation live state', () => {
     render(<TaskConversation
       task={task}
       activities={[
-        { id: 'error-1', taskId: task.id, kind: 'error', text: 'Agent turn failed.', metadata: { turnId: 'turn-failed' }, createdAt: task.createdAt },
+        { id: 'error-1', taskId: task.id, kind: 'error', text: 'The response could not be completed: Agent failed.', metadata: { turnId: 'turn-failed' }, createdAt: task.createdAt },
         { id: 'assistant-2', taskId: task.id, kind: 'assistant', text: 'Mình sẵn sàng hỗ trợ.', metadata: { turnId: 'turn-next', segmentId: 'turn-next:final', assistantPhase: 'final' }, createdAt: task.createdAt },
       ]}
       activityAttachments={{}}
@@ -134,7 +134,7 @@ describe('TaskConversation live state', () => {
       onTrust={async () => undefined}
     />);
 
-    expect(screen.getByText('Agent turn failed.')).toBeInTheDocument();
+    expect(screen.getByText('The response could not be completed: Agent failed.')).toBeInTheDocument();
     expect(screen.getByLabelText('Edited files')).toBeInTheDocument();
     expect(document.querySelectorAll('.file-change-card')).toHaveLength(1);
   });

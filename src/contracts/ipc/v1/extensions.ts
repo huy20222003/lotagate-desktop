@@ -19,6 +19,28 @@ export interface ExtensionDetail {
   fileName?: string;
 }
 
+export type PublicPluginContributionKind = 'skill' | 'mcp' | 'hook' | 'agent';
+
+export interface PublicPluginCatalogContribution {
+  kind: PublicPluginContributionKind;
+  sourceName: string;
+  description: string;
+}
+
+export interface PublicPluginCatalogEntry {
+  directory: string;
+  name: string;
+  version: string;
+  description: string;
+  author?: string;
+  license?: string;
+  homepage?: string;
+  privacyPolicy?: string;
+  termsOfService?: string;
+  icon?: string;
+  contributions: readonly PublicPluginCatalogContribution[];
+}
+
 export interface PublicPluginContributionInput {
   pluginName: string;
   kind: 'skill' | 'mcp' | 'hook';

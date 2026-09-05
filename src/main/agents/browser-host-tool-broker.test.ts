@@ -21,7 +21,7 @@ describe('BrowserHostToolBroker', () => {
       accessibility: vi.fn().mockResolvedValue({}),
       setResponsiveViewport: vi.fn().mockResolvedValue({}),
       resetResponsiveViewport: vi.fn().mockResolvedValue({}),
-      screenshot: vi.fn().mockResolvedValue({ evidenceId: 'evidence-1', path: 'screenshot.png' }),
+      screenshot: vi.fn().mockResolvedValue({ evidenceId: 'evidence-1', path: 'screenshot.png', dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }),
       click: vi.fn().mockResolvedValue({}),
       focus: vi.fn().mockResolvedValue({}),
       clear: vi.fn().mockResolvedValue({}),
@@ -61,6 +61,26 @@ describe('BrowserHostToolBroker', () => {
     expect(browser.upload).toHaveBeenCalledOnce();
     expect(browser.download).toHaveBeenCalledOnce();
     expect(browser.dialog).toHaveBeenCalledOnce();
+  });
+
+  it('forwards the PNG data URL together with browser evidence metadata', async () => {
+    const browser = {
+      create: vi.fn().mockResolvedValue(browserSnapshot),
+      get: vi.fn().mockReturnValue(browserSnapshot),
+      screenshot: vi.fn().mockResolvedValue({ evidenceId: 'evidence-1', path: 'screenshot.png', dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }),
+    } as unknown as BrowserService;
+    const broker = new BrowserHostToolBroker(browser);
+
+    const response = await broker.handle('C:\\workspace', request('browser.screenshot', {}));
+
+    expect(response).toMatchObject({
+      ok: true,
+      result: {
+        evidenceId: 'evidence-1',
+        path: 'screenshot.png',
+        dataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+      },
+    });
   });
 
   it('closes only the browser session belonging to an exited agent session', async () => {

@@ -1,8 +1,0 @@
-{
-  "name": "workspace-review",
-  "version": "1.0.0",
-  "description": "Review a workspace for correctness, risk, and missing verification steps.",
-  "author": "LotaGate",
-  "license": "MIT",
-  "keywords": ["review", "quality", "verification"]
-}

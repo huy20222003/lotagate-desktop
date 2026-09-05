@@ -10,13 +10,14 @@ import { SettingsPage, type SettingsSection } from './SettingsPage.js';
 const user: UserProfile = { id: 'user-1', email: 'user@example.test', fullName: 'Test User', defaultOrganizationCode: 'org-1', organizations: [{ id: 'org-1', organizationCode: 'org-1', displayName: 'Test Org', role: 'Member', workspaces: [] }] };
 const browser = { viewportProfile: 'desktop', customViewport: { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 }, downloadDirectory: '', sessionRetention: 'persistent', sessionRetentionMinutes: 60, originAllowlist: [], clearDataOnClose: false, evidenceRetentionDays: 30 };
 const sandbox = { backend: 'auto', image: 'node:22-bookworm-slim', networkPolicy: 'none', mountMode: 'read-write', memoryMb: 2_048, cpuCores: 2, pidsLimit: 128, hostFallback: 'ask', cleanup: 'always', diagnosticsRetentionDays: 30 };
+const computer = { applicationAllowlist: ['notepad.exe', 'calc.exe', 'mspaint.exe', 'explorer.exe'] };
 
 describe('SettingsPage', () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
   it.each([
     ['general', 'General'], ['profile', 'Profile'], ['api-key', 'API key'], ['billing', 'Billing'], ['appearance', 'Appearance'], ['keyboard-shortcuts', 'Keyboard shortcuts'],
-    ['browser', 'Browser'], ['sandbox', 'Sandbox'], ['memory', 'Memory'], ['about', 'About'], ['hook', 'Hooks'], ['skill', 'Skills'], ['plugin', 'Plugins'], ['mcp', 'MCP'],
+    ['browser', 'Browser'], ['computer-use', 'Computer Use'], ['sandbox', 'Sandbox'], ['memory', 'Memory'], ['about', 'About'], ['hook', 'Hooks'], ['skill', 'Skills'], ['plugin', 'Plugins'], ['mcp', 'MCP'],
   ] as Array<[SettingsSection, string]> )('routes the %s settings section', async (section, title) => {
     installBridge();
     render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection={section} /></ToastProvider>);
@@ -44,6 +45,14 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('You are up to date'));
   });
 
+  it('saves the Computer Use application allowlist through the shared settings bridge', async () => {
+    const update = installBridge();
+    render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="computer-use" /></ToastProvider>);
+    const applications = await screen.findByRole('textbox', { name: 'Allowed applications' });
+    fireEvent.change(applications, { target: { value: 'notepad.exe, wordpad.exe' } });
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ computer: { applicationAllowlist: ['notepad.exe', 'wordpad.exe'] } }));
+  });
+
   it('navigates to the Settings parent from the breadcrumb', async () => {
     installBridge();
     render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="skill" /></ToastProvider>);
@@ -55,11 +64,11 @@ describe('SettingsPage', () => {
   it('returns from plugin detail to the Plugins list through the breadcrumb', async () => {
     installBridge();
     render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="plugin" /></ToastProvider>);
-    fireEvent.click(await screen.findByText('workspace-review'));
-    expect(await screen.findByRole('heading', { name: 'workspace-review', level: 1 })).toBeVisible();
+    fireEvent.click(await screen.findByText('computer-use'));
+    expect(await screen.findByRole('heading', { name: 'computer-use', level: 1 })).toBeVisible();
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('button', { name: 'Plugins' }));
     expect(await screen.findByRole('heading', { name: 'Plugins', level: 1 })).toBeVisible();
-    expect(screen.queryByRole('heading', { name: 'workspace-review', level: 1 })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'computer-use', level: 1 })).not.toBeInTheDocument();
   });
 });
 
@@ -72,8 +81,9 @@ function installBridge() {
     tasks: { list: vi.fn().mockResolvedValue([]), activities: vi.fn().mockResolvedValue([]) },
     automations: { list: vi.fn().mockResolvedValue([]), onState: vi.fn(() => () => {}) },
     updates: { getInfo: vi.fn().mockResolvedValue({ productName: 'LotaGate Desktop', applicationId: 'com.lotagate.desktop', version: '0.1.0', cliVersion: '0.1.24', electronVersion: '44.0.0', nodeVersion: '22.0.0', platform: 'WINDOWS', architecture: 'X64', updateChannel: 'STABLE', packaged: false }), getState: vi.fn().mockResolvedValue({ phase: 'disabled', currentVersion: '0.1.0', platform: 'WINDOWS', architecture: 'X64', release: null, asset: null, blocking: false, bytesDownloaded: 0, totalBytes: null, downloadedFileName: null, error: null }), check: vi.fn().mockResolvedValue({ phase: 'up-to-date', currentVersion: '0.1.0', platform: 'WINDOWS', architecture: 'X64', release: null, asset: null, blocking: false, bytesDownloaded: 0, totalBytes: null, downloadedFileName: null, error: null }), download: vi.fn(), cancel: vi.fn(), install: vi.fn(), onState: vi.fn(() => () => {}) },
+    extensions: { listPublicPlugins: vi.fn().mockResolvedValue([{ directory: 'computer-use', name: 'computer-use', version: '1.0.0', description: 'Control approved Windows applications directly through LotaGate.', contributions: [] }]) },
   } as unknown as typeof window.lotagate;
   return update;
 }
 
-function baseSettings() { return { appearance: 'system', language: 'en', reducedMotion: false, contrast: 60, uiFont: 'inter', codeFont: 'system', browser, sandbox, keyboardShortcuts: {}, terminalShell: 'powershell', terminalPlacement: 'bottom', terminalFontSize: 13, terminalScrollback: 10_000, terminalCursorBlink: true }; }
+function baseSettings() { return { appearance: 'system', language: 'en', reducedMotion: false, contrast: 60, uiFont: 'inter', codeFont: 'system', browser, computer, sandbox, keyboardShortcuts: {}, terminalShell: 'powershell', terminalPlacement: 'bottom', terminalFontSize: 13, terminalScrollback: 10_000, terminalCursorBlink: true }; }

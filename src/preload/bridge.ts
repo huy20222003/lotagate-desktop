@@ -111,6 +111,7 @@ const bridge: DesktopBridge = {
   extensions: {
     readDetail: input => ipcRenderer.invoke('extension.readDetail', input),
     readPluginIcon: input => ipcRenderer.invoke('extension.readPluginIcon', input),
+    listPublicPlugins: () => ipcRenderer.invoke('extension.listPublicPlugins'),
     resolvePublicPluginSource: name => ipcRenderer.invoke('extension.resolvePublicPluginSource', name),
     readPublicPluginContribution: input => ipcRenderer.invoke('extension.readPublicPluginContribution', input),
     writeDetail: input => ipcRenderer.invoke('extension.writeDetail', input),

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const desktopApprovalSourceSchema = z.enum(['agent', 'browser', 'git', 'terminal', 'automation']);
+export const desktopApprovalSourceSchema = z.enum(['agent', 'browser', 'computer', 'git', 'terminal', 'automation']);
 export const desktopApprovalSurfaceSchema = z.enum(['composer', 'automation']);
 export const desktopApprovalRiskSchema = z.enum(['normal', 'elevated']);
 export const desktopApprovalInputSchema = z.object({

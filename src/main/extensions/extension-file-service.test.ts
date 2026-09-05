@@ -6,6 +6,21 @@ import { ExtensionFileService } from './extension-file-service.js';
 import { ensureProjectConfig } from '../workspaces/project-config-layout.js';
 
 describe('ExtensionFileService', () => {
+  it('builds the public plugin catalog from packaged plugin directories', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-public-plugin-catalog-'));
+    try {
+      const plugin = join(root, 'computer-use');
+      await mkdir(join(plugin, '.lotagate-plugin'), { recursive: true });
+      await mkdir(join(plugin, 'skills', 'computer-use'), { recursive: true });
+      await writeFile(join(plugin, '.lotagate-plugin', 'plugin.json'), JSON.stringify({ name: 'computer-use', version: '1.0.0', description: 'Control Windows applications.', author: 'LotaGate', license: 'MIT' }));
+      await writeFile(join(plugin, 'skills', 'computer-use', 'SKILL.md'), '---\nname: computer-use\ndescription: Control Windows applications.\n---\nUse computer tools.');
+      await writeFile(join(plugin, 'README.md'), '# Computer Use');
+      await writeFile(join(plugin, 'LICENSE'), 'MIT');
+      const catalog = await new ExtensionFileService(undefined, root).listPublicPlugins();
+      expect(catalog).toEqual([expect.objectContaining({ directory: 'computer-use', name: 'computer-use', version: '1.0.0', description: 'Control Windows applications.', author: 'LotaGate', license: 'MIT', contributions: [{ kind: 'skill', sourceName: 'computer-use', description: 'Control Windows applications.' }] })]);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it('resolves only curated public plugin directories', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lotagate-public-plugins-'));
     try {

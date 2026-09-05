@@ -9,7 +9,7 @@ import { buildInteractiveDesktopExecutionPolicy } from './desktop-execution-poli
 
 export interface AgentManagerHandler {
   onEvent(projectRoot: string, event: DesktopEvent): void;
-  onHostRequest?(projectRoot: string, request: DesktopHostRequest): Promise<DesktopHostResponse>;
+  onHostRequest?(projectRoot: string, request: DesktopHostRequest, signal?: AbortSignal): Promise<DesktopHostResponse>;
   onDiagnostic?(projectRoot: string, diagnostic: CliAgentDiagnostic): void;
   onExit?(projectRoot: string, error: Error, sessionId?: string, approvalIds?: readonly string[]): void;
 }
@@ -19,7 +19,7 @@ export interface CliAttachmentInput { id: string; name: string; mimeType: string
 interface ProcessBinding { key: string; projectRoot: string; sessionId?: string; process: CliAgentProcess; }
 interface CommandEventBuffer { events: DesktopEvent[]; bytes: number; resolve: (events: DesktopEvent[]) => void; operation: Promise<DesktopEvent[]>; timer: ReturnType<typeof setTimeout> }
 
-export interface AgentManagerOptions { idleTimeoutMs?: number; }
+export interface AgentManagerOptions { idleTimeoutMs?: number; computerHost?: boolean; }
 const DEFAULT_AGENT_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
 const COMMAND_EVENT_BUFFER_TTL_MS = 30_000;
 const MAX_COMMAND_EVENT_BUFFER_BYTES = 256 * 1024;
@@ -39,8 +39,8 @@ export class AgentManager {
   private readonly protocolCacheLoads = new Map<string, Promise<unknown>>();
   private readonly idleTimeoutMs: number;
 
-  constructor(private readonly handler: AgentManagerHandler, private readonly cache?: PersistentCache, private readonly getInteractiveExecutionPolicy: () => Promise<DesktopExecutionPolicy> = async () => buildInteractiveDesktopExecutionPolicy(), options: AgentManagerOptions = {}) {
-    this.idleTimeoutMs = Number.isFinite(options.idleTimeoutMs) ? Math.max(1_000, Math.floor(options.idleTimeoutMs!)) : DEFAULT_AGENT_IDLE_TIMEOUT_MS;
+  constructor(private readonly handler: AgentManagerHandler, private readonly cache?: PersistentCache, private readonly getInteractiveExecutionPolicy: () => Promise<DesktopExecutionPolicy> = async () => buildInteractiveDesktopExecutionPolicy(), private readonly options: AgentManagerOptions = {}) {
+    this.idleTimeoutMs = Number.isFinite(this.options.idleTimeoutMs) ? Math.max(1_000, Math.floor(this.options.idleTimeoutMs!)) : DEFAULT_AGENT_IDLE_TIMEOUT_MS;
   }
 
   async initialize(cwd: string): Promise<DesktopAgentResult> { return (await this.initializedProcess(await requireDirectory(cwd), undefined)).initialize(); }
@@ -149,7 +149,7 @@ export class AgentManager {
         this.recordCommandEvent(event);
         this.handler.onEvent(projectRoot, event);
       },
-      onHostRequest: request => this.handler.onHostRequest === undefined ? Promise.resolve({ version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message: 'The Desktop host is unavailable.', retryable: false } }) : this.handler.onHostRequest(projectRoot, request),
+      onHostRequest: (request, signal) => this.handler.onHostRequest === undefined ? Promise.resolve({ version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message: 'The Desktop host is unavailable.', retryable: false } }) : this.handler.onHostRequest(projectRoot, request, signal),
       onDiagnostic: diagnostic => this.handler.onDiagnostic?.(projectRoot, { ...diagnostic, ...(diagnostic.sessionId === undefined && binding.sessionId === undefined ? {} : { sessionId: diagnostic.sessionId ?? binding.sessionId }) }),
       onExit: error => {
         const approvalIds = [...this.approvalBindings.entries()].filter(([, candidate]) => candidate === binding).map(([approvalId]) => approvalId);
@@ -158,7 +158,7 @@ export class AgentManager {
         this.scheduleRecovery(binding);
       },
     };
-    binding = { key, projectRoot, process: new CliAgentProcess({ cwd: projectRoot, ...resolveCliInvocation() }, eventHandler) }; this.processes.set(key, binding); this.touch(binding); return binding;
+    binding = { key, projectRoot, process: new CliAgentProcess({ cwd: projectRoot, ...resolveCliInvocation(), computerHost: this.options.computerHost === true }, eventHandler) }; this.processes.set(key, binding); this.touch(binding); return binding;
   }
 
   private async sessionProcess(projectRoot: string, sessionId: string): Promise<ProcessBinding> {

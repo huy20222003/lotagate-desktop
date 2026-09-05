@@ -42,12 +42,17 @@ import { desktopAssetPath, desktopResourcePath } from './app-assets.js';
 import { AutomationExecutionService } from './automation/automation-execution-service.js';
 import { RemoteControlService } from './remote-control/remote-control-service.js';
 import { DesktopUpdateService } from './updates/desktop-update-service.js';
+import { ComputerHostToolBroker } from './computer/computer-host-tool-broker.js';
+import { ComputerOverlay } from './computer/computer-overlay.js';
+import { WindowsComputerService } from './computer/windows-computer-service.js';
+import { PublicPluginBootstrapService } from './extensions/public-plugin-bootstrap-service.js';
 
 loadRuntimeEnvironment();
 const runtimeConfig = readRuntimeConfig();
 const automationDispatchRequested = process.argv.includes('--automation-dispatch');
 let agentManager: AgentManager | undefined;
 let browserService: BrowserService | undefined;
+let computerBroker: ComputerHostToolBroker | undefined;
 let automationService: AutomationService | undefined;
 let approvalCoordinator: ApprovalCoordinator | undefined;
 let taskProjector: TaskEventProjector | undefined;
@@ -121,6 +126,9 @@ app.whenReady().then(async () => {
   const automations = new AutomationService();
   automationService = automations;
   const automationSessions = new Map<string, { runId: string; cwd: string }>();
+  if (process.platform === 'win32') {
+    computerBroker = new ComputerHostToolBroker(new WindowsComputerService(desktopResourcePath('computer-use', 'windows-computer.ps1'), 30_000, async () => (await settings.get()).computer.applicationAllowlist), new ComputerOverlay());
+  }
   const agents = new AgentManager({
     onEvent: (projectRoot, event) => {
       const executionCwd = typeof event.data['executionCwd'] === 'string' ? event.data['executionCwd'] : undefined;
@@ -143,7 +151,8 @@ app.whenReady().then(async () => {
             void approvals.request({ ...commonInput, source: 'automation', surface: 'automation' }, approved => automations.respondApproval(binding.runId, registered.approvalId, approved)).catch(error => logger.warn('approval.registration.failed', { approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
           }).catch(error => logger.warn('automation.approval.registration.failed', { runId: binding.runId, message: error instanceof Error ? error.message : 'Unable to register automation approval.' }));
         } else {
-          void approvals.request({ ...commonInput, source: 'agent', surface: 'composer' }, approved => agents.approvalRespond(projectRoot, { approvalId, approved }), { isAvailable: () => agents.isApprovalProcessAvailable(projectRoot, approvalId) }).catch(error => logger.warn('approval.registration.failed', { cwd: projectRoot, approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
+          const source = toolName.startsWith('computer.') ? 'computer' : 'agent';
+          void approvals.request({ ...commonInput, source, surface: 'composer' }, approved => agents.approvalRespond(projectRoot, { approvalId, approved }), { isAvailable: () => agents.isApprovalProcessAvailable(projectRoot, approvalId) }).catch(error => logger.warn('approval.registration.failed', { cwd: projectRoot, approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
         }
       }
       void taskProjector?.apply(projectRoot, event).then(() => titleGenerationService?.observeTurnCompleted(projectRoot, event)).then(updated => { if (updated === undefined) return; for (const window of BrowserWindow.getAllWindows()) window.webContents.send('task.updated', updated); }).catch(error => logger.error('task.event.persist.failed', { cwd: projectRoot, event: event.event, message: error instanceof Error ? error.message : 'Unable to persist agent event.' })).finally(() => { remoteControlService?.publishAgentEvent(projectRoot, event); remoteControlService?.observeAgentEvent(event); });
@@ -154,15 +163,20 @@ app.whenReady().then(async () => {
       }
     },
     onDiagnostic: (projectRoot, diagnostic) => { logger[diagnostic.severity === 'error' ? 'error' : 'warn']('agent.diagnostic', { projectRoot, kind: diagnostic.kind, message: diagnostic.message, ...(diagnostic.sessionId === undefined ? {} : { sessionId: diagnostic.sessionId }), ...(diagnostic.turnId === undefined ? {} : { turnId: diagnostic.turnId }) }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic }); },
-    onHostRequest: async (projectRoot, request) => {
+    onHostRequest: async (projectRoot, request, signal) => {
       if (request.tool === 'browser') return browserHost.handle(projectRoot, request);
+      if (request.tool === 'computer') {
+        if (computerBroker === undefined) throw new Error('Computer Use is unavailable on this platform.');
+        return computerBroker.handle(projectRoot, request, signal);
+      }
       if (request.executionCwd === undefined) throw new Error('The CLI host request is missing its execution workspace.');
-      return checkpoints.withHostRequest(projectRoot, request, () => hostExecution.handle(request.executionCwd as string, request));
+      return checkpoints.withHostRequest(projectRoot, request, () => hostExecution.handle(request.executionCwd as string, request, signal));
     },
     onExit: (projectRoot, error, sessionId, approvalIds = []) => {
       if (approvalIds.length > 0) void approvals.cancelWhere(request => approvalIds.includes(request.approvalId));
       if (sessionId !== undefined) {
         void browserHost.closeForSession(projectRoot, sessionId);
+        if (computerBroker !== undefined) computerBroker.cancelForSession(projectRoot, sessionId);
         void tasks.interruptActiveBySession(sessionId, error.message).catch(() => undefined);
       }
       logger.error('agent.process.exit', { projectRoot, sessionId, approvalCount: approvalIds.length, error: error.message });
@@ -171,8 +185,9 @@ app.whenReady().then(async () => {
   }, cache, async () => {
     const configured = await settings.get();
     return buildInteractiveDesktopExecutionPolicy(configured.sandbox.hostFallback);
-  });
+  }, { computerHost: computerBroker !== undefined });
   agentManager = agents;
+  void new PublicPluginBootstrapService(extensionFiles, agents, logger, app.getPath('userData')).run().catch(error => logger.warn('public.plugins.bootstrap.failed', { message: error instanceof Error ? error.message : 'Unable to bootstrap bundled public plugins.' }));
   titleGenerationService = new TaskTitleGenerationService(tasks, agents, logger);
   const git = new GitService();
   const automationExecution = new AutomationExecutionService({ workspaces, git, tasks, agents, settings, browserHost, artifacts, logger, sessions: automationSessions });
@@ -197,7 +212,7 @@ app.whenReady().then(async () => {
       if (notification !== undefined) operations.notify(notification.title, notification.body);
     }
   });
-  registerIpc({ auth: new DesktopAuthService(transport, async () => { await remoteControl.stop(); await agents.shutdownAll(); }), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions, tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
+  registerIpc({ auth: new DesktopAuthService(transport, async () => { await remoteControl.stop(); await approvals.cancelAll(); await agents.shutdownAll(); await computerBroker?.close(); }), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions, tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }
@@ -232,6 +247,7 @@ app.on('before-quit', (event) => {
     await approvalCoordinator?.cancelAll();
     await remoteControlService?.stop();
     await agentManager?.shutdownAll('app.before-quit');
+    await computerBroker?.close();
     await taskProjector?.flush();
     await browserService?.closeAll();
   })().finally(async () => { await logger.close(); app.quit(); });

@@ -10,7 +10,7 @@ import { ExtensionAddModal } from './ExtensionAddModal.js';
 import { ExtensionDetailModal } from './ExtensionDetailModal.js';
 import type { ExtensionAddValue } from './extensions-view-types.js';
 import { ExtensionCommandClient, type ExtensionRow, type PluginContribution, type PluginDetail } from './extension-command-client.js';
-import { PUBLIC_PLUGIN_CATALOG, type PublicPluginCatalogEntry } from './public-plugin-catalog.js';
+import type { PublicPluginCatalogEntry } from '../../../contracts/ipc/v1/extensions.js';
 
 type PluginSource = { name: string; version: string; description: string; icon?: string | undefined; scope?: 'user' | 'project' | undefined; author?: string | undefined; license?: string | undefined; homepage?: string | undefined; privacyPolicy?: string | undefined; termsOfService?: string | undefined };
 type SelectedPlugin = { source: PluginSource; detail?: PluginDetail; onInstall?: () => void; publicPluginDirectory?: string };
@@ -29,14 +29,34 @@ export function PluginsPage({ cwd, trusted = false, detailResetToken, onDetailCh
   const [search, setSearch] = useState('');
   const [rows, setRows] = useState<ExtensionRow[]>([]);
   const [loading, setLoading] = useState(Boolean(cwd));
+  const [publicCatalog, setPublicCatalog] = useState<PublicPluginCatalogEntry[]>([]);
+  const [publicLoading, setPublicLoading] = useState(true);
   const [selected, setSelected] = useState<SelectedPlugin>();
   const [addOpen, setAddOpen] = useState(false);
   const [busy, setBusy] = useState<string>();
   const [detailTarget, setDetailTarget] = useState<{ kind: 'skill' | 'mcp' | 'hook'; row: ExtensionRow; detail: ExtensionDetail }>();
   const { success, error: showError } = useToast();
   const requestRef = useRef(0);
+  const publicRequestRef = useRef(0);
   useEffect(() => { onDetailChange?.(selected?.source.name); }, [onDetailChange, selected?.source.name]);
   useEffect(() => { if (detailResetToken !== undefined) setSelected(undefined); }, [detailResetToken]);
+
+  const loadPublicPlugins = useCallback(async () => {
+    const requestId = ++publicRequestRef.current;
+    setPublicLoading(true);
+    try {
+      const nextPlugins = await window.lotagate.extensions.listPublicPlugins();
+      if (publicRequestRef.current === requestId) setPublicCatalog([...nextPlugins]);
+    } catch (reason) {
+      if (publicRequestRef.current === requestId) {
+        setPublicCatalog([]);
+        showError('Unable to load public plugins', toMessage(reason));
+      }
+    } finally {
+      if (publicRequestRef.current === requestId) setPublicLoading(false);
+    }
+  }, [showError]);
+  useEffect(() => { void loadPublicPlugins(); }, [loadPublicPlugins]);
 
   const reload = useCallback(async () => {
     const requestId = ++requestRef.current;
@@ -57,8 +77,9 @@ export function PluginsPage({ cwd, trusted = false, detailResetToken, onDetailCh
 
   const installed = useMemo(() => new Map(rows.map(row => [row.name, row])), [rows]);
   const query = search.trim().toLocaleLowerCase();
-  const publicPlugins = useMemo(() => PUBLIC_PLUGIN_CATALOG.filter(plugin => !query || `${plugin.name} ${plugin.description} ${plugin.author ?? ''}`.toLocaleLowerCase().includes(query)), [query]);
-  const personalPlugins = useMemo(() => rows.filter(row => !query || `${row.name} ${row.description ?? ''} ${row.detail}`.toLocaleLowerCase().includes(query)), [query, rows]);
+  const publicPluginNames = useMemo(() => new Set(publicCatalog.map(plugin => plugin.name)), [publicCatalog]);
+  const publicPlugins = useMemo(() => publicCatalog.filter(plugin => !query || `${plugin.name} ${plugin.description} ${plugin.author ?? ''}`.toLocaleLowerCase().includes(query)), [publicCatalog, query]);
+  const personalPlugins = useMemo(() => rows.filter(row => !publicPluginNames.has(row.name) && (!query || `${row.name} ${row.description ?? ''} ${row.detail}`.toLocaleLowerCase().includes(query))), [publicPluginNames, query, rows]);
   const [page, setPage] = useState(1);
   useEffect(() => { setPage(1); }, [query, tab]);
   const visiblePublicPlugins = useMemo(() => publicPlugins.slice((page - 1) * PLUGINS_PAGE_SIZE, page * PLUGINS_PAGE_SIZE), [page, publicPlugins]);
@@ -143,8 +164,8 @@ export function PluginsPage({ cwd, trusted = false, detailResetToken, onDetailCh
   return <div className="settings-plugins-page">
     <div className="settings-plugins-toolbar"><div className="settings-plugins-search"><Icon icon={Search} size={15} /><TextInput value={search} onChange={event => setSearch(event.target.value)} placeholder="Search plugins" aria-label="Search plugins" /></div>{tab === 'personal' ? <IconButton icon={Plus} iconSize={17} className="settings-extension-add" label="Install plugin" onClick={() => setAddOpen(true)} /> : null}</div>
     <Tabs value={tab} items={[{ value: 'public', label: 'Public' }, { value: 'personal', label: 'Personal' }]} onChange={setTab} ariaLabel="Plugin catalog" />
-    {loading ? <div className="settings-plugin-grid">{[1, 2, 3, 4].map(item => <Card className="settings-plugin-card settings-plugin-card-loading" key={item}><span /><span /><span /></Card>)}</div> : tab === 'public' ? publicPlugins.length === 0 ? <EmptyState title={query ? 'No matching plugins' : 'No public plugins yet'} description={query ? 'Try a different search.' : 'Reviewed Desktop plugins will appear here when they are added to the catalog.'} /> : <div className="settings-plugin-grid">{visiblePublicPlugins.map(plugin => <PluginCard key={plugin.name} cwd={cwd} plugin={{ name: plugin.name, version: plugin.version, description: plugin.description, ...(plugin.icon === undefined ? {} : { icon: plugin.icon }), ...(plugin.author === undefined ? {} : { author: plugin.author }) }} installed={installed.get(plugin.name)} busy={busy !== undefined} onOpen={() => { void openPublicPlugin(plugin); }} onAction={() => installOrUninstall(plugin)} />)}</div> : personalPlugins.length === 0 ? <EmptyState title={query ? 'No matching plugins' : 'No personal plugins installed'} description={query ? 'Try a different search.' : 'Install a plugin from a local path, Git repository, or npm package.'} /> : <div className="settings-plugin-grid">{visiblePersonalPlugins.map(row => <PluginCard key={`${row.scope}:${row.name}`} cwd={cwd} plugin={{ name: row.name, version: row.version ?? '', description: row.description ?? row.detail, scope: row.scope === 'user' || row.scope === 'project' ? row.scope : undefined }} installed={row} busy={busy !== undefined} onOpen={() => { void openPlugin({ name: row.name, version: row.version ?? '', description: row.description ?? row.detail, scope: row.scope === 'user' || row.scope === 'project' ? row.scope : undefined }); }} />)}</div>}
-    {!loading ? <Pagination page={page} pageSize={PLUGINS_PAGE_SIZE} total={tab === 'public' ? publicPlugins.length : personalPlugins.length} onPageChange={setPage} /> : null}
+    {loading || publicLoading ? <div className="settings-plugin-grid">{[1, 2, 3, 4].map(item => <Card className="settings-plugin-card settings-plugin-card-loading" key={item}><span /><span /><span /></Card>)}</div> : tab === 'public' ? publicPlugins.length === 0 ? <EmptyState title={query ? 'No matching plugins' : 'No public plugins yet'} description={query ? 'Try a different search.' : 'Reviewed Desktop plugins will appear here when they are added to the public plugin folder.'} /> : <div className="settings-plugin-grid">{visiblePublicPlugins.map(plugin => <PluginCard key={plugin.name} cwd={cwd} plugin={{ name: plugin.name, version: plugin.version, description: plugin.description, ...(plugin.icon === undefined ? {} : { icon: plugin.icon }), ...(plugin.author === undefined ? {} : { author: plugin.author }) }} installed={installed.get(plugin.name)} busy={busy !== undefined} onOpen={() => { void openPublicPlugin(plugin); }} onAction={() => installOrUninstall(plugin)} />)}</div> : personalPlugins.length === 0 ? <EmptyState title={query ? 'No matching plugins' : 'No personal plugins installed'} description={query ? 'Try a different search.' : 'Install a plugin from a local path, Git repository, or npm package.'} /> : <div className="settings-plugin-grid">{visiblePersonalPlugins.map(row => <PluginCard key={`${row.scope}:${row.name}`} cwd={cwd} plugin={{ name: row.name, version: row.version ?? '', description: row.description ?? row.detail, scope: row.scope === 'user' || row.scope === 'project' ? row.scope : undefined }} installed={row} busy={busy !== undefined} onOpen={() => { void openPlugin({ name: row.name, version: row.version ?? '', description: row.description ?? row.detail, scope: row.scope === 'user' || row.scope === 'project' ? row.scope : undefined }); }} />)}</div>}
+    {!loading && !publicLoading ? <Pagination page={page} pageSize={PLUGINS_PAGE_SIZE} total={tab === 'public' ? publicPlugins.length : personalPlugins.length} onPageChange={setPage} /> : null}
     {addOpen ? <ExtensionAddModal kind="plugin" busy={busy !== undefined} onClose={() => setAddOpen(false)} onSubmit={installPersonal} /> : null}
     {detailModal}
   </div>;
