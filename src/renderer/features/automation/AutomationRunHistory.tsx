@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { AutomationRun } from '../../../contracts/ipc/v1/automation.js';
-import { Badge, Button, Card, EmptyState, Icon, Skeleton } from '../../components/ui.js';
+import { Badge, Button, Card, EmptyState, Icon, Skeleton, useToast } from '../../components/ui.js';
 import { Scrollbar } from '../../components/Scrollbar.js';
 import { Pagination } from '../../components/Pagination.js';
 import { formatTime } from '../../utils/time.js';
@@ -29,6 +29,7 @@ export function AutomationRunHistory({ automationId, refreshToken, onCancel, onR
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState<string | undefined>();
+  const { error: showError } = useToast();
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -36,11 +37,13 @@ export function AutomationRunHistory({ automationId, refreshToken, onCancel, onR
     try {
       setRuns(await window.lotagate.automations.runs(automationId, 100));
     } catch (reason) {
-      setError(toUserErrorMessage(reason, 'Unable to load run history.'));
+      const message = toUserErrorMessage(reason, 'Unable to load run history.');
+      setError(message);
+      showError('Unable to load run history', message);
     } finally {
       setLoading(false);
     }
-  }, [automationId]);
+  }, [automationId, showError]);
 
   useEffect(() => {
     setPage(1);
@@ -57,14 +60,16 @@ export function AutomationRunHistory({ automationId, refreshToken, onCancel, onR
       await reload();
       setSelectedRunId(undefined);
     } catch (reason) {
-      setError(toUserErrorMessage(reason));
+      const message = toUserErrorMessage(reason);
+      setError(message);
+      showError('Automation run operation failed', message);
     } finally {
       setBusy(undefined);
     }
   };
 
   if (loading) return <div className="automation-history-loading" aria-label="Loading automation runs">{[1, 2, 3].map(index => <Skeleton className="automation-history-skeleton" key={index} />)}</div>;
-  if (error) return <Card className="settings-extension-error"><strong>Unable to load run history</strong><p>{error}</p><Button variant="secondary" onClick={() => void reload()}><Icon icon={RefreshCw} size={14} /> Retry</Button></Card>;
+  if (error) return <EmptyState title="Unable to load run history" detail={error} action={<Button variant="secondary" onClick={() => void reload()}><Icon icon={RefreshCw} size={14} /> Retry</Button>} />;
   if (runs.length === 0) return <EmptyState title="No runs yet" detail="Run this automation manually or wait for its next scheduled time." />;
 
   return <>

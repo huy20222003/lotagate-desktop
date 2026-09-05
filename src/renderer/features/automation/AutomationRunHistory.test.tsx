@@ -4,6 +4,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AutomationRun } from '../../../contracts/ipc/v1/automation.js';
+import { ToastProvider } from '../../components/ui.js';
 import { AutomationRunHistory } from './AutomationRunHistory.js';
 
 const run: AutomationRun = {
@@ -16,7 +17,7 @@ describe('AutomationRunHistory', () => {
 
   it('keeps the drawer card concise and opens the full run details modal', async () => {
     Object.defineProperty(window, 'lotagate', { configurable: true, value: { automations: { runs: vi.fn().mockResolvedValue([run]) } } });
-    render(<AutomationRunHistory automationId="automation-1" refreshToken={0} onCancel={vi.fn()} onRetry={vi.fn()} onReview={vi.fn()} onApproval={vi.fn()} />);
+    render(<ToastProvider><AutomationRunHistory automationId="automation-1" refreshToken={0} onCancel={vi.fn()} onRetry={vi.fn()} onReview={vi.fn()} onApproval={vi.fn()} /></ToastProvider>);
 
     const openDetails = await screen.findByRole('button', { name: `View details for automation run ${run.id}` });
     expect(screen.queryByText(run.taskId!)).not.toBeInTheDocument();

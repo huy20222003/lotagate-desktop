@@ -6,5 +6,5 @@ export const hookEventOptions = ['session.start', 'prompt.before', 'tool.before'
 export const scopeOptions = [{ value: 'user', label: 'User' }, { value: 'project', label: 'Project' }];
 export interface HookAddValue { name: string; event: DesktopHookEvent; command: string; args: string[]; timeoutMs: number }
 export interface ExtensionAddValue { invocation: CommandInvocation; message: string }
-export interface ExtensionRowViewProps { row: ExtensionRow; busy: boolean; readOnly: boolean; canToggle: boolean; canRemove: boolean; onOpen: () => void; onToggle: () => void; onRemove: () => void }
+export interface ExtensionRowViewProps { kind: ExtensionKind; row: ExtensionRow; busy: boolean; readOnly: boolean; canToggle: boolean; canRemove: boolean; onOpen: () => void; onToggle: () => void; onRemove: () => void }
 export type EditableExtensionKind = Exclude<ExtensionKind, 'hook'>;

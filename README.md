@@ -198,10 +198,13 @@ and approval handling can reject stale or cross-session updates.
 
 The CLI owns MCP configuration, transport, connection pooling, warm-up, and
 tool discovery. Desktop receives only sanitized MCP lifecycle/catalog events
-for status display. Development/link mode does not check for updates; the
-current update endpoint is enabled only for packaged applications. Release
-update verification and installer application remain release-pipeline work,
-not an automatic development action.
+for status display. Development/link mode does not check for updates. Packaged
+Desktop builds check the public `/downloads/latest` release contract before
+session restore and expose the same status in Settings → About. Updates are
+selected for the current operating system and architecture, downloaded to a
+temporary directory, verified against the release SHA-256, and handed to the
+native installer or archive opener. Optional updates can be skipped; mandatory
+updates remain in the update gate until a compatible verified asset is ready.
 
 Persistent human-operated browser data uses a stable, hashed profile partition
 per workspace. Agent browser data uses a separate stable partition per CLI

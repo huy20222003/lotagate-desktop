@@ -1,9 +1,10 @@
 import type { DesktopRendererAuthApi } from './auth.js';
-import type { ExtensionDetail, ExtensionDetailInput, ExtensionDetailWriteInput, HookCreateInput, HookRemoveInput } from './extensions.js';
+import type { ExtensionDetail, ExtensionDetailInput, ExtensionDetailWriteInput, HookCreateInput, HookRemoveInput, PluginIcon, PluginIconInput, PublicPluginContributionInput } from './extensions.js';
 import type { DesktopAgentResult } from '../../agent-protocol/v1/desktop.js';
 import type { DesktopWorkspaceApi, DesktopTaskApi, DesktopCheckpointApi, AgentEventEnvelope, AgentDiagnosticEnvelope, DesktopGitApi, DesktopTerminalApi, DesktopSettingsApi, DesktopAutomationApi, DesktopBrowserApi } from './workspace.js';
 import type { DesktopApprovalApi } from './approval.js';
 import type { DesktopRemoteControlApi } from '../../remote-control/v1/remote-control.js';
+import type { DesktopUpdatesApi } from './update.js';
 
 export interface DesktopBridge {
   menu: {
@@ -42,6 +43,9 @@ export interface DesktopBridge {
   tasks: DesktopTaskApi;
   extensions: {
     readDetail(input: ExtensionDetailInput): Promise<ExtensionDetail>;
+    readPluginIcon(input: PluginIconInput): Promise<PluginIcon | undefined>;
+    resolvePublicPluginSource(name: string): Promise<string>;
+    readPublicPluginContribution(input: PublicPluginContributionInput): Promise<ExtensionDetail>;
     writeDetail(input: ExtensionDetailWriteInput): Promise<void>;
     listProjectHooks(cwd: string): Promise<string[]>;
     createHook(input: HookCreateInput): Promise<{ name: string }>;
@@ -54,12 +58,12 @@ export interface DesktopBridge {
   browser: DesktopBrowserApi;
   approvals: DesktopApprovalApi;
   remoteControl: DesktopRemoteControlApi;
+  updates: DesktopUpdatesApi;
   operations: {
     notify(title: string, body: string): Promise<void>;
     showWindow(): Promise<void>;
     revealPath(path: string): Promise<void>;
     exportDiagnostics(): Promise<string>;
-    checkForUpdates(): Promise<Record<string, string> | null>;
     onDeepLink(listener: (url: string) => void): () => void;
   };
   runtime: {

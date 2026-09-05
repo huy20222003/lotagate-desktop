@@ -1,3 +1,8 @@
+export interface AnalyticsDateRange {
+  startDate: string;
+  endDate: string;
+}
+
 export const API_PATHS = {
   cryptoSession: '/auth/crypto-session',
   login: '/auth/login',
@@ -7,15 +12,22 @@ export const API_PATHS = {
   profile: '/users/profile',
   paymentHistory: (organizationCode: string, page = 1, limit = 10) => `/organizations/${encodeURIComponent(organizationCode)}/payments?page=${page}&limit=${limit}`,
   changePassword: '/users/change-password',
+  desktopDownloadsLatest: '/downloads/latest',
   organizations: '/organizations',
   organizationWallet: (organizationCode: string) => `/organizations/${encodeURIComponent(organizationCode)}/wallet`,
-  organizationUsage: (organizationCode: string, workspaceCode?: string) => workspaceCode === undefined
+  organizationUsage: (organizationCode: string, workspaceCode?: string, dateRange?: AnalyticsDateRange) => appendQuery(workspaceCode === undefined
     ? `/organizations/${encodeURIComponent(organizationCode)}/usage`
-    : `/organizations/${encodeURIComponent(organizationCode)}/workspaces/${encodeURIComponent(workspaceCode)}/usage`,
-  organizationDashboardStats: (organizationCode: string, workspaceCode?: string) => workspaceCode === undefined
+    : `/organizations/${encodeURIComponent(organizationCode)}/workspaces/${encodeURIComponent(workspaceCode)}/usage`, dateRange),
+  organizationDashboardStats: (organizationCode: string, workspaceCode?: string, dateRange?: AnalyticsDateRange) => appendQuery(workspaceCode === undefined
     ? `/organizations/${encodeURIComponent(organizationCode)}/dashboard-stats`
-    : `/organizations/${encodeURIComponent(organizationCode)}/workspaces/${encodeURIComponent(workspaceCode)}/dashboard-stats`,
+    : `/organizations/${encodeURIComponent(organizationCode)}/workspaces/${encodeURIComponent(workspaceCode)}/dashboard-stats`, dateRange),
 } as const;
+
+function appendQuery(path: string, dateRange?: AnalyticsDateRange): string {
+  if (dateRange === undefined) return path;
+  const query = new URLSearchParams({ startDate: dateRange.startDate, endDate: dateRange.endDate }).toString();
+  return `${path}?${query}`;
+}
 
 export const API_CRYPTO = {
   version: 1,
@@ -45,6 +57,7 @@ export const DESKTOP_ALLOWED_API_PATHS = new Set<string>([
   API_PATHS.me,
   API_PATHS.profile,
   API_PATHS.changePassword,
+  API_PATHS.desktopDownloadsLatest,
   API_PATHS.organizations,
 ]);
 

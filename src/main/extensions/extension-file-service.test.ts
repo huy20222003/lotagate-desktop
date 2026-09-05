@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -6,6 +6,22 @@ import { ExtensionFileService } from './extension-file-service.js';
 import { ensureProjectConfig } from '../workspaces/project-config-layout.js';
 
 describe('ExtensionFileService', () => {
+  it('resolves only curated public plugin directories', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-public-plugins-'));
+    try {
+      const plugin = join(root, 'workspace-review');
+      await mkdir(join(plugin, '.lotagate-plugin'), { recursive: true });
+      await mkdir(join(plugin, 'skills', 'review-workspace'), { recursive: true });
+      await writeFile(join(plugin, '.lotagate-plugin', 'plugin.json'), JSON.stringify({ name: 'workspace-review', version: '1.0.0' }));
+      await writeFile(join(plugin, 'skills', 'review-workspace', 'SKILL.md'), '---\nname: review-workspace\ndescription: Review workspace\n---\nRead-only preview');
+      const service = new ExtensionFileService(undefined, root);
+      await expect(service.resolvePublicPluginSource('workspace-review')).resolves.toBe(await realpath(plugin));
+      await expect(service.readPublicPluginContribution({ pluginName: 'workspace-review', kind: 'skill', sourceName: 'review-workspace' })).resolves.toMatchObject({ format: 'markdown', editable: false, fileName: 'SKILL.md' });
+      await expect(service.resolvePublicPluginSource('../outside')).rejects.toThrow('Invalid public plugin name');
+      await expect(service.resolvePublicPluginSource('missing')).rejects.toThrow();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it('reads and updates only the selected MCP entry through the main process', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lotagate-extension-file-'));
     try {
@@ -30,6 +46,43 @@ describe('ExtensionFileService', () => {
       expect(detail.editable).toBe(false);
       expect(detail.fileName).toBe('SKILL.md');
       expect(detail.content).toContain('name: api-contract-review');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('reads plugin-owned skill and MCP details from the canonical plugin folders', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'lotagate-plugin-detail-'));
+    try {
+      const plugin = join(root, '.lotagate', 'plugins', 'example');
+      await ensureProjectConfig(root);
+      await mkdir(join(plugin, '.lotagate-plugin'), { recursive: true });
+      await mkdir(join(plugin, 'skills', 'review'), { recursive: true });
+      await mkdir(join(plugin, 'mcp'), { recursive: true });
+      await writeFile(join(plugin, '.lotagate-plugin', 'plugin.json'), JSON.stringify({ name: 'example', version: '1.0.0' }));
+      await writeFile(join(plugin, 'skills', 'review', 'SKILL.md'), '---\nname: review\ndescription: Review\n---\nReview instructions.');
+      await writeFile(join(plugin, 'mcp', 'docs.json'), JSON.stringify({ enabled: true, config: { type: 'http', url: 'https://example.test/mcp' } }));
+      const service = new ExtensionFileService();
+      const skill = await service.readDetail({ kind: 'skill', cwd: root, name: 'example:review', scope: 'plugin', pluginName: 'example', sourceName: 'review' });
+      expect(skill.content).toContain('name: review');
+      expect(skill.editable).toBe(false);
+      const mcp = await service.readDetail({ kind: 'mcp', cwd: root, name: 'plugin_example_docs', scope: 'plugin', pluginName: 'example', sourceName: 'docs' });
+      expect(JSON.parse(mcp.content).config.url).toBe('https://example.test/mcp');
+      expect(mcp.editable).toBe(false);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('reads an optional plugin SVG icon and ignores invalid or oversized icons', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-plugin-icon-'));
+    try {
+      const plugin = join(root, '.lotagate', 'plugins', 'example');
+      await ensureProjectConfig(root);
+      await mkdir(join(plugin, '.lotagate-plugin'), { recursive: true });
+      await writeFile(join(plugin, '.lotagate-plugin', 'plugin.json'), JSON.stringify({ name: 'example', version: '1.0.0' }));
+      await writeFile(join(plugin, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10" /></svg>');
+      const icon = await new ExtensionFileService().readPluginIcon({ cwd: root, name: 'example', scope: 'project' });
+      expect(icon?.mimeType).toBe('image/svg+xml');
+      expect(Buffer.from(icon?.data ?? '', 'base64').toString('utf8')).toContain('<svg');
+      await writeFile(join(plugin, 'icon.svg'), 'not an svg');
+      await expect(new ExtensionFileService().readPluginIcon({ cwd: root, name: 'example', scope: 'project' })).resolves.toBeUndefined();
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 

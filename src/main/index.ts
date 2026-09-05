@@ -38,9 +38,10 @@ import { CheckpointService } from './checkpoints/checkpoint-service.js';
 import type { DesktopApprovalInput } from '../contracts/ipc/v1/approval.js';
 import { automationNotification } from './automation/automation-notification.js';
 import { configureWindowsAppIdentity, configureWindowsDevelopmentShortcut } from './windows/windows-app-identity.js';
-import { desktopAssetPath } from './app-assets.js';
+import { desktopAssetPath, desktopResourcePath } from './app-assets.js';
 import { AutomationExecutionService } from './automation/automation-execution-service.js';
 import { RemoteControlService } from './remote-control/remote-control-service.js';
+import { DesktopUpdateService } from './updates/desktop-update-service.js';
 
 loadRuntimeEnvironment();
 const runtimeConfig = readRuntimeConfig();
@@ -86,7 +87,7 @@ app.whenReady().then(async () => {
     onSessionExpired: async () => { await remoteControlService?.stop(); await approvalCoordinator?.cancelAll(); await agentManager?.shutdownAll('auth.session-expired'); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('auth.sessionExpired'); },
   });
   const workspaces = new WorkspaceRegistry();
-  const extensionFiles = new ExtensionFileService(workspaces);
+  const extensionFiles = new ExtensionFileService(workspaces, desktopResourcePath('public-plugins'));
   const tasks = new TaskStore();
   const interruptedTasks = await tasks.interruptActive('Desktop restarted before the previous turn completed.');
   if (interruptedTasks.length > 0) logger.warn('tasks.reconciled.interrupted', { count: interruptedTasks.length, reason: 'app-restart' });
@@ -115,6 +116,7 @@ app.whenReady().then(async () => {
     onFileChanged: (cwd, change) => logger.debug('agent.host.file.changed', { cwd, path: change.path, kind: change.kind }),
   });
   const operations = new DesktopOperations();
+  const updates = new DesktopUpdateService(transport, logger);
   if (!automationDispatchRequested) { operations.initializeDeepLinks(); operations.initializeTray(); }
   const automations = new AutomationService();
   automationService = automations;
@@ -195,7 +197,7 @@ app.whenReady().then(async () => {
       if (notification !== undefined) operations.notify(notification.title, notification.body);
     }
   });
-  registerIpc({ auth: new DesktopAuthService(transport, async () => { await remoteControl.stop(); await agents.shutdownAll(); }), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions, tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
+  registerIpc({ auth: new DesktopAuthService(transport, async () => { await remoteControl.stop(); await agents.shutdownAll(); }), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions, tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }

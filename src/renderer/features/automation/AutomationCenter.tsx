@@ -18,7 +18,7 @@ export function AutomationCenter({ workspaces }: { workspaces: Workspace[] }) {
   const [items, setItems] = useState<Automation[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>();
+  const [loadError, setLoadError] = useState<string>();
   const [formTarget, setFormTarget] = useState<Automation | null>();
   const [removeTarget, setRemoveTarget] = useState<Automation>();
   const [busy, setBusy] = useState<string>();
@@ -26,21 +26,23 @@ export function AutomationCenter({ workspaces }: { workspaces: Workspace[] }) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const debouncedSearch = useDebounce(search, 180);
-  const { success } = useToast();
+  const { success, error: showError } = useToast();
 
   const reload = useCallback(async () => {
     setLoading(true);
-    setError(undefined);
+    setLoadError(undefined);
     try {
       const next = await window.lotagate.automations.list();
       setItems(next);
       setSelectedId(current => current !== undefined && next.some(item => item.id === current) ? current : undefined);
     } catch (reason) {
-      setError(toUserErrorMessage(reason, 'Unable to load automations.'));
+      const message = toUserErrorMessage(reason, 'Unable to load automations.');
+      setLoadError(message);
+      showError('Unable to load automations', message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showError]);
 
   useEffect(() => {
     void reload();
@@ -75,14 +77,14 @@ export function AutomationCenter({ workspaces }: { workspaces: Workspace[] }) {
   const workspaceName = (id: string) => workspaces.find(workspace => workspace.id === id)?.name ?? 'Workspace unavailable';
   const execute = async (key: string, operation: () => Promise<unknown>, message: string) => {
     setBusy(key);
-    setError(undefined);
+    setLoadError(undefined);
     try {
       await operation();
       success(message);
       await reload();
       setHistoryRefresh(current => current + 1);
     } catch (reason) {
-      setError(toUserErrorMessage(reason));
+      showError('Automation operation failed', toUserErrorMessage(reason));
     } finally {
       setBusy(undefined);
     }
@@ -98,8 +100,7 @@ export function AutomationCenter({ workspaces }: { workspaces: Workspace[] }) {
     </div>
     <p className="automation-intro settings-muted">Reliable, reviewable workflows that run in a trusted workspace.</p>
     {workspaces.length === 0 ? <Card className="settings-empty"><strong>Add a workspace first</strong><p>Automations need a workspace and its trust boundary before they can run.</p></Card> : null}
-    {error ? <Card className="settings-extension-error"><strong>Automation operation failed</strong><p>{error}</p><Button variant="secondary" onClick={() => void reload()}>Retry</Button></Card> : null}
-    {loading ? <div className="automation-list">{[1, 2, 3].map(index => <Card className="automation-list-item" key={index}><Skeleton className="automation-skeleton" /></Card>)}</div> : items.length === 0 && workspaces.length > 0 ? <EmptyState title="No automations yet" detail="Create a scheduled workflow for recurring checks, browser tasks, or project maintenance." action={<Button variant="secondary" onClick={() => setFormTarget(null)}><Icon icon={Plus} size={14} /> Create your first automation</Button>} /> : filteredItems.length === 0 ? <EmptyState title="No matching automations" detail="Try another automation name." /> : <div className="automation-layout">
+    {loadError ? <EmptyState title="Unable to load automations" detail={loadError} action={<Button variant="secondary" onClick={() => void reload()}>Retry</Button>} /> : loading ? <div className="automation-list">{[1, 2, 3].map(index => <Card className="automation-list-item" key={index}><Skeleton className="automation-skeleton" /></Card>)}</div> : items.length === 0 && workspaces.length > 0 ? <EmptyState title="No automations yet" detail="Create a scheduled workflow for recurring checks, browser tasks, or project maintenance." action={<Button variant="secondary" onClick={() => setFormTarget(null)}><Icon icon={Plus} size={14} /> Create your first automation</Button>} /> : filteredItems.length === 0 ? <EmptyState title="No matching automations" detail="Try another automation name." /> : <div className="automation-layout">
       <section className="automation-list-column">
         <div className="automation-list">{visibleItems.map(item => <AutomationListItem key={item.id} automation={item} workspaceName={workspaceName(item.workspaceId)} selected={item.id === selectedId} busy={busy !== undefined} onSelect={() => setSelectedId(item.id)} onRun={() => void execute(item.id, () => window.lotagate.automations.run(item.id), 'Automation started')} onToggle={() => void execute(`toggle:${item.id}`, () => item.enabled ? window.lotagate.automations.pause(item.id) : window.lotagate.automations.resume(item.id), item.enabled ? 'Automation paused' : 'Automation resumed')} onEdit={() => setFormTarget(item)} onRemove={() => setRemoveTarget(item)} />)}</div>
         <Pagination page={page} pageSize={AUTOMATION_PAGE_SIZE} total={filteredItems.length} onPageChange={setPage} />

@@ -39,6 +39,7 @@ const config: ForgeConfig = {
     extraResource: [
       runtimeConfigArtifact,
       'resources/icons/lotagate.ico',
+      'resources/public-plugins',
       'node_modules/@lotagate/cli/bin/lotagate.exe',
       'node_modules/node-pty',
     ],

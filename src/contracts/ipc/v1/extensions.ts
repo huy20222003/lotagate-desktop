@@ -7,6 +7,9 @@ export interface ExtensionDetailInput {
   cwd: string;
   name: string;
   scope?: DesktopExtensionScope | undefined;
+  pluginName?: string | undefined;
+  pluginScope?: 'user' | 'project' | undefined;
+  sourceName?: string | undefined;
 }
 
 export interface ExtensionDetail {
@@ -14,6 +17,23 @@ export interface ExtensionDetail {
   format: 'json' | 'markdown' | 'text';
   editable: boolean;
   fileName?: string;
+}
+
+export interface PublicPluginContributionInput {
+  pluginName: string;
+  kind: 'skill' | 'mcp' | 'hook';
+  sourceName: string;
+}
+
+export interface PluginIconInput {
+  cwd: string;
+  name: string;
+  scope: 'user' | 'project';
+}
+
+export interface PluginIcon {
+  mimeType: 'image/svg+xml';
+  data: string;
 }
 
 export interface ExtensionDetailWriteInput extends ExtensionDetailInput {

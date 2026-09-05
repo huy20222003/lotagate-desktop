@@ -1,4 +1,4 @@
-import { app, Menu, nativeImage, Tray, BrowserWindow, net, shell } from 'electron';
+import { app, Menu, nativeImage, Tray, BrowserWindow, shell } from 'electron';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { DESKTOP_PRODUCT_NAME } from '../app-identity.js';
@@ -33,18 +33,6 @@ export class DesktopOperations {
     const details = await stat(path);
     if (!details.isFile()) throw new Error('The selected path is not a file.');
     shell.showItemInFolder(path);
-  }
-  async checkForUpdates(manifestUrl: string): Promise<Record<string, string> | null> {
-    if (!app.isPackaged || !manifestUrl) return null;
-    const parsed = new URL(manifestUrl);
-    if (parsed.protocol !== 'https:') throw new Error('Update manifests must use HTTPS.');
-    const response = await net.fetch(parsed.toString());
-    if (!response.ok) throw new Error(`Update manifest request failed (${response.status}).`);
-    const value: unknown = await response.json();
-    if (typeof value !== 'object' || value === null) throw new Error('Update manifest is invalid.');
-    const record = value as Record<string, unknown>;
-    if (typeof record['version'] !== 'string' || typeof record['url'] !== 'string') throw new Error('Update manifest is invalid.');
-    return { version: record['version'], url: record['url'], ...(typeof record['notes'] === 'string' ? { notes: record['notes'] } : {}) };
   }
   emitDeepLink(url: string): void { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('operations.deepLink', url); }
   async exportDiagnostics(input: { version: string; settings: Record<string, unknown> }): Promise<string> { const directory = join(app.getPath('downloads'), 'lotagate-diagnostics'); await mkdir(directory, { recursive: true }); const path = join(directory, `diagnostics-${Date.now()}.json`); await writeFile(path, JSON.stringify({ appVersion: input.version, platform: process.platform, arch: process.arch, createdAt: new Date().toISOString(), settings: input.settings }, null, 2), 'utf8'); return path; }

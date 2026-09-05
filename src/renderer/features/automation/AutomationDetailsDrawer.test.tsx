@@ -4,6 +4,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Automation } from '../../../contracts/ipc/v1/automation.js';
+import { ToastProvider } from '../../components/ui.js';
 import { formatTextClamp } from '../../utils/text.js';
 import { AutomationDetailsDrawer } from './AutomationDetailsDrawer.js';
 
@@ -17,7 +18,7 @@ describe('AutomationDetailsDrawer', () => {
   afterEach(() => cleanup());
 
   it('clamps the drawer title and instruction and places status below the instruction', () => {
-    render(<AutomationDetailsDrawer automation={automation} workspaceName="Workspace" busy={false} refreshToken={0} onClose={vi.fn()} onRun={vi.fn()} onCancel={vi.fn()} onRetry={vi.fn()} onReview={vi.fn()} onApproval={vi.fn()} />);
+    render(<ToastProvider><AutomationDetailsDrawer automation={automation} workspaceName="Workspace" busy={false} refreshToken={0} onClose={vi.fn()} onRun={vi.fn()} onCancel={vi.fn()} onRetry={vi.fn()} onReview={vi.fn()} onApproval={vi.fn()} /></ToastProvider>);
 
     expect(screen.getByRole('complementary', { name: formatTextClamp(64, `Automation · ${automation.name}`) })).toBeInTheDocument();
     expect(screen.getByText(formatTextClamp(280, automation.prompt))).toBeInTheDocument();

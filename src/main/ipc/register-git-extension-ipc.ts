@@ -1,11 +1,14 @@
 import { z } from 'zod';
 import { assertTrustedRenderer } from './sender-policy.js';
-import { extensionDetailInputSchema, extensionDetailWriteInputSchema, hookCreateInputSchema, hookRemoveInputSchema } from '../../contracts/ipc/v1/extensions-schema.js';
+import { extensionDetailInputSchema, extensionDetailWriteInputSchema, hookCreateInputSchema, hookRemoveInputSchema, pluginIconInputSchema, publicPluginContributionInputSchema } from '../../contracts/ipc/v1/extensions-schema.js';
 import type { IpcRegistrationContext } from './ipc-registration-context.js';
 
 export function registerGitExtensionIpcHandlers(context: IpcRegistrationContext): void {
-  const { handle, extensionFiles, git, requireWorkspaceCwd, cwdSchema } = context;
+  const { handle, extensionFiles, git, requireWorkspaceCwd, cwdSchema, idSchema } = context;
 handle('extension.readDetail', async (event, input: unknown) => { assertTrustedRenderer(event); return extensionFiles.readDetail(extensionDetailInputSchema.parse(input)); });
+handle('extension.readPluginIcon', async (event, input: unknown) => { assertTrustedRenderer(event); return extensionFiles.readPluginIcon(pluginIconInputSchema.parse(input)); });
+handle('extension.resolvePublicPluginSource', async (event, name: unknown) => { assertTrustedRenderer(event); return extensionFiles.resolvePublicPluginSource(idSchema.parse(name)); });
+handle('extension.readPublicPluginContribution', async (event, input: unknown) => { assertTrustedRenderer(event); return extensionFiles.readPublicPluginContribution(publicPluginContributionInputSchema.parse(input)); });
 handle('extension.writeDetail', async (event, input: unknown) => { assertTrustedRenderer(event); await extensionFiles.writeDetail(extensionDetailWriteInputSchema.parse(input)); });
 handle('extension.listProjectHooks', async (event, cwd: unknown) => { assertTrustedRenderer(event); return extensionFiles.listProjectHooks(await requireWorkspaceCwd(cwd)); });
 handle('extension.createHook', async (event, input: unknown) => { assertTrustedRenderer(event); return extensionFiles.createHook(hookCreateInputSchema.parse(input)); });

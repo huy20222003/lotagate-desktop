@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import { BrowserWindow } from 'electron';
 import { assertTrustedRenderer } from './sender-policy.js';
 import { automationCreateInputSchema, automationUpdateInputSchema } from '../../contracts/ipc/v1/automation.js';
 import { desktopApprovalInputSchema } from '../../contracts/ipc/v1/approval.js';
 import type { IpcRegistrationContext } from './ipc-registration-context.js';
 
 export function registerRuntimeIpcHandlers(context: IpcRegistrationContext): void {
-  const { handle, settings, browser, approvals, automations, operations, runAutomation, retryAutomation, idSchema, browserBoundsSchema, objectSchema, logger, cwdSchema } = context;
+  const { handle, settings, browser, approvals, automations, operations, updates, runAutomation, retryAutomation, idSchema, browserBoundsSchema, objectSchema, logger, cwdSchema } = context;
 handle('settings.get', async event => { assertTrustedRenderer(event); return settings.get(); });
 handle('settings.update', async (event, patch: unknown) => { assertTrustedRenderer(event); const updated = await settings.update(objectSchema.parse(patch)); logger.setRetentionDays(updated.sandbox.diagnosticsRetentionDays); return updated; });
 handle('browser.create', async event => { assertTrustedRenderer(event); return browser.create(); });
@@ -48,6 +49,12 @@ handle('automation.runs', async (event, id: unknown, limit?: unknown) => { asser
 handle('operations.notify', async (event, title: unknown, body: unknown) => { assertTrustedRenderer(event); operations.notify(z.string().min(1).parse(title), z.string().max(2_000).parse(body)); });
 handle('operations.showWindow', async event => { assertTrustedRenderer(event); operations.showWindow(); });
 handle('operations.revealPath', async (event, path: unknown) => { assertTrustedRenderer(event); await operations.revealPath(cwdSchema.parse(path)); });
-handle('operations.exportDiagnostics', async event => { assertTrustedRenderer(event); return operations.exportDiagnostics({ version: process.env['npm_package_version'] ?? '0.1.0', settings: await settings.get() }); });
-handle('operations.checkForUpdates', async event => { assertTrustedRenderer(event); return operations.checkForUpdates(process.env['LOTAGATE_UPDATE_MANIFEST_URL']?.trim() ?? ''); });
+handle('operations.exportDiagnostics', async event => { assertTrustedRenderer(event); return operations.exportDiagnostics({ version: updates.getInfo().version, settings: await settings.get() }); });
+handle('updates.getInfo', async event => { assertTrustedRenderer(event); return updates.getInfo(); });
+handle('updates.getState', async event => { assertTrustedRenderer(event); return updates.getState(); });
+handle('updates.check', async event => { assertTrustedRenderer(event); return updates.check(); });
+handle('updates.download', async event => { assertTrustedRenderer(event); return updates.download(); });
+handle('updates.cancel', async event => { assertTrustedRenderer(event); return updates.cancel(); });
+handle('updates.install', async event => { assertTrustedRenderer(event); return updates.install(); });
+updates.onState(snapshot => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('updates.state', snapshot); });
 }

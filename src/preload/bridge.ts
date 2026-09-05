@@ -110,6 +110,9 @@ const bridge: DesktopBridge = {
   },
   extensions: {
     readDetail: input => ipcRenderer.invoke('extension.readDetail', input),
+    readPluginIcon: input => ipcRenderer.invoke('extension.readPluginIcon', input),
+    resolvePublicPluginSource: name => ipcRenderer.invoke('extension.resolvePublicPluginSource', name),
+    readPublicPluginContribution: input => ipcRenderer.invoke('extension.readPublicPluginContribution', input),
     writeDetail: input => ipcRenderer.invoke('extension.writeDetail', input),
     listProjectHooks: cwd => ipcRenderer.invoke('extension.listProjectHooks', cwd),
     createHook: input => ipcRenderer.invoke('extension.createHook', input),
@@ -200,7 +203,16 @@ const bridge: DesktopBridge = {
     revoke: () => ipcRenderer.invoke('remoteControl.revoke'),
     onState: listener => { const handler = (_event: Electron.IpcRendererEvent, value: RemoteControlStateEvent) => listener(value); ipcRenderer.on('remote-control.state', handler); return () => ipcRenderer.removeListener('remote-control.state', handler); },
   },
-  operations: { notify: (title, body) => ipcRenderer.invoke('operations.notify', title, body), showWindow: () => ipcRenderer.invoke('operations.showWindow'), revealPath: path => ipcRenderer.invoke('operations.revealPath', path), exportDiagnostics: () => ipcRenderer.invoke('operations.exportDiagnostics'), checkForUpdates: () => ipcRenderer.invoke('operations.checkForUpdates'), onDeepLink: listener => { const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url); ipcRenderer.on('operations.deepLink', handler); return () => ipcRenderer.removeListener('operations.deepLink', handler); } },
+  updates: {
+    getInfo: () => ipcRenderer.invoke('updates.getInfo'),
+    getState: () => ipcRenderer.invoke('updates.getState'),
+    check: () => ipcRenderer.invoke('updates.check'),
+    download: () => ipcRenderer.invoke('updates.download'),
+    cancel: () => ipcRenderer.invoke('updates.cancel'),
+    install: () => ipcRenderer.invoke('updates.install'),
+    onState: listener => { const handler = (_event: Electron.IpcRendererEvent, value: Parameters<typeof listener>[0]) => listener(value); ipcRenderer.on('updates.state', handler); return () => ipcRenderer.removeListener('updates.state', handler); },
+  },
+  operations: { notify: (title, body) => ipcRenderer.invoke('operations.notify', title, body), showWindow: () => ipcRenderer.invoke('operations.showWindow'), revealPath: path => ipcRenderer.invoke('operations.revealPath', path), exportDiagnostics: () => ipcRenderer.invoke('operations.exportDiagnostics'), onDeepLink: listener => { const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url); ipcRenderer.on('operations.deepLink', handler); return () => ipcRenderer.removeListener('operations.deepLink', handler); } },
 };
 
 contextBridge.exposeInMainWorld('lotagate', bridge);

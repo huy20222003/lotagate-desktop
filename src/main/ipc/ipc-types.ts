@@ -20,6 +20,7 @@ import type { DesktopLogger } from '../observability/desktop-logger.js';
 import type { Workspace } from '../../contracts/ipc/v1/workspace.js';
 import type { AutomationRun } from '../../contracts/ipc/v1/automation.js';
 import type { RemoteControlService } from '../remote-control/remote-control-service.js';
+import type { DesktopUpdateService } from '../updates/desktop-update-service.js';
 
 export interface DesktopIpcServices {
   auth: DesktopAuthApi;
@@ -39,6 +40,7 @@ export interface DesktopIpcServices {
   automations: AutomationService;
   approvals: ApprovalCoordinator;
   remoteControl: RemoteControlService;
+  updates: DesktopUpdateService;
   operations: DesktopOperations;
   runAutomation(id: string): Promise<AutomationRun>;
   retryAutomation(runId: string): Promise<AutomationRun>;

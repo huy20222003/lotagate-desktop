@@ -26,4 +26,13 @@ describe('AutomationCenter', () => {
     const title = await screen.findByText(formatTextClamp(64, automation.name));
     expect(title).toHaveAttribute('title', automation.name);
   });
+
+  it('reports loading failures through the shared toast and keeps retry contextual', async () => {
+    window.lotagate = { automations: { list: vi.fn().mockRejectedValue(new Error('CLI is unavailable.')), onState: vi.fn(() => () => {}) } } as unknown as typeof window.lotagate;
+    render(<ToastProvider><AutomationCenter workspaces={[workspace]} /></ToastProvider>);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load automations');
+    expect(screen.getByText('Unable to load automations', { selector: '.empty-state strong' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
 });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UserProfile } from '../../../contracts/ipc/v1/auth.js';
 import { ToastProvider } from '../../components/ui.js';
@@ -16,7 +16,7 @@ describe('SettingsPage', () => {
 
   it.each([
     ['general', 'General'], ['profile', 'Profile'], ['api-key', 'API key'], ['billing', 'Billing'], ['appearance', 'Appearance'], ['keyboard-shortcuts', 'Keyboard shortcuts'],
-    ['browser', 'Browser'], ['sandbox', 'Sandbox'], ['memory', 'Memory'], ['hook', 'Hooks'], ['skill', 'Skills'], ['plugin', 'Plugins'], ['mcp', 'MCP'],
+    ['browser', 'Browser'], ['sandbox', 'Sandbox'], ['memory', 'Memory'], ['about', 'About'], ['hook', 'Hooks'], ['skill', 'Skills'], ['plugin', 'Plugins'], ['mcp', 'MCP'],
   ] as Array<[SettingsSection, string]> )('routes the %s settings section', async (section, title) => {
     installBridge();
     render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection={section} /></ToastProvider>);
@@ -36,6 +36,31 @@ describe('SettingsPage', () => {
     fireEvent.change(memory, { target: { value: '4096' } });
     await waitFor(() => expect(update).toHaveBeenCalledWith({ sandbox: { ...sandbox, memoryMb: 4096 } }));
   });
+
+  it('shows a shared success toast after checking for updates', async () => {
+    installBridge();
+    render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="about" /></ToastProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Check for updates' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('You are up to date'));
+  });
+
+  it('navigates to the Settings parent from the breadcrumb', async () => {
+    installBridge();
+    render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="skill" /></ToastProvider>);
+    expect(await screen.findByRole('heading', { name: 'Skills', level: 1 })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /^Settings$/ }));
+    expect(await screen.findByRole('heading', { name: 'Profile', level: 1 })).toBeVisible();
+  });
+
+  it('returns from plugin detail to the Plugins list through the breadcrumb', async () => {
+    installBridge();
+    render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="plugin" /></ToastProvider>);
+    fireEvent.click(await screen.findByText('workspace-review'));
+    expect(await screen.findByRole('heading', { name: 'workspace-review', level: 1 })).toBeVisible();
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('button', { name: 'Plugins' }));
+    expect(await screen.findByRole('heading', { name: 'Plugins', level: 1 })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'workspace-review', level: 1 })).not.toBeInTheDocument();
+  });
 });
 
 function installBridge() {
@@ -46,6 +71,7 @@ function installBridge() {
     workspaces: { list: vi.fn().mockResolvedValue([]) },
     tasks: { list: vi.fn().mockResolvedValue([]), activities: vi.fn().mockResolvedValue([]) },
     automations: { list: vi.fn().mockResolvedValue([]), onState: vi.fn(() => () => {}) },
+    updates: { getInfo: vi.fn().mockResolvedValue({ productName: 'LotaGate Desktop', applicationId: 'com.lotagate.desktop', version: '0.1.0', cliVersion: '0.1.24', electronVersion: '44.0.0', nodeVersion: '22.0.0', platform: 'WINDOWS', architecture: 'X64', updateChannel: 'STABLE', packaged: false }), getState: vi.fn().mockResolvedValue({ phase: 'disabled', currentVersion: '0.1.0', platform: 'WINDOWS', architecture: 'X64', release: null, asset: null, blocking: false, bytesDownloaded: 0, totalBytes: null, downloadedFileName: null, error: null }), check: vi.fn().mockResolvedValue({ phase: 'up-to-date', currentVersion: '0.1.0', platform: 'WINDOWS', architecture: 'X64', release: null, asset: null, blocking: false, bytesDownloaded: 0, totalBytes: null, downloadedFileName: null, error: null }), download: vi.fn(), cancel: vi.fn(), install: vi.fn(), onState: vi.fn(() => () => {}) },
   } as unknown as typeof window.lotagate;
   return update;
 }

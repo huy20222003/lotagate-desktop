@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { app } from 'electron';
 import type { LoginInput } from '../../contracts/ipc/v1/auth.js';
 import { assertTrustedRenderer } from './sender-policy.js';
 import type { IpcRegistrationContext } from './ipc-registration-context.js';
@@ -35,6 +36,6 @@ handle('userContext.workspaces', async (event, code: unknown) => { assertTrusted
 handle('userContext.models', async (event, organizationCode: unknown, workspaceCode: unknown) => { assertTrustedRenderer(event); return userContext.models(idSchema.parse(organizationCode), idSchema.parse(workspaceCode)); });
 handle('runtime.getVersion', async (event) => {
     assertTrustedRenderer(event);
-    return process.env['npm_package_version'] ?? '0.1.0';
+    return app.getVersion();
   });
 }
