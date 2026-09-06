@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Task } from '../../../../contracts/ipc/v1/workspace.js';
 import { TaskConversation } from './TaskConversation.js';
 
@@ -11,7 +11,27 @@ const task: Task = {
 };
 
 describe('TaskConversation live state', () => {
-  afterEach(() => cleanup());
+  afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+  it('renders message times and separators for the first message and a three-hour response gap', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 8, 5, 20, 0));
+    const messages = [
+      { id: 'user-1', taskId: task.id, kind: 'user' as const, text: 'First message', metadata: {}, createdAt: new Date(2026, 8, 5, 12, 1).toISOString() },
+      { id: 'assistant-1', taskId: task.id, kind: 'assistant' as const, text: 'First response', metadata: { turnId: 'turn-1' }, createdAt: new Date(2026, 8, 5, 12, 30).toISOString() },
+      { id: 'user-2', taskId: task.id, kind: 'user' as const, text: 'Second message', metadata: {}, createdAt: new Date(2026, 8, 5, 15, 30).toISOString() },
+    ];
+
+    render(<TaskConversation task={task} activities={messages} activityAttachments={{}} activityArtifacts={{}} fileChangesByTurn={{}} onOpenFileChanges={() => undefined} thinking={false} finalResponseReceived turnTimings={{}} onTrust={async () => undefined} />);
+
+    expect(document.querySelectorAll('.conversation-time-separator')).toHaveLength(2);
+    expect(document.querySelectorAll('.conversation-time-separator time')[0]).toHaveTextContent('Today, 12:01 PM');
+    expect(document.querySelectorAll('.conversation-time-separator time')[1]).toHaveTextContent('Today, 3:30 PM');
+    expect(document.querySelectorAll('.user-message-meta time')[0]).toHaveTextContent('12:01 PM');
+    expect(document.querySelector('.agent-message-meta time')).toHaveTextContent('12:30 PM');
+    expect(document.querySelectorAll('.user-message-meta time')[1]).toHaveTextContent('3:30 PM');
+    expect(screen.queryByText(';')).not.toBeInTheDocument();
+  });
 
   it('keeps the Thinking indicator while work has started but no live action exists yet', () => {
     render(<TaskConversation task={task} activities={[]} activityAttachments={{}} activityArtifacts={{}} fileChangesByTurn={{}} onOpenFileChanges={() => undefined} thinking finalResponseReceived={false} thinkingStartedAt={Date.now()} turnTimings={{}} onTrust={async () => undefined} />);

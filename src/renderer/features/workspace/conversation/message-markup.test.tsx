@@ -18,21 +18,19 @@ describe('message markup', () => {
     await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(path));
   });
 
-  it('renders external links as a website label with a favicon', () => {
+  it('renders external links as a website label without fetching remote favicons', () => {
     render(<MessageMarkup content="Open https://example.com/docs now." />);
 
     const link = screen.getByRole('link', { name: 'example.com' });
     expect(link).toHaveClass('message-external-link');
-    expect(link.querySelector('img')).toHaveAttribute('src', 'https://example.com/favicon.ico');
+    expect(link.querySelector('img')).not.toBeInTheDocument();
   });
 
-  it('falls back to a favicon image proxy when the website has no root favicon', () => {
+  it('does not create a third-party favicon fallback request', () => {
     render(<MessageMarkup content="Open https://example.com/docs now." />);
 
     const image = screen.getByRole('link', { name: 'example.com' }).querySelector('img');
-    expect(image).not.toBeNull();
-    fireEvent.error(image!);
-    expect(image).toHaveAttribute('src', expect.stringContaining('google.com/s2/favicons'));
+    expect(image).toBeNull();
   });
 
   it('keeps bare and relative file names as plain message text', () => {

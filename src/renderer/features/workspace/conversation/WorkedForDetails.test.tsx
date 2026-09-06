@@ -2,12 +2,16 @@
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Activity } from '../../../../contracts/ipc/v1/workspace.js';
+import type { Activity, SubagentSnapshot } from '../../../../contracts/ipc/v1/workspace.js';
 import { formatTextClamp } from '../../../utils/text.js';
 import { WorkedForDetails } from './WorkedForDetails.js';
 
 function toolActivity(id: string, text: string, metadata: Record<string, unknown>): Activity {
   return { id, taskId: 'task-1', kind: 'tool', text, metadata, createdAt: '2026-08-29T00:00:00.000Z' };
+}
+
+function subagent(status: SubagentSnapshot['status']): SubagentSnapshot {
+  return { id: 'subagent-1', displayName: 'Atlas', task: 'Inspect the workspace', mode: 'research', model: 'model-a', status, background: true, timestamp: 1 };
 }
 
 describe('WorkedForDetails', () => {
@@ -47,6 +51,14 @@ describe('WorkedForDetails', () => {
 
     expect(container.querySelector('.worked-tool')).toHaveTextContent('Ran Get-Content test.md');
     expect(container.querySelector('.worked-tool-terminal-icon')).toBeInTheDocument();
+  });
+
+  it('shows the subagent lifecycle in Worked For details', () => {
+    const { rerender } = render(<WorkedForDetails activities={[]} subagents={[subagent('queued')]} />);
+    expect(screen.getByText('Create agent')).toBeVisible();
+
+    rerender(<WorkedForDetails activities={[]} subagents={[subagent('running')]} />);
+    expect(screen.getByText('Created agent Atlas')).toBeVisible();
   });
 
   it('clamps long command text without changing the full command metadata', () => {

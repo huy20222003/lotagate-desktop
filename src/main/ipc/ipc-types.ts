@@ -21,6 +21,7 @@ import type { Workspace } from '../../contracts/ipc/v1/workspace.js';
 import type { AutomationRun } from '../../contracts/ipc/v1/automation.js';
 import type { RemoteControlService } from '../remote-control/remote-control-service.js';
 import type { DesktopUpdateService } from '../updates/desktop-update-service.js';
+import type { TaskTurnCoordinator } from '../tasks/task-turn-coordinator.js';
 
 export interface DesktopIpcServices {
   auth: DesktopAuthApi;
@@ -29,6 +30,7 @@ export interface DesktopIpcServices {
   workspaces: WorkspaceRegistry;
   workspaceFileSuggestions: WorkspaceFileSuggestions;
   tasks: TaskStore;
+  taskTurns: TaskTurnCoordinator;
   checkpoints: CheckpointService;
   extensionFiles: ExtensionFileService;
   git: GitService;

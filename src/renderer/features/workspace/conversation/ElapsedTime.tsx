@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { Activity } from '../../../../contracts/ipc/v1/workspace.js';
+import type { SubagentSnapshot } from '../../../../contracts/ipc/v1/workspace.js';
 import { formatDuration } from '../../../utils/time.js';
 import { hasWorkedForDetails, WorkedForDetails } from './WorkedForDetails.js';
 
 export interface TurnTiming { startedAt: number; endedAt?: number | undefined }
 
-export function ElapsedTime({ timing, fallback, statusText, activities = [] }: { timing?: TurnTiming | undefined; fallback: string; statusText?: string | undefined; activities?: readonly Activity[] }) {
+export function ElapsedTime({ timing, fallback, statusText, activities = [], subagents = [] }: { timing?: TurnTiming | undefined; fallback: string; statusText?: string | undefined; activities?: readonly Activity[]; subagents?: readonly SubagentSnapshot[] }) {
   const startedAt = timing?.startedAt ?? Date.parse(fallback);
   const [now, setNow] = useState(Date.now());
   const active = timing !== undefined && timing.endedAt === undefined;
@@ -18,7 +19,7 @@ export function ElapsedTime({ timing, fallback, statusText, activities = [] }: {
   }, [timing?.endedAt]);
   useEffect(() => { setExpanded(active); }, [active, timing?.startedAt, timing?.endedAt]);
   const end = timing?.endedAt ?? (timing ? now : startedAt);
-  const detailsAvailable = hasWorkedForDetails({ statusText, activities });
+  const detailsAvailable = hasWorkedForDetails({ statusText, activities, subagents });
   if (!active && !detailsAvailable) return <div className="worked-time worked-time-static"><span>Worked for {formatDuration(Math.max(0, end - startedAt))}</span></div>;
-  return <details className="worked-time" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}><summary><span>Worked for {formatDuration(Math.max(0, end - startedAt))}</span><span className="worked-time-chevron" aria-hidden="true">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span></summary><WorkedForDetails active={active} statusText={statusText} activities={activities} /></details>;
+  return <details className="worked-time" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}><summary><span>Worked for {formatDuration(Math.max(0, end - startedAt))}</span><span className="worked-time-chevron" aria-hidden="true">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span></summary><WorkedForDetails active={active} statusText={statusText} activities={activities} subagents={subagents} /></details>;
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { registerLoggedIpcHandler } from './logged-ipc.js';
 import type { DesktopIpcServices } from './ipc-types.js';
+import { MAX_QUEUED_PROMPTS_PER_TASK, queuedPromptSchema } from '../../contracts/ipc/v1/workspace.js';
 
 export const cwdSchema = z.string().min(1).max(4_096);
 export const idSchema = z.string().min(1).max(256);
@@ -20,6 +21,7 @@ export const taskUpdateSchema = z.object({
   model: z.string().min(1).max(256).optional(),
   lastEventCursor: z.number().int().nonnegative().optional(),
   interruptedReason: z.string().max(4_096).optional(),
+  queuedPrompts: queuedPromptSchema.array().max(MAX_QUEUED_PROMPTS_PER_TASK).optional(),
 }).strict();
 export const taskTitleSourceInputSchema = z.enum(['automatic', 'manual']);
 

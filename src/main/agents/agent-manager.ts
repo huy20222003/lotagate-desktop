@@ -6,6 +6,8 @@ import { requireDirectory } from '../security/path-policy.js';
 import { CACHE_TTL_MS } from '../cache/cache-policy.js';
 import type { PersistentCache } from '../cache/persistent-cache.js';
 import { buildInteractiveDesktopExecutionPolicy } from './desktop-execution-policy.js';
+import type { ExtensionProtocol, PluginIconInput } from '../extensions/extension-protocol.js';
+import type { ExtensionDetailInput, PublicPluginContributionInput } from '../../contracts/ipc/v1/extensions.js';
 
 export interface AgentManagerHandler {
   onEvent(projectRoot: string, event: DesktopEvent): void;
@@ -128,6 +130,24 @@ export class AgentManager {
     return { content, ...(structured === undefined ? {} : { structured }) };
   }
   async commandCancel(cwd: string, commandId: string): Promise<unknown> { return this.request(cwd, 'command.cancel', { commandId }); }
+
+  async extensionListPublicPlugins(root: string): Promise<Awaited<ReturnType<ExtensionProtocol['listPublicPlugins']>>> {
+    return this.request(root, 'extension.listPublicPlugins', { root }) as Promise<Awaited<ReturnType<ExtensionProtocol['listPublicPlugins']>>>;
+  }
+  async extensionResolvePublicPluginSource(root: string, name: string): Promise<string> {
+    const result = await this.request(root, 'extension.resolvePublicPluginSource', { root, name });
+    if (!isRecord(result) || typeof result['path'] !== 'string') throw new Error('The CLI did not return a public plugin source path.');
+    return result['path'];
+  }
+  async extensionReadPublicPluginContribution(root: string, input: PublicPluginContributionInput): Promise<Awaited<ReturnType<ExtensionProtocol['readPublicPluginContribution']>>> {
+    return this.request(root, 'extension.readPublicPluginContribution', { root, ...input }) as Promise<Awaited<ReturnType<ExtensionProtocol['readPublicPluginContribution']>>>;
+  }
+  async extensionReadDetail(cwd: string, input: Omit<ExtensionDetailInput, 'cwd'>): Promise<Awaited<ReturnType<ExtensionProtocol['readDetail']>>> {
+    return this.request(cwd, 'extension.readDetail', input) as Promise<Awaited<ReturnType<ExtensionProtocol['readDetail']>>>;
+  }
+  async extensionReadPluginIcon(cwd: string, input: PluginIconInput): Promise<Awaited<ReturnType<ExtensionProtocol['readPluginIcon']>>> {
+    return this.request(cwd, 'extension.readPluginIcon', { ...input }) as Promise<Awaited<ReturnType<ExtensionProtocol['readPluginIcon']>>>;
+  }
 
   isApprovalProcessAvailable(cwd: string, approvalId: string): boolean {
     const binding = this.approvalBindings.get(approvalId);

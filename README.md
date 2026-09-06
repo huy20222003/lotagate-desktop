@@ -11,9 +11,10 @@ fork and does not modify `server/`, `sdk/`, `agent-sdk/`, or `cli/`.
   its packaged executable and does not depend on a system `PATH` entry. During
   CLI development, use the local link workflow below.
 - The local `.env` runtime configuration for the LotaGate production API. The
-  packaging step converts it to an encrypted `runtime.dat` artifact.
-  It contains public endpoints only; never place passwords, tokens, or private
-  keys in this file.
+  packaging step converts the allowlisted public values to an encrypted
+  `runtime.dat` artifact. The artifact never contains passwords, tokens, or
+  private keys. Remote enrollment credentials must be provisioned separately
+  through the deployment environment and are not embedded in installers.
 - The desktop uses normal password login at `/auth/login`; it does not
   implement OAuth or 2FA.
 
@@ -39,7 +40,8 @@ Desktop runtime `.env` without adding credentials:
 ```dotenv
 LOTAGATE_REMOTE_SERVER_URL=http://127.0.0.1:8787
 LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX=api/v1
-LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN=<same-long-random-value-configured-on-remote-server>
+# Provision this credential outside the packaged runtime artifact.
+# LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN=<deployment-provided-value>
 ```
 
 The Desktop creates a short-lived session, displays the relay URL as a QR code,
@@ -77,7 +79,7 @@ version deliberately.
 
 ## Execution boundaries
 
-Desktop protocol v3 sends filesystem and shell actions through the Desktop
+Desktop protocol v1 sends filesystem and shell actions through the Desktop
 execution broker. Interactive turns and automations request the sandbox by
 default; the broker mounts only the selected workspace into a disposable
 Docker/Podman container, disables networking by default, applies memory and

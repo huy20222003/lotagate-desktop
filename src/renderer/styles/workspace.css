@@ -285,11 +285,21 @@
 .plan-request .show-more { justify-self: start; }
 .plan-details { display: grid; gap: 12px; }
 .plan-details .plan-step { padding-bottom: 4px; }
-.subagent-details { display: grid; gap: 10px; color: var(--color-text-secondary); font-size: 12px; }
-.subagent-details p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
-.subagent-details small { color: var(--color-text-tertiary); }
+.subagent-details { display: grid; gap: 14px; color: var(--color-text-secondary); font-size: 14px; line-height: 1.5; }
+.worked-subagent { display: flex; align-items: center; gap: 5px; color: var(--color-text-tertiary); }
+.worked-subagent-queued { color: var(--color-agent-warning); }
+.worked-subagent-created { color: var(--color-accent); }
+.worked-subagent-icon { flex: 0 0 auto; }
+.subagent-details p { margin: 0; overflow-wrap: anywhere; }
+.subagent-task { color: var(--color-text); }
+.subagent-task strong, .subagent-detail-section > strong { color: var(--color-text); font-size: 12px; }
+.subagent-detail-section { display: grid; gap: 4px; }
+.subagent-detail-section ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; overflow-wrap: anywhere; }
+.subagent-detail-warnings > strong { color: var(--color-danger); }
 .subagent-detail-status { display: flex; justify-content: space-between; gap: 12px; color: var(--color-text-tertiary); font-size: 11px; }
-.subagent-handoff { display: grid; gap: 5px; color: var(--color-text-tertiary); font-size: 11px; }
+.subagent-handoff { display: grid; gap: 7px; color: var(--color-text-tertiary); font-size: 13px; }
+.subagent-handoff > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.subagent-handoff strong { color: var(--color-text); font-size: 14px; }
 .spin { animation: orchestration-spin 1s linear infinite; }
 @keyframes orchestration-spin { to { transform: rotate(360deg); } }
 @keyframes orchestration-pulse { 50% { opacity: .35; transform: scale(.7); } }
@@ -527,6 +537,7 @@ button.lightbox-navigation { width: 44px; height: 44px; border-color: var(--colo
 .badge-warning { background: var(--color-warning-bg); color: var(--color-warning); }
 .badge-danger { background: var(--color-danger-bg); color: var(--color-danger); }
 .activity-list { display: grid; gap: 22px; }
+.conversation-time-separator { display: flex; min-height: 20px; align-items: center; justify-content: center; margin: -8px 0; color: var(--color-text-tertiary); font-size: 11px; font-weight: 600; line-height: 1; }
 .message-body > div:not(.tool-row) { margin: 6px 0 0; color: var(--color-text-secondary); font-size: 13px; line-height: 1.65; }
 .agent-message .message-body > div:not(.tool-row), .agent-message .message-body p { font-size: 13.5px; }
 .agent-markdown { color: var(--color-text-secondary); font-size: 13.5px; line-height: 1.65; }

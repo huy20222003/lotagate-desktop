@@ -44,7 +44,8 @@ export class AutomationExecutionService {
     if (sessionId === undefined) throw new Error('Automation could not create a CLI session.');
     sessions.set(sessionId, { runId: run.id, cwd: executionWorkspace.cwd });
     await tasks.update(task.id, { sessionId });
-    const cancelTurn = () => { void cancelTaskTurn(agents, tasks, executionWorkspace.cwd, task.id); };
+    let cancellation = Promise.resolve();
+    const cancelTurn = () => { cancellation = cancelTaskTurn(agents, tasks, executionWorkspace.cwd, task.id).catch(error => logger.warn('automation.turn.cancel.failed', { runId: run.id, message: error instanceof Error ? error.message : 'Unable to cancel automation turn.' })); };
     signal.addEventListener('abort', cancelTurn, { once: true });
     browserHost.setRunPolicy(run.id, automation.browserAccess);
     browserHost.bindSessionToRun(executionWorkspace.cwd, sessionId, run.id);
@@ -56,6 +57,7 @@ export class AutomationExecutionService {
       return { taskId: completedTask.id, sessionId, executionCwd: executionWorkspace.cwd, ...(executionWorkspace.branch === undefined ? {} : { branch: executionWorkspace.branch }), ...(executionWorkspace.worktreePath === undefined ? {} : { worktreePath: executionWorkspace.worktreePath }), ...outputs, ...(outputs.summary === undefined && completedTask.status === 'completed' ? { summary: 'Automation completed successfully.' } : {}), reviewRequired: automation.permissionPolicy === 'review' };
     } finally {
       signal.removeEventListener('abort', cancelTurn);
+      if (signal.aborted) await cancellation;
       if (!automation.keepSession) await browserHost.closeRun(run.id);
       else browserHost.clearRunPolicy(run.id);
       sessions.delete(sessionId);

@@ -53,6 +53,7 @@ export class PublicPluginBootstrapService {
 
     let attempted = 0;
     let installed = 0;
+    let inspectionSucceeded = true;
     try {
       const result = await this.commands.commandExecuteResult(this.cwd, { actionId: 'plugin.list', positionals: [], options: {} });
       const installedPlugins = readInstalledPluginNames(result.structured);
@@ -69,9 +70,11 @@ export class PublicPluginBootstrapService {
         }
       }
     } catch (error) {
+      inspectionSucceeded = false;
       this.logger.warn('public.plugins.bootstrap.failed', { message: error instanceof Error ? error.message : 'Unable to inspect bundled public plugins.' });
     } finally {
-      await this.complete(attempted, installed);
+      if (inspectionSucceeded && attempted === installed) await this.complete(attempted, installed);
+      else this.logger.warn('public.plugins.bootstrap.incomplete', { attempted, installed });
     }
   }
 

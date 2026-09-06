@@ -28,13 +28,18 @@ export class DesktopLogger {
   setRetentionDays(days: number): void { if (Number.isInteger(days) && days >= 1 && days <= 365) this.retentionDays = days; }
 
   async close(): Promise<void> {
-    await this.writeChain;
+    await this.writeChain.catch(error => {
+      console.error('Desktop logger could not flush its write queue.', error instanceof Error ? error.message : String(error));
+    });
   }
 
   private enqueue(level: LogLevel, event: string, details?: LogDetails): void {
     const next = this.writeChain
       .catch(() => undefined)
-      .then(() => this.write(level, event, details));
+      .then(() => this.write(level, event, details))
+      .catch(error => {
+        console.error(`Desktop logger write failed for ${event}.`, error instanceof Error ? error.message : String(error));
+      });
     this.writeChain = next;
   }
 

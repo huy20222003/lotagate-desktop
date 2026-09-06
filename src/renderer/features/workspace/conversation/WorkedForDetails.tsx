@@ -1,6 +1,8 @@
 import type { Activity } from '../../../../contracts/ipc/v1/workspace.js';
-import { ChevronRight, Terminal } from 'lucide-react';
+import { Bot, ChevronRight, Terminal } from 'lucide-react';
+import type { SubagentSnapshot } from '../../../../contracts/ipc/v1/workspace.js';
 import { formatToolDisplayName } from '../../../../shared/tool-display.js';
+import { activeSubagentActivity } from '../orchestration/subagent-display.js';
 import { AgentMarkdown } from './markdown-renderer.js';
 import { isAssistantProgressActivity } from './conversation-activities.js';
 import { useSmoothStreamingText } from './use-smooth-streaming-text.js';
@@ -22,6 +24,7 @@ export interface WorkedForDetailsProps {
   active?: boolean;
   statusText?: string | undefined;
   activities: readonly Activity[];
+  subagents?: readonly SubagentSnapshot[];
 }
 
 type WorkedItem =
@@ -32,19 +35,21 @@ type RenderedWorkedItem =
   | { kind: 'progress'; activity: Activity }
   | { kind: 'tools'; steps: ToolStep[] };
 
-export function hasWorkedForDetails({ statusText, activities }: WorkedForDetailsProps): boolean {
-  return statusText !== undefined || buildWorkedItems(activities).length > 0;
+export function hasWorkedForDetails({ statusText, activities, subagents = [] }: WorkedForDetailsProps): boolean {
+  return statusText !== undefined || buildWorkedItems(activities).length > 0 || activeSubagentActivity(subagents) !== undefined;
 }
 
 export function hasRunningWorkedTool(activities: readonly Activity[]): boolean {
   return buildWorkedItems(activities).some(item => item.kind === 'tool' && item.step.state === 'running');
 }
 
-export function WorkedForDetails({ active = false, statusText, activities }: WorkedForDetailsProps) {
+export function WorkedForDetails({ active = false, statusText, activities, subagents = [] }: WorkedForDetailsProps) {
   const items = buildWorkedItems(activities);
-  if (!hasWorkedForDetails({ statusText, activities })) return null;
+  const subagentActivity = activeSubagentActivity(subagents);
+  if (!hasWorkedForDetails({ statusText, activities, subagents })) return null;
   const renderedItems = groupToolItems(items);
   return <div className="worked-details">
+    {subagentActivity ? <div className={`worked-subagent worked-subagent-${subagentActivity.state}`}><Bot className="worked-subagent-icon" size={14} aria-hidden="true" /><span>{subagentActivity.label}</span></div> : null}
     {statusText ? <WorkedText className="worked-status" content={statusText} active={active} /> : null}
     {renderedItems.map((item, index) => item.kind === 'progress'
       ? <WorkedProgress key={item.activity.id} content={item.activity.text} active={active} />

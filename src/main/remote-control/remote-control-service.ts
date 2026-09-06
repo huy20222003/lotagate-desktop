@@ -2,11 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { WebSocket } from 'ws';
 import { createRemoteCipher, createRemoteKeyPair, type EncryptedRemoteEnvelope, type RemoteCipher, type RemoteKeyPair } from './remote-control-crypto.js';
 import { REMOTE_ATTACHMENT_CHUNK_BYTES, REMOTE_ATTACHMENT_MAX_BYTES, REMOTE_MEDIA_READ_CHUNK_BYTES, remoteCommandSchema, remoteControlSessionSchema, remoteEnvelopeSchema, remoteTaskSummary, remoteWorkspaceSummary, type RemoteCommand, type RemoteCommandDescriptor, type RemoteControlSession, type RemoteControlSnapshot, type RemoteControlStateEvent, type RemoteTrustRequest } from '../../contracts/remote-control/v1/remote-control.js';
+import { MAX_QUEUED_PROMPTS_PER_TASK } from '../../contracts/ipc/v1/workspace.js';
 import { REMOTE_SLASH_COMMAND_DEFINITIONS } from '../../contracts/remote-control/v1/slash-command-catalog.js';
 import type { DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js';
 import type { DesktopApprovalRequest, DesktopApprovalResolution } from '../../contracts/ipc/v1/approval.js';
 import type { AutomationStateEvent } from '../../contracts/ipc/v1/automation.js';
 import type { TaskStore } from '../tasks/task-store.js';
+import type { TaskTurnCoordinator } from '../tasks/task-turn-coordinator.js';
 import type { WorkspaceRegistry } from '../workspaces/workspace-registry.js';
 import type { AgentManager } from '../agents/agent-manager.js';
 import type { ApprovalCoordinator } from '../approvals/approval-coordinator.js';
@@ -19,7 +21,6 @@ import { normalizeRemoteServerGlobalPrefix, remoteServerRoute } from './remote-s
 interface RemoteServerSessionResponse { sessionId: string; hostToken: string; pairingToken: string; expiresAt: string; connectUrl: string }
 interface RemoteRuntimeSession { publicState: RemoteControlSession; hostToken: string; socket: WebSocket | undefined; keyPair: RemoteKeyPair; cipher: RemoteCipher | undefined; sendChain: Promise<void>; nextSequence: number; lastReceivedSequence: number; reconnectAttempt: number; stopping: boolean; reconnectTimer: ReturnType<typeof setTimeout> | undefined; reconnectStableTimer: ReturnType<typeof setTimeout> | undefined; expiryTimer: ReturnType<typeof setTimeout> | undefined; uploadCleanupTimer: ReturnType<typeof setTimeout> | undefined; uploadStartReservations: number; uploads: Map<string, RemoteUpload>; requestLedger: Map<string, Promise<RemoteResponse>> }
 interface RemoteResponse { type: 'command.result' | 'command.error'; payload: Record<string, unknown> }
-interface QueuedRemotePrompt { taskId: string; prompt: string; agentPrompt?: string; model?: string; skills: string[]; attachmentIds: string[] }
 interface RemoteUpload { uploadId: string; taskId: string; name: string; mimeType: string; sizeBytes: number; chunkCount: number; chunks: Map<number, Buffer>; receivedBytes: number; expiresAt: number; completion?: Promise<unknown> }
 
 const MAX_RECONNECT_DELAY_MS = 15_000;
@@ -27,7 +28,6 @@ const RECONNECT_STABLE_MS = 30_000;
 const MAX_TASKS_PER_WORKSPACE = 100;
 const MAX_ACTIVITY_ITEMS = 100;
 const MAX_PENDING_TRUST_REQUESTS = 100;
-const MAX_QUEUED_PROMPTS_PER_TASK = 20;
 const REMOTE_REQUEST_TIMEOUT_MS = 10_000;
 const REMOTE_UPLOAD_TTL_MS = 5 * 60_000;
 const REMOTE_UPLOAD_CLEANUP_INTERVAL_MS = 60_000;
@@ -37,10 +37,9 @@ export class RemoteControlService {
   private runtime: RemoteRuntimeSession | undefined;
   private readonly listeners = new Set<(event: RemoteControlStateEvent) => void>();
   private readonly pendingTrustRequests = new Map<string, RemoteTrustRequest>();
-  private readonly queuedPrompts = new Map<string, QueuedRemotePrompt[]>();
   private readonly drainingTasks = new Set<string>();
 
-  constructor(private readonly options: { serverUrl: string; globalPrefix: string; enrollmentToken?: string; tasks: TaskStore; workspaces: WorkspaceRegistry; workspaceFileSuggestions: WorkspaceFileSuggestions; agents: AgentManager; approvals: ApprovalCoordinator; artifacts: ArtifactService; logger: DesktopLogger }) {}
+  constructor(private readonly options: { serverUrl: string; globalPrefix: string; enrollmentToken?: string; tasks: TaskStore; taskTurns?: TaskTurnCoordinator; workspaces: WorkspaceRegistry; workspaceFileSuggestions: WorkspaceFileSuggestions; agents: AgentManager; approvals: ApprovalCoordinator; artifacts: ArtifactService; logger: DesktopLogger }) {}
 
   get(): RemoteControlSession | null { return this.runtime?.publicState ?? null; }
   onState(listener: (event: RemoteControlStateEvent) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -91,8 +90,8 @@ export class RemoteControlService {
   observeAgentEvent(event: DesktopEvent): void {
     const taskId = readString(event.data['taskId']);
     if (event.event === 'turn.completed' || event.event === 'turn.failed' || event.event === 'turn.cancelled') {
-      if (taskId !== undefined && this.queuedPrompts.has(taskId)) void this.drainQueuedPrompts(taskId);
-      else if (taskId === undefined && this.queuedPrompts.size > 0) { void this.options.tasks.findBySession(readString(event.data['sessionId']) ?? '').then(task => { if (task) void this.drainQueuedPrompts(task.id); }).catch(() => undefined); }
+      if (taskId !== undefined) scheduleQueueDrain(() => this.drainQueuedPrompts(taskId));
+      else void this.options.tasks.findBySession(readString(event.data['sessionId']) ?? '').then(task => { if (task) scheduleQueueDrain(() => this.drainQueuedPrompts(task.id)); }).catch(() => undefined);
     }
     if (event.event === 'trust.resolved' || event.event === 'trust.responded') {
       const trustRequestId = readString(event.data['trustRequestId']);
@@ -243,11 +242,11 @@ export class RemoteControlService {
     if (task.archived) throw new Error('The selected task is archived.');
     await this.options.artifacts.attachmentInputs(task.id, attachmentIds);
     if (task.status === 'active' && task.turnId !== undefined) {
-      const queue = this.queuedPrompts.get(taskId) ?? [];
+      const queue = await this.options.tasks.queuedPrompts(taskId);
       if (queue.length >= MAX_QUEUED_PROMPTS_PER_TASK) throw new Error('This task already has the maximum number of queued remote prompts.');
       await this.options.tasks.appendActivity(task.id, 'user', prompt, { remote: true, queued: true, ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
-      queue.push({ taskId, prompt, skills, attachmentIds, ...(agentPrompt === undefined ? {} : { agentPrompt }), ...(model === undefined ? {} : { model }) }); this.queuedPrompts.set(taskId, queue);
-      return { queued: true, position: queue.length };
+      await this.options.tasks.queuePrompt(task.id, { prompt, skills, attachmentIds, ...(agentPrompt === undefined ? {} : { agentPrompt }), ...(model === undefined ? {} : { model }) });
+      return { queued: true, position: queue.length + 1 };
     }
     return this.startPrompt(task.id, prompt, model, attachmentIds, skills, agentPrompt);
   }
@@ -255,7 +254,10 @@ export class RemoteControlService {
   private async startPrompt(taskId: string, prompt: string, model?: string, attachmentIds: string[] = [], skills: string[] = [], agentPrompt?: string): Promise<unknown> {
     const task = await this.options.tasks.require(taskId);
     if (task.archived) throw new Error('The selected task is archived.');
-    const attachments = await this.options.artifacts.attachmentInputs(task.id, attachmentIds);
+    const claimToken = this.options.taskTurns?.claim(task.id, task.cwd);
+    let attachments: Awaited<ReturnType<ArtifactService['attachmentInputs']>>;
+    try { attachments = await this.options.artifacts.attachmentInputs(task.id, attachmentIds); }
+    catch (error) { if (claimToken !== undefined) this.options.taskTurns?.release(task.id, claimToken); throw error; }
     let sessionId = task.sessionId;
     if (sessionId === undefined) {
       const initialized = await this.options.agents.initialize(task.cwd);
@@ -272,8 +274,10 @@ export class RemoteControlService {
       const result = await this.options.agents.turnStart(task.cwd, { sessionId, prompt: agentPrompt ?? prompt, taskId: task.id, ...(model === undefined ? {} : { model }), ...(skills.length === 0 ? {} : { skills }), ...(attachments.length === 0 ? {} : { attachments }) });
       const turnId = readString(readRecord(result)?.['turnId']);
       if (turnId !== undefined) await this.options.tasks.update(task.id, { turnId });
+      if (turnId === undefined && claimToken !== undefined) this.options.taskTurns?.release(task.id, claimToken);
       return { accepted: true, ...(turnId === undefined ? {} : { turnId }) };
     } catch (error) {
+      if (claimToken !== undefined) this.options.taskTurns?.release(task.id, claimToken);
       const message = error instanceof Error ? error.message : 'Remote turn failed to start.';
       await this.options.tasks.appendActivity(task.id, 'error', message, { remote: true }).catch(() => undefined);
       await this.options.tasks.setStatus(task.id, 'failed').catch(() => undefined);
@@ -286,11 +290,12 @@ export class RemoteControlService {
     this.drainingTasks.add(taskId);
     try {
       const task = await this.options.tasks.require(taskId).catch(() => undefined);
-      const queue = this.queuedPrompts.get(taskId);
-      if (task === undefined || queue === undefined || queue.length === 0 || task.status === 'active' || task.turnId !== undefined) return;
-      const next = queue.shift();
-      if (queue.length === 0) this.queuedPrompts.delete(taskId); else this.queuedPrompts.set(taskId, queue);
-      if (next !== undefined) await this.startPrompt(next.taskId, next.prompt, next.model, next.attachmentIds, next.skills, next.agentPrompt).catch(error => this.options.tasks.appendActivity(taskId, 'error', error instanceof Error ? error.message : 'Queued remote prompt failed.', { remote: true, queued: true }).catch(() => undefined));
+      const queue = task === undefined ? [] : await this.options.tasks.queuedPrompts(taskId);
+      if (task === undefined || queue.length === 0 || task.status === 'active' || task.turnId !== undefined) return;
+      const next = queue[0]!;
+      await this.startPrompt(taskId, next.prompt, next.model, next.attachmentIds, next.skills, next.agentPrompt)
+        .then(() => this.options.tasks.dequeuePrompt(taskId, next.id))
+        .catch(error => this.options.tasks.appendActivity(taskId, 'error', error instanceof Error ? error.message : 'Queued remote prompt failed.', { remote: true, queued: true }).catch(() => undefined));
     } finally { this.drainingTasks.delete(taskId); }
   }
 
@@ -411,7 +416,7 @@ export class RemoteControlService {
   }
   private expire(): void { const runtime = this.runtime; if (runtime === undefined) return; runtime.stopping = true; runtime.socket?.close(4002, 'Remote session expired.'); runtime.publicState = remoteControlSessionSchema.parse({ ...runtime.publicState, status: 'expired' }); this.emit(); }
   private clearRuntimeTimers(runtime: RemoteRuntimeSession): void { if (runtime.reconnectTimer !== undefined) clearTimeout(runtime.reconnectTimer); if (runtime.reconnectStableTimer !== undefined) clearTimeout(runtime.reconnectStableTimer); if (runtime.expiryTimer !== undefined) clearTimeout(runtime.expiryTimer); if (runtime.uploadCleanupTimer !== undefined) clearTimeout(runtime.uploadCleanupTimer); runtime.reconnectTimer = undefined; runtime.reconnectStableTimer = undefined; runtime.expiryTimer = undefined; runtime.uploadCleanupTimer = undefined; }
-  private clearRuntime(): void { if (this.runtime !== undefined) { this.runtime.stopping = true; this.clearRuntimeTimers(this.runtime); this.runtime.socket?.close(); this.runtime.uploads.clear(); this.runtime.requestLedger.clear(); } this.runtime = undefined; this.queuedPrompts.clear(); this.drainingTasks.clear(); this.pendingTrustRequests.clear(); }
+  private clearRuntime(): void { if (this.runtime !== undefined) { this.runtime.stopping = true; this.clearRuntimeTimers(this.runtime); this.runtime.socket?.close(); this.runtime.uploads.clear(); this.runtime.requestLedger.clear(); } this.runtime = undefined; this.drainingTasks.clear(); this.pendingTrustRequests.clear(); }
 }
 
 function normalizeServerUrl(value: string): string | undefined { const trimmed = value.trim().replace(/\/$/u, ''); if (!trimmed) return undefined; try { const url = new URL(trimmed); if (!['http:', 'https:'].includes(url.protocol)) return undefined; return url.toString().replace(/\/$/u, ''); } catch { return undefined; } }
@@ -421,6 +426,7 @@ function parseServerSession(value: unknown): RemoteServerSessionResponse { if (!
 function isAuthAccepted(value: unknown): boolean { return isRecord(value) && value['type'] === 'auth.accepted'; }
 function isPeerKeyUpdated(value: unknown): boolean { return isRecord(value) && value['type'] === 'peer.key.updated'; }
 function workspaceKey(cwd: string): string { return cwd.replace(/\\/gu, '/').split('/').at(-1) ?? 'workspace'; }
+function scheduleQueueDrain(operation: () => Promise<void>): void { const timer = setTimeout(() => { void operation(); }, 100); timer.unref?.(); }
 function sanitizeValue(value: unknown, depth = 0): unknown { if (typeof value === 'string') return limitText(value); if (value === null || typeof value !== 'object') return value; if (depth > 5) return '[truncated]'; if (Array.isArray(value)) return value.slice(0, 100).map(item => sanitizeValue(item, depth + 1)); if (!isRecord(value)) return value; return Object.fromEntries(Object.entries(value).slice(0, 100).map(([key, item]) => [key, /(?:token|secret|password|authorization|cookie|api[-_]?key|private[-_]?key)/iu.test(key) ? '[redacted]' : sanitizeValue(item, depth + 1)])); }
 function sanitizeCommandResult(command: RemoteCommand, result: unknown): unknown {
   if (command.action !== 'artifact.read') return sanitizeValue(result);

@@ -112,6 +112,10 @@ describe('FileChangesDrawer', () => {
     const fileHeader = document.querySelector<HTMLElement>('.file-change-item-header.is-expandable');
     expect(fileHeader).not.toBeNull();
     if (fileHeader === null) throw new Error('File change header was not rendered.');
+    const filePath = screen.getByText('src/file.ts', { selector: 'strong' });
+    expect(filePath).not.toHaveAttribute('title');
+    fireEvent.pointerMove(filePath, { pointerType: 'mouse' });
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('src/file.ts');
     fireEvent.click(fileHeader);
     expect(fileHeader).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('button', { name: '3 unmodified lines' })).not.toBeInTheDocument();

@@ -10,6 +10,7 @@ import { configureMediaPermissions } from './windows/media-permissions.js';
 import { setApplicationMenu } from './windows/application-menu.js';
 import { WorkspaceRegistry } from './workspaces/workspace-registry.js';
 import { TaskStore } from './tasks/task-store.js';
+import { TaskTurnCoordinator } from './tasks/task-turn-coordinator.js';
 import { TaskEventProjector } from './tasks/task-event-projector.js';
 import { TaskTitleGenerationService } from './tasks/task-title-generation-service.js';
 import { GitService } from './git/git-service.js';
@@ -92,8 +93,8 @@ app.whenReady().then(async () => {
     onSessionExpired: async () => { await remoteControlService?.stop(); await approvalCoordinator?.cancelAll(); await agentManager?.shutdownAll('auth.session-expired'); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('auth.sessionExpired'); },
   });
   const workspaces = new WorkspaceRegistry();
-  const extensionFiles = new ExtensionFileService(workspaces, desktopResourcePath('public-plugins'));
   const tasks = new TaskStore();
+  const taskTurns = new TaskTurnCoordinator();
   const interruptedTasks = await tasks.interruptActive('Desktop restarted before the previous turn completed.');
   if (interruptedTasks.length > 0) logger.warn('tasks.reconciled.interrupted', { count: interruptedTasks.length, reason: 'app-restart' });
   const checkpoints = new CheckpointService({ onError: (error, cwd) => logger.warn('checkpoint.capture.failed', { cwd, message: error instanceof Error ? error.message : 'Unable to capture workspace checkpoint.' }) });
@@ -133,6 +134,7 @@ app.whenReady().then(async () => {
     onEvent: (projectRoot, event) => {
       const executionCwd = typeof event.data['executionCwd'] === 'string' ? event.data['executionCwd'] : undefined;
       logger.debug('agent.event', { projectRoot, executionCwd, event: event.event, ...agentEventLogFields(event.data) });
+      taskTurns.observe(typeof event.data['taskId'] === 'string' ? event.data['taskId'] : undefined, event);
       checkpoints.observeEvent(projectRoot, event);
       if (event.event === 'approval.requested') {
         const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
@@ -180,6 +182,7 @@ app.whenReady().then(async () => {
         void tasks.interruptActiveBySession(sessionId, error.message).catch(() => undefined);
       }
       logger.error('agent.process.exit', { projectRoot, sessionId, approvalCount: approvalIds.length, error: error.message });
+      taskTurns.releaseWorkspace(projectRoot);
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic: { kind: 'protocol', severity: 'error', message: error.message, ...(sessionId === undefined ? {} : { sessionId }) } });
     },
   }, cache, async () => {
@@ -187,12 +190,19 @@ app.whenReady().then(async () => {
     return buildInteractiveDesktopExecutionPolicy(configured.sandbox.hostFallback);
   }, { computerHost: computerBroker !== undefined });
   agentManager = agents;
+  const extensionFiles = new ExtensionFileService(workspaces, desktopResourcePath('public-plugins'), {
+    listPublicPlugins: root => agents.extensionListPublicPlugins(root),
+    resolvePublicPluginSource: (root, name) => agents.extensionResolvePublicPluginSource(root, name),
+    readPublicPluginContribution: (root, input) => agents.extensionReadPublicPluginContribution(root, input),
+    readDetail: (cwd, input) => agents.extensionReadDetail(cwd, input),
+    readPluginIcon: (cwd, input) => agents.extensionReadPluginIcon(cwd, input),
+  });
   void new PublicPluginBootstrapService(extensionFiles, agents, logger, app.getPath('userData')).run().catch(error => logger.warn('public.plugins.bootstrap.failed', { message: error instanceof Error ? error.message : 'Unable to bootstrap bundled public plugins.' }));
   titleGenerationService = new TaskTitleGenerationService(tasks, agents, logger);
   const git = new GitService();
   const automationExecution = new AutomationExecutionService({ workspaces, git, tasks, agents, settings, browserHost, artifacts, logger, sessions: automationSessions });
   const workspaceFileSuggestions = new WorkspaceFileSuggestions();
-  const remoteControl = new RemoteControlService({ serverUrl: runtimeConfig.remoteServerUrl, globalPrefix: runtimeConfig.remoteServerGlobalPrefix, enrollmentToken: runtimeConfig.remoteServerEnrollmentToken, tasks, workspaces, workspaceFileSuggestions, agents, approvals, artifacts, logger });
+  const remoteControl = new RemoteControlService({ serverUrl: runtimeConfig.remoteServerUrl, globalPrefix: runtimeConfig.remoteServerGlobalPrefix, enrollmentToken: runtimeConfig.remoteServerEnrollmentToken, tasks, taskTurns, workspaces, workspaceFileSuggestions, agents, approvals, artifacts, logger });
   remoteControlService = remoteControl;
   remoteControl.onState(event => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('remote-control.state', event);
@@ -212,7 +222,7 @@ app.whenReady().then(async () => {
       if (notification !== undefined) operations.notify(notification.title, notification.body);
     }
   });
-  registerIpc({ auth: new DesktopAuthService(transport, async () => { await remoteControl.stop(); await approvals.cancelAll(); await agents.shutdownAll(); await computerBroker?.close(); }), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions, tasks, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
+  registerIpc({ auth: new DesktopAuthService(transport, async () => { await remoteControl.stop(); await approvals.cancelAll(); await agents.shutdownAll(); await computerBroker?.close(); }), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions, tasks, taskTurns, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); taskTurns.releaseWorkspace(removedWorkspace.rootPath); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }
@@ -230,6 +240,9 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) openMainWindow();
   });
+}).catch(error => {
+  logger.error('app.startup.failed', { message: error instanceof Error ? error.message : 'Desktop startup failed.' });
+  void logger.close().finally(() => app.quit());
 });
 
 app.on('window-all-closed', () => {
@@ -250,7 +263,7 @@ app.on('before-quit', (event) => {
     await computerBroker?.close();
     await taskProjector?.flush();
     await browserService?.closeAll();
-  })().finally(async () => { await logger.close(); app.quit(); });
+  })().catch(error => logger.error('app.shutdown.failed', { message: error instanceof Error ? error.message : 'Desktop shutdown failed.' })).finally(async () => { await logger.close().catch(() => undefined); app.quit(); });
 });
 
 function agentEventLogFields(data: Readonly<Record<string, unknown>>): Record<string, string | number | boolean> {

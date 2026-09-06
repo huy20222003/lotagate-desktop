@@ -353,7 +353,11 @@ export class BrowserService {
 
   private configureTab(entry: BrowserSessionEntry, tab: BrowserTabEntry): void {
     const contents = tab.view.webContents;
-    contents.on('will-navigate', (event, destination) => { if ((!isHttpUrl(destination) && destination !== 'about:blank') || !isAllowedOrigin(destination, entry.settings.originAllowlist)) event.preventDefault(); });
+    const blockDisallowedNavigation = (event: Electron.Event, destination: string): void => {
+      if ((!isHttpUrl(destination) && destination !== 'about:blank') || !isAllowedOrigin(destination, entry.settings.originAllowlist)) event.preventDefault();
+    };
+    contents.on('will-navigate', blockDisallowedNavigation);
+    contents.on('will-redirect', blockDisallowedNavigation);
     contents.setWindowOpenHandler(({ url }) => { appendCapped(entry.evidence.errors, `Blocked popup navigation: ${redact(url)}`, MAX_ERROR_ENTRIES); this.emit(entry); return { action: 'deny' }; });
     contents.on('console-message', details => { appendCapped(entry.evidence.console, { level: consoleLevel(details.level), message: redact(details.message), timestamp: new Date().toISOString() }, MAX_CONSOLE_ENTRIES); this.emit(entry); });
     contents.on('did-start-loading', () => { tab.snapshot.loading = true; this.emit(entry); });

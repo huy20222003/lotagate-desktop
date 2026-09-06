@@ -8,7 +8,7 @@ import { cliRequestTimeout, CLI_PROCESS_CLOSE_TIMEOUT_MS } from './cli-agent-tim
 const MAX_JSONL_LINE_BYTES = 4 * 1024 * 1024;
 const DESKTOP_ATTACHMENT_CHUNK_BYTES = 512 * 1024;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-const REQUIRED_DESKTOP_CAPABILITIES = ['execution-context', 'tool-allowlist', 'approval-reviews', 'lifecycle-controls', 'browser-host', 'execution-broker', 'intent-runtime', 'host-evidence', 'conversational-progress', 'local-memory-commands'] as const;
+const REQUIRED_DESKTOP_CAPABILITIES = ['execution-context', 'tool-allowlist', 'approval-reviews', 'lifecycle-controls', 'browser-host', 'execution-broker', 'intent-runtime', 'host-evidence', 'conversational-progress', 'local-memory-commands', 'extensions'] as const;
 
 export interface CliAgentProcessOptions {
   cwd: string;
@@ -42,6 +42,7 @@ export class CliAgentProcess {
   private initialized = false;
   private initialization: Promise<DesktopAgentResult> | undefined;
   private initializationResult: DesktopAgentResult | undefined;
+  private generation = 0;
 
   constructor(private readonly options: CliAgentProcessOptions, private readonly handler: CliAgentEventHandler) {}
 
@@ -81,7 +82,7 @@ export class CliAgentProcess {
   async request(method: string, requestParams: Record<string, unknown>): Promise<unknown> {
     this.ensureStarted();
     const child = this.child;
-    if (child === undefined || this.stopping) throw new CliAgentProcessError('The CLI agent process is not available.');
+    if (child === undefined || (this.stopping && method !== 'shutdown')) throw new CliAgentProcessError('The CLI agent process is not available.');
     const id = randomUUID();
     const operation = new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -123,6 +124,8 @@ export class CliAgentProcess {
   async shutdown(reason = 'unspecified'): Promise<void> {
     const child = this.child;
     if (child === undefined) return;
+    this.stopping = true;
+    const generation = this.generation;
     this.abortActiveHostRequests();
     this.handler.onDiagnostic?.({ kind: 'protocol', message: `CLI shutdown requested (reason=${reason}, pid=${child.pid ?? 'unknown'}).` });
     try {
@@ -132,7 +135,6 @@ export class CliAgentProcess {
       this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: `CLI shutdown request failed (reason=${reason}, message=${error instanceof Error ? error.message : String(error)}).` });
       // The process may already be exiting; close handling below remains authoritative.
     }
-    this.stopping = true;
     this.handler.onDiagnostic?.({ kind: 'protocol', message: `CLI process termination started (reason=${reason}, pid=${child.pid ?? 'unknown'}).` });
     if (!child.killed) child.kill();
     const closed = await Promise.race([once(child, 'close').then(() => true), delay(CLI_PROCESS_CLOSE_TIMEOUT_MS).then(() => false)]);
@@ -142,6 +144,7 @@ export class CliAgentProcess {
     }
     this.rejectPending(new CliAgentProcessError('The CLI agent process was shut down.'));
     this.child = undefined;
+    if (this.generation === generation) this.lineBuffer = Buffer.alloc(0);
     this.initialized = false;
     this.initializationResult = undefined;
     this.handler.onDiagnostic?.({ kind: 'protocol', message: `CLI process termination completed (reason=${reason}, pid=${child.pid ?? 'unknown'}, exitCode=${child.exitCode ?? 'unknown'}, signal=${child.signalCode ?? 'none'}).` });
@@ -150,6 +153,8 @@ export class CliAgentProcess {
   private ensureStarted(): void {
     if (this.child !== undefined) return;
     this.stopping = false;
+    this.lineBuffer = Buffer.alloc(0);
+    const generation = ++this.generation;
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawn(this.options.executable, [...(this.options.executableArgs ?? []), 'agent', 'desktop'], {
@@ -164,23 +169,24 @@ export class CliAgentProcess {
     }
     this.child = child;
     this.handler.onDiagnostic?.({ kind: 'protocol', message: `CLI process spawned (pid=${child.pid ?? 'unknown'}, cwd=${this.options.cwd}).` });
-    child.stdout.on('data', (chunk: Buffer | string) => this.consumeOutput(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    child.stdout.on('data', (chunk: Buffer | string) => this.consumeOutput(child, generation, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
     child.stderr.on('data', (chunk: Buffer | string) => this.handler.onDiagnostic?.({ kind: 'stderr', severity: 'error', message: `CLI diagnostic output received: ${redactDiagnosticOutput(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : chunk)}` }));
     child.on('error', (error) => {
       this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: `CLI process error (pid=${child.pid ?? 'unknown'}, stopping=${this.stopping}, error=${describeProcessError(error)}).` });
-      this.failProcess(new CliAgentProcessError(`The CLI agent process failed to start: ${describeProcessError(error)}.`, error));
+      this.failProcess(new CliAgentProcessError(`The CLI agent process failed to start: ${describeProcessError(error)}.`, error), child, generation);
     });
     child.on('close', (code, signal) => {
       this.handler.onDiagnostic?.({ kind: 'protocol', severity: this.stopping ? 'info' : 'error', message: `CLI process closed (pid=${child.pid ?? 'unknown'}, code=${code ?? 'unknown'}, signal=${signal ?? 'none'}, stopping=${this.stopping}).` });
-      this.failProcess(new CliAgentProcessError(`The CLI agent process exited (${code ?? 'unknown'}${signal === null ? '' : `, ${signal}`}).`));
+      this.failProcess(new CliAgentProcessError(`The CLI agent process exited (${code ?? 'unknown'}${signal === null ? '' : `, ${signal}`}).`), child, generation);
     });
   }
 
-  private consumeOutput(chunk: Buffer): void {
+  private consumeOutput(child: ChildProcessWithoutNullStreams, generation: number, chunk: Buffer): void {
+    if (this.child !== child || this.generation !== generation) return;
     this.lineBuffer = Buffer.concat([this.lineBuffer, chunk]);
     if (this.lineBuffer.byteLength > MAX_JSONL_LINE_BYTES && !this.lineBuffer.includes(0x0a)) {
       this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: 'CLI JSONL line exceeded the desktop limit.' });
-      this.failProcess(new CliAgentProcessError('The CLI returned an oversized JSONL line.'));
+      this.failProcess(new CliAgentProcessError('The CLI returned an oversized JSONL line.'), child, generation);
       return;
     }
     let newline = this.lineBuffer.indexOf(0x0a);
@@ -188,26 +194,23 @@ export class CliAgentProcess {
       const line = this.lineBuffer.subarray(0, newline);
       this.lineBuffer = this.lineBuffer.subarray(newline + 1);
       if (line.byteLength > MAX_JSONL_LINE_BYTES) {
-        this.failProcess(new CliAgentProcessError('The CLI returned an oversized JSONL line.'));
+        this.failProcess(new CliAgentProcessError('The CLI returned an oversized JSONL line.'), child, generation);
         return;
       }
-      this.consumeLine(line.toString('utf8').replace(/\r$/u, ''));
+      this.consumeLine(line.toString('utf8').replace(/\r$/u, ''), child, generation);
       newline = this.lineBuffer.indexOf(0x0a);
     }
   }
 
-  private consumeLine(line: string): void {
+  private consumeLine(line: string, child: ChildProcessWithoutNullStreams, generation: number): void {
+    if (this.child !== child || this.generation !== generation) return;
     if (line.trim().length === 0) return;
     let value: unknown;
-    try { value = JSON.parse(line); } catch { const error = new CliAgentProcessError('The CLI returned invalid JSONL.'); this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: error.message }); this.failProcess(error); return; }
+    try { value = JSON.parse(line); } catch { const error = new CliAgentProcessError('The CLI returned invalid JSONL.'); this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: error.message }); this.failProcess(error, child, generation); return; }
     try {
       if (isHostRequest(value)) {
         const request = parseDesktopHostRequest(value);
         void this.handleHostRequest(request);
-        return;
-      }
-      if (isHostCancel(value)) {
-        this.activeHostRequests.get(parseHostCancel(value).requestId)?.abort();
         return;
       }
       if (isHostCancel(value)) {
@@ -220,13 +223,13 @@ export class CliAgentProcess {
         if (pending === undefined) {
           const error = new CliAgentProcessError(`The CLI returned an unknown response id for ${response.method}.`);
           this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: error.message });
-          this.failProcess(error);
+          this.failProcess(error, child, generation);
           return;
         }
         if (response.method !== pending.method) {
           const error = new CliAgentProcessError(`The CLI response method did not match the request (expected=${pending.method}, received=${response.method}).`);
           this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: error.message, ...requestContext(pending.requestParams) });
-          this.failProcess(error);
+          this.failProcess(error, child, generation);
           return;
         }
         this.pending.delete(response.id);
@@ -241,7 +244,7 @@ export class CliAgentProcess {
       this.handler.onEvent(event);
     } catch {
       this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: 'CLI returned an invalid Desktop protocol message.' });
-      this.failProcess(new CliAgentProcessError('The CLI returned an invalid Desktop protocol message.'));
+      this.failProcess(new CliAgentProcessError('The CLI returned an invalid Desktop protocol message.'), child, generation);
     }
   }
 
@@ -264,12 +267,14 @@ export class CliAgentProcess {
     catch (error) { this.failProcess(new CliAgentProcessError('Unable to respond to the CLI host request.', error)); }
   }
 
-  private failProcess(error: CliAgentProcessError): void {
+  private failProcess(error: CliAgentProcessError, sourceChild?: ChildProcessWithoutNullStreams, sourceGeneration = this.generation): void {
+    if (sourceChild !== undefined && (this.child !== sourceChild || this.generation !== sourceGeneration)) return;
     if (this.child === undefined && !this.initialized) return;
     const child = this.child;
     this.abortActiveHostRequests();
     this.rejectPending(error);
     this.child = undefined;
+    this.lineBuffer = Buffer.alloc(0);
     this.initialized = false;
     this.initializationResult = undefined;
     if (child !== undefined && !child.killed && child.exitCode === null && child.signalCode === null) child.kill();

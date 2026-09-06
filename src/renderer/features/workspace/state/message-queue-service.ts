@@ -4,6 +4,7 @@ import type { PromptSendOptions } from '../composer/prompt-options.js';
 
 export interface QueuedMessage {
   id: string;
+  taskId?: string;
   prompt: string;
   options?: PromptSendOptions;
   attachments: readonly AttachmentPreview[];
@@ -17,12 +18,16 @@ export class MessageQueueService {
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
   snapshot = (): readonly QueuedMessage[] => this.messages;
 
-  enqueue(prompt: string, attachments: readonly AttachmentPreview[] = [], options?: PromptSendOptions): QueuedMessage {
-    const message = { id: crypto.randomUUID(), prompt, ...(options === undefined ? {} : { options }), attachments: [...attachments], createdAt: Date.now() };
+  enqueue(prompt: string, attachments: readonly AttachmentPreview[] = [], options?: PromptSendOptions, taskId?: string, id?: string, createdAt?: number): QueuedMessage {
+    const message = { id: id ?? crypto.randomUUID(), ...(taskId === undefined ? {} : { taskId }), prompt, ...(options === undefined ? {} : { options }), attachments: [...attachments], createdAt: createdAt ?? Date.now() };
     this.messages = [...this.messages, message];
     this.notify();
     return message;
   }
+
+  replace(messages: readonly QueuedMessage[]): void { this.messages = [...messages]; this.notify(); }
+
+  peekFirst(): QueuedMessage | undefined { return this.messages[0]; }
 
   prepend(message: QueuedMessage): void {
     this.messages = [message, ...this.messages.filter(item => item.id !== message.id)];

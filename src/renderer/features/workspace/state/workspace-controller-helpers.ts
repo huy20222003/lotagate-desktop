@@ -1,4 +1,4 @@
-import type { Activity, Artifact } from '../../../../contracts/ipc/v1/workspace.js';
+import type { Activity, Artifact, QueuedPrompt } from '../../../../contracts/ipc/v1/workspace.js';
 import type { AttachmentPreview } from '../../../services/attachment-types.js';
 import type { QueuedMessage } from './message-queue-service.js';
 
@@ -9,6 +9,17 @@ export async function loadAttachmentPreviews(taskId: string, attachmentIds: read
     const dataUrl = preview?.dataUrl;
     return { id: artifact.id, name: artifact.name, kind: artifact.kind, size: artifact.size, path: artifact.path, ...(dataUrl ? { dataUrl } : {}) };
   }));
+}
+
+export async function toQueuedMessage(taskId: string, prompt: QueuedPrompt): Promise<QueuedMessage> {
+  return { id: prompt.id, taskId, prompt: prompt.prompt, ...(prompt.agentPrompt === undefined && prompt.skills.length === 0 ? {} : { options: { ...(prompt.agentPrompt === undefined ? {} : { agentPrompt: prompt.agentPrompt }), ...(prompt.skills.length === 0 ? {} : { skills: prompt.skills }) } }), attachments: await loadAttachmentPreviews(taskId, prompt.attachmentIds), createdAt: Date.parse(prompt.createdAt) };
+}
+
+export function readAgentError(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim().length > 0) return value;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const message = (value as Record<string, unknown>)['message'];
+  return typeof message === 'string' && message.trim().length > 0 ? message : undefined;
 }
 
 export async function loadActivityAttachmentPreviews(taskId: string, activities: readonly Activity[]): Promise<Record<string, AttachmentPreview[]>> {

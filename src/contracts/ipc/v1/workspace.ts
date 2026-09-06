@@ -17,6 +17,16 @@ export const workspaceSchema = z.object({
 export const taskStatusSchema = z.enum(['queued', 'active', 'completed', 'failed', 'cancelled', 'paused', 'interrupted']);
 export const taskTitleSourceSchema = z.enum(['automatic', 'manual']);
 export const taskTitleSummaryStatusSchema = z.enum(['not_started', 'generating', 'completed', 'failed']);
+export const MAX_QUEUED_PROMPTS_PER_TASK = 20;
+export const queuedPromptSchema = z.object({
+  id: z.string().min(1),
+  prompt: z.string().min(1).max(512 * 1024),
+  agentPrompt: z.string().min(1).max(512 * 1024).optional(),
+  model: z.string().min(1).max(256).optional(),
+  skills: z.array(z.string().min(1).max(256)).max(32).default([]),
+  attachmentIds: z.array(z.string().min(1)).max(16).default([]),
+  createdAt: z.string().datetime(),
+});
 export const DESKTOP_TURN_TIMING_METADATA_KEY = 'desktopTurnTiming' as const;
 export const DESKTOP_COMMAND_TIMING_METADATA_KEY = 'desktopCommandTiming' as const;
 export type DesktopTurnTimingPhase = 'started' | 'completed' | 'failed' | 'cancelled';
@@ -38,6 +48,7 @@ export const taskSchema = z.object({
   archived: z.boolean(),
   draft: z.string(),
   draftAttachmentIds: z.array(z.string().min(1)).default([]),
+  queuedPrompts: queuedPromptSchema.array().max(MAX_QUEUED_PROMPTS_PER_TASK).default([]),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -83,10 +94,11 @@ export const agentEventEnvelopeSchema = z.object({
 export type Workspace = z.infer<typeof workspaceSchema>;
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
 type PersistedTask = z.infer<typeof taskSchema>;
-export type Task = Omit<PersistedTask, 'titleSource' | 'titleSummaryStatus'> & { titleSource?: z.infer<typeof taskTitleSourceSchema>; titleSummaryStatus?: z.infer<typeof taskTitleSummaryStatusSchema> };
+export type Task = Omit<PersistedTask, 'titleSource' | 'titleSummaryStatus' | 'queuedPrompts'> & { titleSource?: z.infer<typeof taskTitleSourceSchema>; titleSummaryStatus?: z.infer<typeof taskTitleSummaryStatusSchema>; queuedPrompts?: QueuedPrompt[] };
 export type Activity = z.infer<typeof activitySchema>;
 export interface ActivityPage { activities: Activity[]; nextCursor: string | null; hasMore: boolean; }
 export type Artifact = z.infer<typeof artifactSchema>;
+export type QueuedPrompt = z.infer<typeof queuedPromptSchema>;
 export interface ArtifactPreview { artifact: Artifact; content?: string; dataUrl?: string; }
 export interface ArtifactMedia { artifact: Artifact; mimeType: string; bytes: Uint8Array; }
 export type TrustRequest = z.infer<typeof trustRequestSchema>;
@@ -147,7 +159,10 @@ export interface DesktopTaskApi {
   onUpdated(listener: (task: Task) => void): () => void;
   create(input: { workspaceId: string; title: string; titleSource?: 'automatic' | 'manual'; prompt?: string }): Promise<Task>;
   rename(taskId: string, title: string): Promise<Task>;
-  update(taskId: string, patch: { title?: string; pinned?: boolean; archived?: boolean; draft?: string; draftAttachmentIds?: string[]; sessionId?: string; turnId?: string; model?: string; lastEventCursor?: number; interruptedReason?: string }): Promise<Task>;
+  update(taskId: string, patch: { title?: string; pinned?: boolean; archived?: boolean; draft?: string; draftAttachmentIds?: string[]; queuedPrompts?: QueuedPrompt[]; sessionId?: string; turnId?: string; model?: string; lastEventCursor?: number; interruptedReason?: string }): Promise<Task>;
+  queuedPrompts(taskId: string): Promise<QueuedPrompt[]>;
+  queuePrompt(taskId: string, input: Omit<QueuedPrompt, 'id' | 'createdAt'>): Promise<QueuedPrompt>;
+  dequeuePrompt(taskId: string, promptId: string): Promise<QueuedPrompt | undefined>;
   setStatus(taskId: string, status: TaskStatus): Promise<Task>;
   retry(taskId: string): Promise<Task>;
   cancel(taskId: string): Promise<Task>;

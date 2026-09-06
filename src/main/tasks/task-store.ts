@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { activitySchema, taskSchema, type Activity, type ActivityPage, type Task, type TaskStatus } from '../../contracts/ipc/v1/workspace.js';
+import { activitySchema, MAX_QUEUED_PROMPTS_PER_TASK, queuedPromptSchema, taskSchema, type Activity, type ActivityPage, type QueuedPrompt, type Task, type TaskStatus } from '../../contracts/ipc/v1/workspace.js';
 import { ActivityLogStore } from '../persistence/activity-log-store.js';
 import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 
-export type TaskUpdate = Partial<Pick<Task, 'title' | 'pinned' | 'archived' | 'draft' | 'draftAttachmentIds' | 'sessionId' | 'turnId' | 'model' | 'lastEventCursor' | 'interruptedReason'>>;
+export type TaskUpdate = Partial<Pick<Task, 'title' | 'pinned' | 'archived' | 'draft' | 'draftAttachmentIds' | 'queuedPrompts' | 'sessionId' | 'turnId' | 'model' | 'lastEventCursor' | 'interruptedReason'>>;
 
 export class TaskStore {
   private readonly taskStore = new JsonFileStore<Task[]>(desktopDataPath('tasks.json'), [], value => taskSchema.array().parse(value));
@@ -28,6 +28,29 @@ export class TaskStore {
 
   async update(taskId: string, patch: TaskUpdate): Promise<Task> {
     return this.withExclusive(() => this.mutate(taskId, current => ({ ...current, ...patch, updatedAt: new Date().toISOString() })));
+  }
+
+  async queuedPrompts(taskId: string): Promise<QueuedPrompt[]> { return (await this.require(taskId)).queuedPrompts ?? []; }
+
+  async queuePrompt(taskId: string, input: Omit<QueuedPrompt, 'id' | 'createdAt'>): Promise<QueuedPrompt> {
+    const queued = queuedPromptSchema.parse({ ...input, id: randomUUID(), createdAt: new Date().toISOString() });
+    await this.withExclusive(() => this.mutate(taskId, current => {
+      const prompts = current.queuedPrompts ?? [];
+      if (current.archived) throw new Error('The selected task is archived.');
+      if (prompts.length >= MAX_QUEUED_PROMPTS_PER_TASK) throw new Error('This task already has the maximum number of queued prompts.');
+      return { ...current, queuedPrompts: [...prompts, queued], updatedAt: queued.createdAt };
+    }));
+    return queued;
+  }
+
+  async dequeuePrompt(taskId: string, promptId: string): Promise<QueuedPrompt | undefined> {
+    let removed: QueuedPrompt | undefined;
+    await this.withExclusive(() => this.mutate(taskId, current => {
+      const prompts = current.queuedPrompts ?? [];
+      removed = prompts.find(prompt => prompt.id === promptId);
+      return { ...current, queuedPrompts: prompts.filter(prompt => prompt.id !== promptId), updatedAt: new Date().toISOString() };
+    }));
+    return removed;
   }
 
   async rename(taskId: string, title: string): Promise<Task> {

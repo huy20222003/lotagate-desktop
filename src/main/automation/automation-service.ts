@@ -7,6 +7,7 @@ import { nextRunAt, validateSchedule } from './schedule.js';
 export type { Automation } from '../../contracts/ipc/v1/automation.js';
 
 const MAX_CONCURRENT_RUNS = 2;
+const AUTOMATION_TEARDOWN_TIMEOUT_MS = 10_000;
 
 export type AutomationExecutionResult = { taskId?: string; sessionId?: string; summary?: string; changedFiles?: string[]; artifactIds?: string[]; executionCwd?: string; branch?: string; worktreePath?: string; reviewRequired?: boolean };
 export type AutomationRunner = (automation: Automation, run: AutomationRun, signal: AbortSignal) => Promise<AutomationExecutionResult>;
@@ -244,10 +245,18 @@ function parseAutomationList(value: unknown): Automation[] {
 
 async function runWithTimeout<T>(operation: () => Promise<T>, timeoutMs: number, controller: AbortController): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new TimeoutError()); }, timeoutMs); });
-  try { return await Promise.race([operation(), timeout]); } finally { if (timer !== undefined) clearTimeout(timer); }
+  let timedOut = false;
+  const operationPromise = operation();
+  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => { timedOut = true; controller.abort(); reject(new TimeoutError()); }, timeoutMs); });
+  try { return await Promise.race([operationPromise, timeout]); }
+  finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (timedOut) await Promise.race([operationPromise.catch(() => undefined), delay(AUTOMATION_TEARDOWN_TIMEOUT_MS)]);
+    else void operationPromise.catch(() => undefined);
+  }
 }
 class TimeoutError extends Error { constructor() { super('Automation run timed out.'); this.name = 'TimeoutError'; } }
+function delay(milliseconds: number): Promise<void> { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 function waitForRetry(milliseconds: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.reject(new Error('Automation run was cancelled by the user.'));
   return new Promise((resolve, reject) => {

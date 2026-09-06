@@ -1,4 +1,4 @@
-import { Children, useState, type ReactNode } from 'react';
+import { Children, type ReactNode } from 'react';
 import { Globe2 } from 'lucide-react';
 import type { Artifact } from '../../../../contracts/ipc/v1/workspace.js';
 import { Icon, Tooltip } from '../../../components/ui.js';
@@ -26,20 +26,16 @@ export function MessageMarkup({ content, fileReferences = [], workspaceCwd, exec
 }
 
 export function MessageExternalLink({ href, children }: { href: string; children?: ReactNode }) {
+  const parsed = parseExternalUrl(href);
+  if (parsed === undefined) return <span>{children ?? href}</span>;
   const label = textContent(children) || websiteLabel(href);
-  return <Tooltip label={href}><a className="message-external-link" href={href} target="_blank" rel="noreferrer"><WebsiteFavicon href={href} label={label} /><span>{label}</span></a></Tooltip>;
+  return <Tooltip label={parsed.toString()}><a className="message-external-link" href={parsed.toString()} target="_blank" rel="noreferrer"><Icon icon={Globe2} size={13} /><span>{label}</span></a></Tooltip>;
 }
 
 function MessageFileLink({ reference }: { reference: MessageFileReference }) {
   const name = fileName(reference.path);
   const FileIcon = fileIconFor({ name, kind: reference.kind });
   return <Tooltip label={reference.path}><a className="message-file-reference" href="#reveal-file" onClick={event => { event.preventDefault(); void window.lotagate.operations.revealPath(reference.path).catch(() => undefined); }}><Icon icon={FileIcon} size={14} /><span>{name}</span></a></Tooltip>;
-}
-
-function WebsiteFavicon({ href, label }: { href: string; label: string }) {
-  const [source, setSource] = useState<'site' | 'proxy' | 'fallback'>('site');
-  if (source === 'fallback') return <Icon icon={Globe2} size={13} label={`${label} website`} />;
-  return <img className="message-link-favicon" src={source === 'site' ? faviconUrl(href) : faviconProxyUrl(href)} alt="" referrerPolicy="no-referrer" onError={() => setSource(current => current === 'site' ? 'proxy' : 'fallback')} />;
 }
 
 function tokenizeMessage(content: string, references: readonly MessageFileReference[], highlightPromptTokens: boolean): MessageToken[] {
@@ -67,7 +63,7 @@ function findNextToken(content: string, cursor: number, references: readonly Mes
   for (const match of content.slice(cursor).matchAll(/https?:\/\/[^\s<>()]+/giu)) {
     const raw = match[0];
     const url = trimUrlPunctuation(raw);
-    if (url.length > 0) candidates.push({ index: cursor + (match.index ?? 0), length: url.length, token: { kind: 'url', url } });
+    if (url.length > 0 && parseExternalUrl(url) !== undefined) candidates.push({ index: cursor + (match.index ?? 0), length: url.length, token: { kind: 'url', url } });
   }
   if (highlightPromptTokens) {
     for (const match of content.slice(cursor).matchAll(/(?:@[^\s]+|\/[A-Za-z0-9][^\s]*)/gu)) {
@@ -121,9 +117,8 @@ function isAbsoluteFilePath(path: string): boolean {
   return !baseName.startsWith('.') && /[^<>:"/\\|?*]+\.[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/u.test(baseName);
 }
 function trimUrlPunctuation(value: string): string { return value.replace(/[.,;:!?]+$/u, '').replace(/[)]$/u, character => value.includes('(') ? character : ''); }
-function faviconUrl(href: string): string { const url = new URL(href); return new URL('/favicon.ico', url.origin).toString(); }
-function faviconProxyUrl(href: string): string { const url = new URL(href); return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url.origin)}&sz=32`; }
-function websiteLabel(href: string): string { return new URL(href).hostname.replace(/^www\./iu, ''); }
+function parseExternalUrl(href: string): URL | undefined { try { const url = new URL(href); return url.protocol === 'http:' || url.protocol === 'https:' ? url : undefined; } catch { return undefined; } }
+function websiteLabel(href: string): string { return parseExternalUrl(href)?.hostname.replace(/^www\./iu, '') ?? href; }
 function textContent(value: ReactNode): string { return Children.toArray(value).filter((item): item is string => typeof item === 'string').join('').trim(); }
 
 function projectPathForDisplay(path: string, projectRoot?: string, executionCwd?: string): string {

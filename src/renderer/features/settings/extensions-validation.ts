@@ -12,5 +12,12 @@ export function validateHookFields(command: string, args: string, timeoutMs: str
 export function validateMcpFields(_type: string, url: string): ValidationErrors { const normalized = url.trim(); if (!z.string().min(1).safeParse(normalized).success) return { url: 'Server URL is required.' }; return httpUrlSchema.safeParse(normalized).success ? {} : { url: 'Server URL must use HTTP or HTTPS.' }; }
 export function validateExtensionName(value: string): string | undefined { const result = extensionNameSchema.safeParse(value.trim().toLowerCase()); return result.success ? undefined : result.error.issues[0]?.message; }
 export function validateExtensionSource(value: string): string | undefined { const source = value.trim(); return z.string().min(1).max(4_096).safeParse(source).success ? undefined : source.length === 0 ? 'Source is required.' : 'Source must not exceed 4,096 characters.'; }
+export function validatePluginIntegrity(sha256: string, signature: string, publicKey: string): ValidationErrors {
+  const errors: ValidationErrors = {};
+  const digest = sha256.trim();
+  if (digest.length > 0 && !/^[a-f0-9]{64}$/iu.test(digest)) errors['sha256'] = 'SHA-256 must contain exactly 64 hexadecimal characters.';
+  if ((signature.trim().length === 0) !== (publicKey.trim().length === 0)) errors['signature'] = 'Signature and public key must be provided together.';
+  return errors;
+}
 export function validateContent(value: string): ValidationErrors { return maxUtf8Bytes(2 * 1024 * 1024).safeParse(value).success ? {} : { content: 'Content must not exceed 2 MB.' }; }
 export function firstValidationError(errors: ValidationErrors): string | undefined { return Object.values(errors).find((value): value is string => value !== undefined); }
