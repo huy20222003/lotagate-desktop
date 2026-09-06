@@ -5,6 +5,8 @@ import type { DesktopHostRequest, DesktopHostResponse } from '../../contracts/ag
 import type { SandboxExecutionProvider } from './sandbox-execution-provider.js';
 import { SandboxUnavailableError } from './sandbox-execution-provider.js';
 import type { FileChangeDiff, FileDiffLine } from '../../contracts/ipc/v1/workspace.js';
+import { requireWorkspaceWritePath } from '../security/path-policy.js';
+import { terminateDesktopProcess } from '../process/process-termination.js';
 
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -69,7 +71,7 @@ export class DesktopHostExecutionBroker {
 
   private async filesystem(root: string, action: string, params: Record<string, unknown>): Promise<unknown> {
     const pathValue = action === 'filesystem.list' ? optionalWorkspacePath(params['path']) : requiredString(params, 'path');
-    const target = action === 'filesystem.write' ? await this.resolveWritePath(root, pathValue) : await this.resolveExistingPath(root, pathValue);
+    const target = action === 'filesystem.write' ? await requireWorkspaceWritePath(pathValue, root) : await this.resolveExistingPath(root, pathValue);
     if (action === 'filesystem.read') {
       const info = await stat(target);
       if (!info.isFile() || info.size > MAX_FILE_BYTES) throw new Error('The requested path is not a supported text file.');
@@ -127,21 +129,6 @@ export class DesktopHostExecutionBroker {
     return canonical;
   }
 
-  private async resolveWritePath(root: string, input: string): Promise<string> {
-    const canonicalRoot = await realpath(root);
-    const candidate = resolve(canonicalRoot, input);
-    assertInside(candidate, canonicalRoot);
-    try {
-      const canonical = await realpath(candidate);
-      assertInside(canonical, canonicalRoot);
-      return canonical;
-    } catch {
-      const parent = await realpath(dirname(candidate));
-      assertInside(parent, canonicalRoot);
-      return candidate;
-    }
-  }
-
   private async exists(path: string): Promise<boolean> { try { await access(path); return true; } catch { return false; } }
   private unsupported(message: string): never { throw new Error(message); }
 }
@@ -153,25 +140,33 @@ function isPowerShellExecutable(command: string): boolean {
 
 function runProcess(command: string, args: string[], cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return new Promise(resolveResult => {
-    const child = spawn(command, args, { cwd, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: safeEnvironment() });
+    const child = spawn(command, args, { cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: safeEnvironment() });
     let stdout = ''; let stderr = ''; let bytes = 0; let truncated = false; let timedOut = false; let settled = false;
+    let stopping = false;
+    let stopResult: Record<string, unknown> | undefined;
+    const finish = (value: Record<string, unknown>) => { if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', abort); resolveResult(value); };
+    const stop = (value: Record<string, unknown>): void => {
+      if (stopping || settled) return;
+      stopping = true;
+      stopResult = value;
+      void terminateDesktopProcess(child).then(() => finish(stopResult ?? value), error => finish({ ...value, terminationConfirmed: false, terminationError: redact(error instanceof Error ? error.message : 'Process termination could not be confirmed.') }));
+    };
     const append = (chunk: Buffer, target: 'stdout' | 'stderr') => {
       if (truncated) return;
       const text = chunk.toString('utf8');
       const remaining = MAX_OUTPUT_BYTES - bytes;
-      if (remaining <= 0) { truncated = true; child.kill(); return; }
+      if (remaining <= 0) { truncated = true; stop({ stdout: redact(stdout), stderr: redact(stderr), exitCode: null, truncated: true }); return; }
       const accepted = Buffer.byteLength(text, 'utf8') <= remaining ? text : text.slice(0, remaining);
       bytes += Buffer.byteLength(accepted, 'utf8');
       if (target === 'stdout') stdout += accepted; else stderr += accepted;
-      if (accepted.length !== text.length) { truncated = true; child.kill(); }
+      if (accepted.length !== text.length) { truncated = true; stop({ stdout: redact(stdout), stderr: redact(stderr), exitCode: null, truncated: true }); }
     };
-    const finish = (value: Record<string, unknown>) => { if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', abort); resolveResult(value); };
-    const abort = () => { child.kill(); finish({ stdout, stderr, exitCode: null, cancelled: true }); };
-    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
+    const abort = () => stop({ stdout: redact(stdout), stderr: redact(stderr), exitCode: null, cancelled: true });
+    const timer = setTimeout(() => { timedOut = true; stop({ stdout: redact(stdout), stderr: redact(stderr), exitCode: null, timedOut: true }); }, timeoutMs);
     child.stdout.on('data', chunk => append(chunk, 'stdout'));
     child.stderr.on('data', chunk => append(chunk, 'stderr'));
-    child.once('error', error => finish({ stdout, stderr: redact(error.message), exitCode: null, error: true }));
-    child.once('close', code => finish({ stdout: redact(stdout), stderr: redact(stderr), exitCode: code, timedOut, truncated }));
+    child.once('error', error => { if (stopping) return; finish({ stdout, stderr: redact(error.message), exitCode: null, error: true }); });
+    child.once('close', code => { if (!stopping) finish({ stdout: redact(stdout), stderr: redact(stderr), exitCode: code, timedOut, truncated }); });
     if (signal?.aborted) abort(); else signal?.addEventListener('abort', abort, { once: true });
   });
 }

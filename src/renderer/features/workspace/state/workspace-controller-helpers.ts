@@ -96,7 +96,9 @@ function readString(value: unknown): string | undefined { return typeof value ==
 export async function discardQueuedAttachments(taskId: string | undefined, messages: readonly QueuedMessage[], activities: readonly Activity[], protectedAttachmentIds: readonly string[]): Promise<void> {
   if (taskId === undefined) return;
   const referencedByActivities = activities.flatMap(activity => readAttachmentIds(activity.metadata['attachmentIds']));
-  const protectedIds = new Set([...protectedAttachmentIds, ...referencedByActivities]);
+  const persistedQueuedPrompts = await window.lotagate.tasks.queuedPrompts(taskId).catch(() => [] as QueuedPrompt[]);
+  const referencedByPersistedQueue = persistedQueuedPrompts.flatMap(prompt => prompt.attachmentIds);
+  const protectedIds = new Set([...protectedAttachmentIds, ...referencedByActivities, ...referencedByPersistedQueue]);
   const attachmentIds = [...new Set(messages.flatMap(message => message.attachments.map(attachment => attachment.id)))];
   for (const attachmentId of attachmentIds) {
     if (protectedIds.has(attachmentId)) continue;

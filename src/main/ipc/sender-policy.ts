@@ -7,7 +7,7 @@ export function assertTrustedRenderer(event: IpcMainEvent | IpcMainInvokeEvent):
   if (event.senderFrame !== event.sender.mainFrame) throw new Error('Only the top-level renderer may invoke desktop IPC.');
   try {
     const parsed = new URL(url);
-    if (parsed.protocol === 'http:' && parsed.hostname === 'localhost') return;
+    if (parsed.protocol === 'http:' && parsed.hostname === 'localhost' && !app.isPackaged && isExpectedDevelopmentRenderer(parsed)) return;
     if (parsed.protocol === 'file:') {
       const framePath = resolve(fileURLToPath(parsed));
       const appPath = resolve(app.getAppPath());
@@ -17,4 +17,15 @@ export function assertTrustedRenderer(event: IpcMainEvent | IpcMainInvokeEvent):
     // Fall through to the common trust error.
   }
   throw new Error('Untrusted renderer sender.');
+}
+
+function isExpectedDevelopmentRenderer(actual: URL): boolean {
+  const configured = process.env['ELECTRON_RENDERER_URL'];
+  if (configured === undefined) return false;
+  try {
+    const expected = new URL(configured);
+    return expected.protocol === 'http:' && expected.hostname === 'localhost' && actual.origin === expected.origin && actual.pathname === expected.pathname;
+  } catch {
+    return false;
+  }
 }

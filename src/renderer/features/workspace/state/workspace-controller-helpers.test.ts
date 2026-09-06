@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Activity } from '../../../../contracts/ipc/v1/workspace.js';
-import { mergeActivities } from './workspace-controller-helpers.js';
+import { discardQueuedAttachments, mergeActivities } from './workspace-controller-helpers.js';
+import type { QueuedMessage } from './message-queue-service.js';
 
 const activity = (id: string, text: string, turnId = 'turn-1'): Activity => ({ id, taskId: 'task-1', kind: 'assistant', text, metadata: { turnId }, createdAt: '2026-08-29T00:00:00.000Z' });
 
@@ -17,5 +18,22 @@ describe('workspace controller activity merging', () => {
     const persisted = activity('streaming:persisted-id', 'The response');
 
     expect(mergeActivities([streaming], [persisted])).toEqual([persisted]);
+  });
+});
+
+describe('workspace controller queued attachment cleanup', () => {
+  it('protects attachments referenced by persisted queued prompts during task switching', async () => {
+    const deleteArtifact = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('window', { lotagate: { tasks: { queuedPrompts: vi.fn().mockResolvedValue([{ attachmentIds: ['persisted-attachment'] }]), deleteArtifact } } });
+    const messages = [{ id: 'queued-1', taskId: 'task-1', prompt: 'queued', attachments: [{ id: 'persisted-attachment' }, { id: 'orphan-attachment' }], createdAt: Date.now() }] as unknown as QueuedMessage[];
+
+    try {
+      await discardQueuedAttachments('task-1', messages, [], []);
+
+      expect(deleteArtifact).toHaveBeenCalledOnce();
+      expect(deleteArtifact).toHaveBeenCalledWith('task-1', 'orphan-attachment', true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

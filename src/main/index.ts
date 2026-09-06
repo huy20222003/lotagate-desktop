@@ -45,7 +45,7 @@ import { RemoteControlService } from './remote-control/remote-control-service.js
 import { DesktopUpdateService } from './updates/desktop-update-service.js';
 import { ComputerHostToolBroker } from './computer/computer-host-tool-broker.js';
 import { ComputerOverlay } from './computer/computer-overlay.js';
-import { WindowsComputerService } from './computer/windows-computer-service.js';
+import { COMPUTER_ACTION_TIMEOUT_MS, WindowsComputerService } from './computer/windows-computer-service.js';
 import { PublicPluginBootstrapService } from './extensions/public-plugin-bootstrap-service.js';
 
 loadRuntimeEnvironment();
@@ -84,14 +84,16 @@ app.whenReady().then(async () => {
   logger.info('app.ready', { platform: process.platform, arch: process.arch });
   await configureWindowsDevelopmentShortcut(desktopAssetPath('lotagate.ico')).catch(error => logger.warn('windows.dev.notification.shortcut.failed', { message: error instanceof Error ? error.message : 'Unable to register the development notification shortcut.' }));
   if (!automationDispatchRequested) { configureMediaPermissions(); setApplicationMenu('login'); }
+  let userContext!: DesktopUserContextService;
   const transport = new ApiTransport({
     baseUrl: runtimeConfig.apiBaseUrl,
     trustedOrigin: runtimeConfig.trustedOrigin,
     partition: runtimeConfig.authPartition,
     logger,
     cache,
-    onSessionExpired: async () => { await remoteControlService?.stop(); await approvalCoordinator?.cancelAll(); await agentManager?.shutdownAll('auth.session-expired'); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('auth.sessionExpired'); },
+    onSessionExpired: async () => { userContext.resetSession(); await remoteControlService?.stop(); await approvalCoordinator?.cancelAll(); await agentManager?.shutdownAll('auth.session-expired'); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('auth.sessionExpired'); },
   });
+  userContext = new DesktopUserContextService(transport, cache);
   const workspaces = new WorkspaceRegistry();
   const tasks = new TaskStore();
   const taskTurns = new TaskTurnCoordinator();
@@ -128,7 +130,7 @@ app.whenReady().then(async () => {
   automationService = automations;
   const automationSessions = new Map<string, { runId: string; cwd: string }>();
   if (process.platform === 'win32') {
-    computerBroker = new ComputerHostToolBroker(new WindowsComputerService(desktopResourcePath('computer-use', 'windows-computer.ps1'), 30_000, async () => (await settings.get()).computer.applicationAllowlist), new ComputerOverlay());
+    computerBroker = new ComputerHostToolBroker(new WindowsComputerService(desktopResourcePath('computer-use', 'windows-computer.ps1'), COMPUTER_ACTION_TIMEOUT_MS, async () => (await settings.get()).computer.applicationAllowlist), new ComputerOverlay());
   }
   const agents = new AgentManager({
     onEvent: (projectRoot, event) => {
@@ -166,7 +168,7 @@ app.whenReady().then(async () => {
     },
     onDiagnostic: (projectRoot, diagnostic) => { logger[diagnostic.severity === 'error' ? 'error' : 'warn']('agent.diagnostic', { projectRoot, kind: diagnostic.kind, message: diagnostic.message, ...(diagnostic.sessionId === undefined ? {} : { sessionId: diagnostic.sessionId }), ...(diagnostic.turnId === undefined ? {} : { turnId: diagnostic.turnId }) }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic }); },
     onHostRequest: async (projectRoot, request, signal) => {
-      if (request.tool === 'browser') return browserHost.handle(projectRoot, request);
+      if (request.tool === 'browser') return browserHost.handle(projectRoot, request, signal);
       if (request.tool === 'computer') {
         if (computerBroker === undefined) throw new Error('Computer Use is unavailable on this platform.');
         return computerBroker.handle(projectRoot, request, signal);
@@ -180,9 +182,9 @@ app.whenReady().then(async () => {
         void browserHost.closeForSession(projectRoot, sessionId);
         if (computerBroker !== undefined) computerBroker.cancelForSession(projectRoot, sessionId);
         void tasks.interruptActiveBySession(sessionId, error.message).catch(() => undefined);
+        taskTurns.releaseSession(sessionId);
       }
       logger.error('agent.process.exit', { projectRoot, sessionId, approvalCount: approvalIds.length, error: error.message });
-      taskTurns.releaseWorkspace(projectRoot);
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic: { kind: 'protocol', severity: 'error', message: error.message, ...(sessionId === undefined ? {} : { sessionId }) } });
     },
   }, cache, async () => {
@@ -222,7 +224,8 @@ app.whenReady().then(async () => {
       if (notification !== undefined) operations.notify(notification.title, notification.body);
     }
   });
-  registerIpc({ auth: new DesktopAuthService(transport, async () => { await remoteControl.stop(); await approvals.cancelAll(); await agents.shutdownAll(); await computerBroker?.close(); }), userContext: new DesktopUserContextService(transport, cache), agents, workspaces, workspaceFileSuggestions, tasks, taskTurns, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); taskTurns.releaseWorkspace(removedWorkspace.rootPath); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
+  const auth = new DesktopAuthService(transport, async () => { await remoteControl.stop(); await approvals.cancelAll(); await agents.shutdownAll(); await computerBroker?.close(); }, () => userContext.resetSession());
+  registerIpc({ auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, taskTurns, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); taskTurns.releaseWorkspace(removedWorkspace.rootPath); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }

@@ -52,3 +52,26 @@ describe('DesktopUserContextService.dashboardStats', () => {
     expect(transport.request).toHaveBeenCalledWith('/organizations/acme/dashboard-stats?startDate=05%2F09%2F2025&endDate=05%2F09%2F2026', 'GET');
   });
 });
+
+describe('DesktopUserContextService session isolation', () => {
+  it('does not let a pre-logout response populate the next session cache', async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    const transport = {
+      request: vi.fn()
+        .mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve; }))
+        .mockResolvedValueOnce({ id: 'organization-new' }),
+    } as unknown as ApiTransport;
+    const cache = { get: vi.fn().mockResolvedValue(undefined), set: vi.fn().mockResolvedValue(undefined) } as unknown as PersistentCache;
+    const service = new DesktopUserContextService(transport, cache);
+    const first = service.organizations();
+    await vi.waitFor(() => expect(transport.request).toHaveBeenCalledOnce());
+
+    service.resetSession();
+    resolveFirst?.({ id: 'organization-old' });
+
+    await expect(first).rejects.toThrow('authenticated session changed');
+    await expect(service.organizations()).resolves.toEqual({ id: 'organization-new' });
+    expect(transport.request).toHaveBeenCalledTimes(2);
+    expect(cache.set).toHaveBeenCalledOnce();
+  });
+});

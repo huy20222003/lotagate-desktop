@@ -6,7 +6,7 @@ export interface ComputerRuntime {
   close?(): Promise<void>;
 }
 
-/** Serializes native input per session/window and owns the visible activity indicator. */
+/** Serializes all native Computer Use actions because mouse and keyboard are machine-global resources. */
 export class ComputerHostToolBroker {
   private readonly queues = new Map<string, Promise<void>>();
   private readonly active = new Map<string, { cwd: string; sessionId: string; controller: AbortController }>();
@@ -15,7 +15,7 @@ export class ComputerHostToolBroker {
 
   async handle(cwd: string, request: DesktopHostRequest, signal?: AbortSignal): Promise<DesktopHostResponse> {
     if (request.tool !== 'computer') return this.error(request, 'COMPUTER_TOOL_MISMATCH', 'The Computer broker received a non-computer request.');
-    const key = `${cwd}\u0000${request.sessionId}\u0000${typeof request.params['windowId'] === 'string' ? request.params['windowId'] : 'global'}`;
+    const key = 'computer-global-input-queue';
     const previous = this.queues.get(key) ?? Promise.resolve();
     let release!: () => void;
     const current = new Promise<void>(resolve => { release = resolve; });

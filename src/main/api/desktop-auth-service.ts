@@ -3,7 +3,7 @@ import { API_PATHS } from './api-contract.js';
 import { ApiTransport, DesktopApiError } from './api-transport.js';
 
 export class DesktopAuthService {
-  constructor(private readonly transport: ApiTransport, private readonly stopAgents?: () => Promise<void>) {}
+  constructor(private readonly transport: ApiTransport, private readonly stopAgents?: () => Promise<void>, private readonly resetUserContext?: () => void | Promise<void>) {}
 
   async getCurrentUser(): Promise<UserProfile | null> {
     try {
@@ -16,10 +16,11 @@ export class DesktopAuthService {
   }
 
   async restoreSession(): Promise<UserProfile | null> {
+    await this.resetUserContext?.();
     if (!(await this.transport.restoreSession())) return null;
     const profile = await this.getCurrentUser();
     if (profile) return profile;
-    await this.transport.clearSession();
+    await this.clearSession();
     return null;
   }
 
@@ -54,8 +55,13 @@ export class DesktopAuthService {
       // longer usable and local logout should still complete successfully.
       if (!(error instanceof DesktopApiError) || error.status !== 401) throw error;
     } finally {
-      await this.transport.clearSession();
+      await this.clearSession();
     }
+  }
+
+  private async clearSession(): Promise<void> {
+    await this.resetUserContext?.();
+    await this.transport.clearSession();
   }
 }
 

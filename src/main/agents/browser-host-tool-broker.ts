@@ -19,6 +19,7 @@ export class BrowserHostToolBroker {
   private readonly runSessions = new Map<string, Set<string>>();
   private readonly runPolicies = new Map<string, AutomationBrowserAccess>();
   private readonly serial = new Map<string, Promise<void>>();
+  private readonly sessionGenerations = new Map<string, number>();
 
   constructor(private readonly browser: BrowserService, private readonly onActivity?: (cwd: string, activity: BrowserHostActivity) => void) {}
 
@@ -29,12 +30,15 @@ export class BrowserHostToolBroker {
     for (const [key, sessionRunId] of this.sessionRuns) if (sessionRunId === runId) this.sessionRuns.delete(key);
   }
   async closeRun(runId: string): Promise<void> {
-    const sessionIds = this.runSessions.get(runId);
-    if (sessionIds !== undefined) {
-      for (const sessionId of sessionIds) {
-        for (const [key, mappedSessionId] of this.sessions) if (mappedSessionId === sessionId) this.sessions.delete(key);
-        await this.browser.close(sessionId);
-      }
+    const browserSessionIds = new Set(this.runSessions.get(runId) ?? []);
+    const keys = new Set<string>();
+    for (const [key, mappedRunId] of this.sessionRuns) if (mappedRunId === runId) keys.add(key);
+    for (const [key, browserSessionId] of this.sessions) if (browserSessionIds.has(browserSessionId)) keys.add(key);
+    const mappedBrowserSessionIds = new Set([...keys].map(key => this.sessions.get(key)).filter((id): id is string => id !== undefined));
+    for (const key of keys) await this.closeForKey(key);
+    for (const browserSessionId of browserSessionIds) {
+      if (mappedBrowserSessionIds.has(browserSessionId)) continue;
+      await this.browser.close(browserSessionId);
     }
     this.runSessions.delete(runId);
     this.runPolicies.delete(runId);
@@ -42,24 +46,43 @@ export class BrowserHostToolBroker {
   }
 
   async closeForSession(cwd: string, sessionId: string): Promise<void> {
-    const key = `${cwd}\u0000${sessionId}`;
+    await this.closeForKey(`${cwd}\u0000${sessionId}`);
+  }
+
+  private async closeForKey(key: string): Promise<void> {
+    this.bumpGeneration(key);
     const browserSessionId = this.sessions.get(key);
     this.sessions.delete(key);
     this.sessionRuns.delete(key);
-    if (browserSessionId === undefined) return;
-    await this.browser.close(browserSessionId);
-    for (const [runId, sessionIds] of this.runSessions) {
-      sessionIds.delete(browserSessionId);
-      if (sessionIds.size === 0) this.runSessions.delete(runId);
+    try {
+      if (browserSessionId !== undefined) await this.browser.close(browserSessionId);
+    } finally {
+      for (const [runId, sessionIds] of this.runSessions) {
+        if (browserSessionId !== undefined) sessionIds.delete(browserSessionId);
+        if (sessionIds.size === 0) this.runSessions.delete(runId);
+      }
+      this.cleanupGeneration(key);
     }
   }
 
-  async handle(cwd: string, request: DesktopHostRequest): Promise<DesktopHostResponse> {
+  async handle(cwd: string, request: DesktopHostRequest, signal?: AbortSignal): Promise<DesktopHostResponse> {
     const key = `${cwd}\u0000${request.sessionId}`;
+    const generation = this.sessionGenerations.get(key) ?? 0;
     const previous = this.serial.get(key) ?? Promise.resolve();
-    const operation = previous.catch(() => undefined).then(() => this.execute(cwd, request));
+    let active = false;
+    const operation = previous.catch(() => undefined).then(async () => {
+      this.assertActive(key, generation, signal);
+      active = true;
+      try {
+        return await this.execute(cwd, request, key, generation, signal);
+      } finally {
+        active = false;
+      }
+    });
     const barrier = operation.then(() => undefined, () => undefined);
     this.serial.set(key, barrier);
+    const onAbort = (): void => { if (active) void this.closeForKey(key).catch(() => undefined); };
+    signal?.addEventListener('abort', onAbort, { once: true });
     try {
       return await operation;
     } catch (error) {
@@ -77,26 +100,36 @@ export class BrowserHostToolBroker {
         },
       };
     } finally {
-      if (this.serial.get(key) === barrier) this.serial.delete(key);
+      signal?.removeEventListener('abort', onAbort);
+      if (this.serial.get(key) === barrier) {
+        this.serial.delete(key);
+        this.cleanupGeneration(key);
+      }
     }
   }
 
   async closeForWorkspace(cwd: string): Promise<void> {
     const prefix = `${cwd}\u0000`;
-    const sessionIds = [...this.sessions.keys()].filter(key => key.startsWith(prefix)).map(key => key.slice(prefix.length));
-    for (const sessionId of sessionIds) await this.closeForSession(cwd, sessionId);
+    const keys = new Set<string>();
+    for (const key of this.sessions.keys()) if (key.startsWith(prefix)) keys.add(key);
+    for (const key of this.sessionRuns.keys()) if (key.startsWith(prefix)) keys.add(key);
+    for (const key of this.serial.keys()) if (key.startsWith(prefix)) keys.add(key);
+    for (const key of keys) await this.closeForKey(key);
     for (const key of this.sessionRuns.keys()) if (key.startsWith(prefix)) this.sessionRuns.delete(key);
   }
 
-  private async execute(cwd: string, request: DesktopHostRequest): Promise<DesktopHostResponse> {
+  private async execute(cwd: string, request: DesktopHostRequest, key: string, generation: number, signal?: AbortSignal): Promise<DesktopHostResponse> {
+    this.assertActive(key, generation, signal);
     const policyRunId = this.sessionRuns.get(`${cwd}\u0000${request.sessionId}`) ?? request.runId;
     assertBrowserAccess(request, this.runPolicies.get(policyRunId));
-    const browserSessionId = await this.ensureSession(cwd, request);
+    const browserSessionId = await this.ensureSession(cwd, request, key, generation, signal);
+    this.assertActive(key, generation, signal);
     const tabId = optionalId(request.params['tabId']);
     const activeTabId = tabId ?? this.browser.get(browserSessionId).activeTabId;
     this.onActivity?.(cwd, { event: 'browser.action.started', data: { sessionId: request.sessionId, runId: request.runId, browserSessionId, tabId: activeTabId, action: request.action } });
     try {
       const result = await this.runAction(cwd, browserSessionId, activeTabId, request.action, request.params);
+      this.assertActive(key, generation, signal);
       this.onActivity?.(cwd, { event: 'browser.action.completed', data: { sessionId: request.sessionId, runId: request.runId, browserSessionId, tabId: activeTabId, action: request.action, success: true } });
       return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: true, result: { browserSessionId, tabId: activeTabId, ...asRecord(result) } };
     } catch (error) {
@@ -105,13 +138,17 @@ export class BrowserHostToolBroker {
     }
   }
 
-  private async ensureSession(cwd: string, request: DesktopHostRequest): Promise<string> {
-    const key = `${cwd}\u0000${request.sessionId}`;
+  private async ensureSession(cwd: string, request: DesktopHostRequest, key: string, generation: number, signal?: AbortSignal): Promise<string> {
+    this.assertActive(key, generation, signal);
     const existing = this.sessions.get(key);
     if (existing !== undefined) return existing;
     // Agent browser profiles must be isolated by the owning CLI session. The
     // human-operated browser keeps its existing default profile separately.
     const snapshot = await this.browser.create(`${cwd}\u0000${request.sessionId}`);
+    if ((this.sessionGenerations.get(key) ?? 0) !== generation || signal?.aborted === true) {
+      await this.browser.close(snapshot.id).catch(() => undefined);
+      throw new Error('Browser action was cancelled.');
+    }
     this.sessions.set(key, snapshot.id);
     const policyRunId = this.sessionRuns.get(`${cwd}\u0000${request.sessionId}`) ?? request.runId;
     const runSessions = this.runSessions.get(policyRunId) ?? new Set<string>();
@@ -119,6 +156,16 @@ export class BrowserHostToolBroker {
     this.runSessions.set(policyRunId, runSessions);
     this.onActivity?.(cwd, { event: 'browser.session.created', data: { sessionId: request.sessionId, runId: request.runId, browserSessionId: snapshot.id, tabId: snapshot.activeTabId } });
     return snapshot.id;
+  }
+
+  private assertActive(key: string, generation: number, signal?: AbortSignal): void {
+    if (signal?.aborted === true || (this.sessionGenerations.get(key) ?? 0) !== generation) throw new Error('Browser action was cancelled.');
+  }
+
+  private bumpGeneration(key: string): void { this.sessionGenerations.set(key, (this.sessionGenerations.get(key) ?? 0) + 1); }
+
+  private cleanupGeneration(key: string): void {
+    if (!this.sessions.has(key) && !this.sessionRuns.has(key) && !this.serial.has(key)) this.sessionGenerations.delete(key);
   }
 
   private async runAction(cwd: string, sessionId: string, activeTabId: string, action: string, params: Record<string, unknown>): Promise<unknown> {

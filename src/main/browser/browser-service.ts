@@ -15,7 +15,8 @@ export interface BrowserConsoleSnapshot { tab: BrowserTabSnapshot; console: Brow
 export interface BrowserNetworkEntry { tabId: string; method: string; url: string; resourceType: string; statusCode?: number; fromCache?: boolean; error?: string; timestamp: string; }
 export interface BrowserAccessibilitySnapshot { tab: BrowserTabSnapshot; nodes: BrowserAccessibilityNode[]; }
 type BrowserTabEntry = { view: WebContentsView; snapshot: BrowserTabSnapshot; viewport: BrowserViewport | undefined };
-type BrowserSessionEntry = { id: string; browserSession: Session; settings: BrowserSettings; tabs: Map<string, BrowserTabEntry>; activeTabId: string; evidence: BrowserEvidence; network: BrowserNetworkEntry[]; dialogs: Map<string, BrowserDialog>; downloadState: BrowserDownloadState; createdAt: string; recordingTimer: ReturnType<typeof setInterval> | undefined; retentionTimer: ReturnType<typeof setTimeout> | undefined; recordingCaptureInFlight: boolean };
+type BrowserDownloadListener = (event: Electron.Event, item: Electron.DownloadItem) => void;
+type BrowserSessionEntry = { id: string; browserSession: Session; settings: BrowserSettings; tabs: Map<string, BrowserTabEntry>; activeTabId: string; evidence: BrowserEvidence; network: BrowserNetworkEntry[]; dialogs: Map<string, BrowserDialog>; downloadState: BrowserDownloadState; createdAt: string; recordingTimer: ReturnType<typeof setInterval> | undefined; retentionTimer: ReturnType<typeof setTimeout> | undefined; recordingCaptureInFlight: boolean; downloadListener?: BrowserDownloadListener };
 type BrowserStateListener = (snapshot: BrowserSessionSnapshot) => void;
 
 const MAX_CONSOLE_ENTRIES = 200;
@@ -90,6 +91,7 @@ export class BrowserService {
     if (entry.recordingTimer) clearInterval(entry.recordingTimer);
     if (entry.retentionTimer) clearTimeout(entry.retentionTimer);
     if (entry.downloadState.pending !== undefined) { clearTimeout(entry.downloadState.pending.timer); entry.downloadState.pending.reject(new Error('Browser session closed before the download completed.')); entry.downloadState.pending = undefined; }
+    if (entry.downloadListener !== undefined) entry.browserSession.removeListener('will-download', entry.downloadListener);
     if (entry.settings.clearDataOnClose || entry.settings.sessionRetention === 'ttl') {
       await entry.browserSession.clearStorageData().catch(() => undefined);
       await Promise.all([...entry.evidence.screenshots, ...entry.evidence.recordings].map(path => unlink(path).catch(() => undefined)));
@@ -382,7 +384,7 @@ export class BrowserService {
       });
       entry.browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
       entry.browserSession.setPermissionCheckHandler(() => false);
-      entry.browserSession.on('will-download', (_event, item) => {
+      const onWillDownload: BrowserDownloadListener = (_event, item) => {
         const pending = entry.downloadState.pending;
         if (pending === undefined) { item.cancel(); appendCapped(entry.evidence.errors, 'Downloads require an explicit approved desktop download action.', MAX_ERROR_ENTRIES); this.emit(entry); return; }
         entry.downloadState.pending = undefined;
@@ -392,7 +394,9 @@ export class BrowserService {
           if (state !== 'completed') { pending.reject(new Error(`Browser download ${state}.`)); return; }
           pending.resolve({ found: true, path: pending.path, filename: item.getFilename(), sizeBytes: item.getReceivedBytes(), description: `Downloaded ${item.getFilename()} to the Desktop downloads folder.` });
         });
-      });
+      };
+      entry.downloadListener = onWillDownload;
+      entry.browserSession.on('will-download', onWillDownload);
     }
   }
 

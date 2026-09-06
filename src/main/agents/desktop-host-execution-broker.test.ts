@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -24,6 +24,24 @@ describe('DesktopHostExecutionBroker', () => {
       const outside = await broker.handle(root, request('filesystem', 'filesystem.read', { path: '../outside.txt' }));
       expect(outside).toMatchObject({ ok: false, error: { code: 'HOST_EXECUTION_FAILED' } });
     } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('rejects writes through a workspace symlink', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-host-symlink-root-'));
+    const outside = await mkdtemp(join(tmpdir(), 'lotagate-host-symlink-outside-'));
+    try {
+      const outsideFile = join(outside, 'outside.txt');
+      await writeFile(outsideFile, 'original', 'utf8');
+      await symlink(outside, join(root, 'linked'), process.platform === 'win32' ? 'junction' : undefined);
+      const broker = new DesktopHostExecutionBroker();
+
+      const result = await broker.handle(root, request('filesystem', 'filesystem.write', { path: 'linked/outside.txt', content: 'must not escape' }));
+
+      expect(result).toMatchObject({ ok: false, error: { code: 'HOST_EXECUTION_FAILED' } });
+      expect(await readFile(outsideFile, 'utf8')).toBe('original');
+    } finally {
+      await Promise.all([rm(root, { recursive: true, force: true }), rm(outside, { recursive: true, force: true })]);
+    }
   });
 
   it('lists the workspace root when the filesystem list path is omitted', async () => {

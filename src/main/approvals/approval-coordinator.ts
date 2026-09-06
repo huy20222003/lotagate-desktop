@@ -36,7 +36,7 @@ export class ApprovalCoordinator {
     const request = desktopApprovalRequestSchema.parse({ ...parsed, approvalId: parsed.approvalId ?? randomUUID(), requestedAt: new Date().toISOString() });
     if (this.pending.has(request.approvalId)) throw new Error('An approval with this id is already pending.');
     return new Promise<DesktopApprovalResolution>((resolve, reject) => {
-      const timer = setTimeout(() => { void this.respond(request.approvalId, false).catch(() => undefined); }, request.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+      const timer = setTimeout(() => this.expire(request.approvalId), request.timeoutMs ?? DEFAULT_TIMEOUT_MS);
       this.pending.set(request.approvalId, { request, resolve, reject, ...(onDecision === undefined ? {} : { onDecision }), ...(options?.isAvailable === undefined ? {} : { isAvailable: options.isAvailable }), timer });
       for (const listener of this.listeners) listener(request);
     });
@@ -93,6 +93,11 @@ export class ApprovalCoordinator {
     const resolution = { approvalId: pending.request.approvalId, approved: false };
     pending.resolve(resolution);
     for (const listener of this.resolutionListeners) listener(resolution);
+  }
+
+  private expire(approvalId: string): void {
+    const pending = this.pending.get(approvalId);
+    if (pending !== undefined) this.resolveCancelled(pending);
   }
 }
 

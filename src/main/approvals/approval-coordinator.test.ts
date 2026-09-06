@@ -89,4 +89,19 @@ describe('ApprovalCoordinator', () => {
     expect(onDecision).not.toHaveBeenCalled();
     expect(coordinator.listPending()).toEqual([]);
   });
+
+  it('expires an owner-scoped approval without requiring an owner from the timer', async () => {
+    vi.useFakeTimers();
+    try {
+      const coordinator = new ApprovalCoordinator();
+      const pending = coordinator.request({ source: 'agent', surface: 'composer', sessionId: 'session-a', taskId: 'task-a', toolName: 'filesystem.write', detail: {}, timeoutMs: 10_000 });
+
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(pending).resolves.toMatchObject({ approved: false });
+      expect(coordinator.listPending()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

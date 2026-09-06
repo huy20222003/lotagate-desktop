@@ -100,6 +100,45 @@ describe('BrowserHostToolBroker', () => {
     expect(browser.close).toHaveBeenCalledOnce();
     expect(browser.close).toHaveBeenCalledWith('browser-1');
   });
+
+  it('does not repopulate a browser session after close cancels a pending creation', async () => {
+    let resolveCreate: ((snapshot: typeof browserSnapshot) => void) | undefined;
+    const browser = {
+      create: vi.fn(() => new Promise<typeof browserSnapshot>(resolve => { resolveCreate = resolve; })),
+      close: vi.fn().mockResolvedValue(undefined),
+      get: vi.fn().mockReturnValue(browserSnapshot),
+    } as unknown as BrowserService;
+    const broker = new BrowserHostToolBroker(browser);
+    const pending = broker.handle('C:\\workspace', request('browser.tabs', {}));
+    await vi.waitFor(() => expect(browser.create).toHaveBeenCalledOnce());
+
+    await broker.closeForSession('C:\\workspace', 'session-1');
+    resolveCreate?.(browserSnapshot);
+
+    await expect(pending).resolves.toMatchObject({ ok: false, error: { code: 'BROWSER_HOST_ERROR' } });
+    expect(browser.close).toHaveBeenCalledWith('browser-1');
+    expect(browser.get).not.toHaveBeenCalled();
+  });
+
+  it('closes the owned browser session when an active action is cancelled', async () => {
+    let resolveNavigate: (() => void) | undefined;
+    const browser = {
+      create: vi.fn().mockResolvedValue(browserSnapshot),
+      get: vi.fn().mockReturnValue(browserSnapshot),
+      navigate: vi.fn(() => new Promise<void>(resolve => { resolveNavigate = resolve; })),
+      close: vi.fn().mockResolvedValue(undefined),
+    } as unknown as BrowserService;
+    const broker = new BrowserHostToolBroker(browser);
+    const controller = new AbortController();
+    const pending = broker.handle('C:\\workspace', request('browser.navigate', { url: 'https://example.test' }), controller.signal);
+    await vi.waitFor(() => expect(browser.navigate).toHaveBeenCalledOnce());
+
+    controller.abort();
+    await vi.waitFor(() => expect(browser.close).toHaveBeenCalledWith('browser-1'));
+    resolveNavigate?.();
+
+    await expect(pending).resolves.toMatchObject({ ok: false, error: { code: 'BROWSER_HOST_ERROR', message: 'Browser action was cancelled.' } });
+  });
 });
 
 function request(action: string, params: Record<string, unknown>): DesktopHostRequest {

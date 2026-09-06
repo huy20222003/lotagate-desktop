@@ -20,7 +20,7 @@ handle('agent.shutdown', async (event, cwd: unknown) => {
 handle('agent.sessionCreate', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.sessionCreate(await requireWorkspaceCwd(cwd), objectSchema.parse(input) as { model?: string; name?: string }); });
 handle('agent.sessionList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.sessionList(await requireWorkspaceCwd(cwd)); });
 handle('agent.sessionResume', async (event, cwd: unknown, sessionId: unknown) => { assertTrustedRenderer(event); return agents.sessionResume(await requireWorkspaceCwd(cwd), idSchema.parse(sessionId)); });
-handle('agent.turnClaim', async (event, cwd: unknown, taskId: unknown) => { assertTrustedRenderer(event); const canonicalCwd = await requireWorkspaceCwd(cwd); const id = idSchema.parse(taskId); await tasks.requireForCwd(id, canonicalCwd); return context.taskTurns.claim(id, canonicalCwd); });
+handle('agent.turnClaim', async (event, cwd: unknown, taskId: unknown, sessionId?: unknown) => { assertTrustedRenderer(event); const canonicalCwd = await requireWorkspaceCwd(cwd); const id = idSchema.parse(taskId); await tasks.requireForCwd(id, canonicalCwd); const owner = sessionId === undefined ? undefined : idSchema.parse(sessionId); return context.taskTurns.claim(id, canonicalCwd, owner); });
 handle('agent.turnRelease', async (event, taskId: unknown, token: unknown) => { assertTrustedRenderer(event); context.taskTurns.release(idSchema.parse(taskId), idSchema.parse(token)); });
 handle('agent.turnStart', async (event, cwd: unknown, input: unknown) => {
     assertTrustedRenderer(event);
@@ -37,7 +37,7 @@ handle('agent.turnStart', async (event, cwd: unknown, input: unknown) => {
     const reasoningEffort = value['reasoningEffort'] === undefined ? undefined : parseReasoningEffort(value['reasoningEffort']);
     let claimToken = turnClaimToken;
     if (taskId !== undefined && claimToken === undefined) claimToken = context.taskTurns.claim(taskId, canonicalCwd);
-    if (taskId !== undefined && claimToken !== undefined && !context.taskTurns.owns(taskId, claimToken)) throw new Error('The task turn claim is invalid or expired.');
+    if (taskId !== undefined && claimToken !== undefined) { if (!context.taskTurns.owns(taskId, claimToken)) throw new Error('The task turn claim is invalid or expired.'); context.taskTurns.bind(taskId, claimToken, sessionId); }
     try {
       return await agents.turnStart(canonicalCwd, { sessionId, prompt: z.string().min(1).max(512 * 1024).parse(value['prompt']), ...(value['model'] === undefined ? {} : { model: z.string().min(1).max(256).parse(value['model']) }), ...(reasoningEffort === undefined ? {} : { reasoningEffort }), ...(taskId === undefined ? {} : { taskId }), ...(skills === undefined ? {} : { skills }), ...(attachments.length === 0 ? {} : { attachments }) });
     } catch (error) {

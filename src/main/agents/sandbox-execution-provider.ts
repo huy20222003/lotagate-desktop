@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import type { FileChangeDiff } from '../../contracts/ipc/v1/workspace.js';
 import type { SandboxBackend, SandboxCleanupPolicy, SandboxMountMode, SandboxNetworkPolicy } from '../../contracts/ipc/v1/settings.js';
+import { terminateDesktopProcess } from '../process/process-termination.js';
 
 const DEFAULT_RUNTIME = 'docker';
 const DEFAULT_IMAGE = 'node:22-bookworm-slim';
@@ -69,13 +70,17 @@ export class ContainerSandboxExecutionProvider implements SandboxExecutionProvid
     for (const runtime of runtimeExecutables) {
       const containerName = `lotagate-sandbox-${randomUUID()}`;
       const response = await runContainer(runtime, [
-        'run', ...(cleanup === 'always' ? ['--rm'] : []), '--name', containerName, '--init', '--network', network === 'none' ? 'none' : 'bridge',
+        'run', '--interactive', ...(cleanup === 'always' ? ['--rm'] : []), '--name', containerName, '--init', '--network', network === 'none' ? 'none' : 'bridge',
         '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', String(pidsLimit),
         '--memory', `${memoryMb}m`, '--cpus', String(cpuCores), '--mount', `type=bind,source=${root},target=/workspace${mountMode === 'read-only' ? ',readonly' : ''}`,
         '--workdir', '/workspace', image, 'node', '-e', CONTAINER_SCRIPT,
       ], payload, timeoutMs, input.signal);
+      if (response.cancelled || response.timedOut) {
+        await removeContainer(runtime, containerName).catch(() => undefined);
+        throw new Error(response.message);
+      }
       if (response.unavailable) { unavailable = new SandboxUnavailableError(response.message); continue; }
-      if (response.exitCode !== 0) throw new Error(response.stderr.trim() || `Sandbox process exited with code ${String(response.exitCode)}.`);
+      if (response.exitCode !== 0) throw new Error(response.message || response.stderr.trim() || `Sandbox process exited with code ${String(response.exitCode)}.`);
       let parsed: unknown;
       try { parsed = JSON.parse(response.stdout); }
       catch { throw new Error('The sandbox returned an invalid execution result.'); }
@@ -98,14 +103,17 @@ function runtimeCandidates(backend: SandboxBackend | undefined): readonly string
   return [DEFAULT_RUNTIME, 'podman'];
 }
 
-function runContainer(executable: string, args: string[], input: string, timeoutMs: number, signal?: AbortSignal): Promise<{ stdout: string; stderr: string; exitCode: number | null; unavailable: boolean; message: string }> {
+type ContainerRunResult = { stdout: string; stderr: string; exitCode: number | null; unavailable: boolean; message: string; cancelled?: boolean; timedOut?: boolean; terminationConfirmed?: boolean };
+
+function runContainer(executable: string, args: string[], input: string, timeoutMs: number, signal?: AbortSignal): Promise<ContainerRunResult> {
+  if (signal?.aborted === true) return Promise.resolve({ stdout: '', stderr: '', exitCode: null, unavailable: false, message: 'Sandbox execution was cancelled.', cancelled: true, terminationConfirmed: true });
   return new Promise(resolve => {
-    const child = spawn(executable, args, { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(executable, args, { shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let outputBytes = 0;
-    let timedOut = false;
     let settled = false;
+    let stopping = false;
     const append = (target: 'stdout' | 'stderr', chunk: Buffer): void => {
       if (outputBytes >= MAX_OUTPUT_BYTES) return;
       const remaining = MAX_OUTPUT_BYTES - outputBytes;
@@ -114,22 +122,31 @@ function runContainer(executable: string, args: string[], input: string, timeout
       outputBytes += Buffer.byteLength(accepted, 'utf8');
       if (target === 'stdout') stdout += accepted; else stderr += accepted;
     };
-    const finish = (exitCode: number | null, unavailable: boolean, message: string): void => {
+    const finish = (value: ContainerRunResult): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
-      resolve({ stdout, stderr, exitCode, unavailable, message });
+      resolve(value);
     };
-    const abort = (): void => { child.kill(); finish(null, false, 'Sandbox execution was cancelled.'); };
-    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
+    const stop = (value: ContainerRunResult): void => {
+      if (stopping || settled) return;
+      stopping = true;
+      void terminateDesktopProcess(child).then(() => finish({ ...value, terminationConfirmed: true }), error => finish({ ...value, terminationConfirmed: false, message: `${value.message} ${error instanceof Error ? error.message : 'Process termination could not be confirmed.'}` }));
+    };
+    const abort = (): void => stop({ stdout, stderr, exitCode: null, unavailable: false, message: 'Sandbox execution was cancelled.', cancelled: true });
+    const timer = setTimeout(() => stop({ stdout, stderr, exitCode: null, unavailable: false, message: `Sandbox execution timed out after ${timeoutMs}ms.`, timedOut: true }), timeoutMs);
     child.stdout.on('data', chunk => append('stdout', Buffer.from(chunk)));
     child.stderr.on('data', chunk => append('stderr', Buffer.from(chunk)));
-    child.once('error', error => { const code = (error as NodeJS.ErrnoException).code; finish(null, code === 'ENOENT', code === 'ENOENT' ? `Sandbox runtime "${executable}" was not found.` : error.message); });
+    child.once('error', error => {
+      if (stopping) return;
+      const code = (error as NodeJS.ErrnoException).code;
+      finish({ stdout, stderr, exitCode: null, unavailable: code === 'ENOENT', message: code === 'ENOENT' ? `Sandbox runtime "${executable}" was not found.` : error.message });
+    });
     child.once('close', code => {
-      if (timedOut) finish(code, false, `Sandbox execution timed out after ${timeoutMs}ms.`);
-      else if (code === 125 || code === 126) finish(code, true, redactUnavailable(stderr, executable));
-      else finish(code, false, '');
+      if (stopping) return;
+      if (code === 125 || code === 126) finish({ stdout, stderr, exitCode: code, unavailable: true, message: redactUnavailable(stderr, executable) });
+      else finish({ stdout, stderr, exitCode: code, unavailable: false, message: '' });
     });
     child.stdin.end(input);
     if (signal?.aborted === true) abort(); else signal?.addEventListener('abort', abort, { once: true });

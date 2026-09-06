@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
     session: {
       fromPartition: vi.fn(() => ({
         on: vi.fn(),
+        removeListener: vi.fn(),
         webRequest: { onCompleted: vi.fn(), onErrorOccurred: vi.fn() },
         setPermissionCheckHandler: vi.fn(),
         setPermissionRequestHandler: vi.fn(),
@@ -96,5 +97,17 @@ describe('BrowserService layout lifecycle', () => {
     expect(typeof script).toBe('string');
     expect(script as string).toContain('const action = "click";');
     await service.close(snapshot.id);
+  });
+
+  it('removes the session download listener when the browser session closes', async () => {
+    const service = new BrowserService();
+    const snapshot = await service.create();
+    const browserSession = mocks.session.fromPartition.mock.results.at(-1)?.value as { on: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
+    const listener = browserSession.on.mock.calls.find((call: unknown[]) => call[0] === 'will-download')?.[1];
+
+    await service.close(snapshot.id);
+
+    expect(listener).toEqual(expect.any(Function));
+    expect(browserSession.removeListener).toHaveBeenCalledWith('will-download', listener);
   });
 });

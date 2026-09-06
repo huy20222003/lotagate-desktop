@@ -1,6 +1,19 @@
 ---
 name: computer-use
 description: Control approved Windows applications through LotaGate's native Computer Use tools.
+allowed-tools:
+  - computer.listWindows
+  - computer.inspect
+  - computer.screenshot
+  - computer.focus
+  - computer.click
+  - computer.type
+  - computer.keypress
+  - computer.scroll
+  - computer.drag
+  - computer.launch
+  - computer.wait
+  - computer.move
 ---
 
 # Computer Use
@@ -30,16 +43,17 @@ Use the `computer.*` tools only when the user explicitly asks LotaGate to intera
 ## Tool-specific operating rules
 
 - `computer.listWindows`: use it to discover targets; do not assume a process name or window id remains valid after launch, close, or restart.
-- `computer.inspect`: treat the returned UI tree as a point-in-time observation. Reinspect after navigation, modal changes, or major content updates.
-- `computer.screenshot`: use the returned image for visual verification; do not infer hidden content outside the captured target window.
+- `computer.inspect`: treat the returned UI tree as a point-in-time observation. Use `query.role`, `query.name`, `query.text`, and `maxDepth` to limit the returned tree when the full tree is unnecessary. Element ids are tied to the inspected UI Automation runtime identity and must be refreshed after navigation, modal changes, or major content updates.
+- `computer.screenshot`: use the returned image for visual verification; do not infer hidden content outside the captured target window. When needed, pass `region: {x, y, width, height}` relative to the target window.
 - `computer.focus`: focus only the requested target window or a currently inspected element.
 - `computer.click`: prefer an inspected `elementId`; use coordinates only when no stable element target exists and the point is unambiguous.
 - `computer.type`: focus the intended editable control first and keep text within the user's requested scope. Never type secrets unless the user explicitly asks and the action is approved.
 - `computer.keypress`: use named keys and explicit modifiers. Avoid destructive shortcuts unless they are required by the user's request and approved.
 - `computer.scroll`: scroll the selected window only; recheck the UI after scrolling because visible elements may change.
 - `computer.drag`: use inspected elements or validated points for both endpoints and keep the drag within the selected window.
+- `computer.move`: use an inspected `elementId` or a point relative to the selected window. The point is validated against the window bounds; use `durationMs` for a bounded pointer movement.
 - `computer.launch`: launch only an application explicitly allowed in the Computer Use settings. If launch fails, report the error instead of trying alternate launch mechanisms.
-- `computer.wait`: use bounded waits and stop when the condition times out or the target becomes ambiguous.
+- `computer.wait`: use bounded waits and stop when the condition times out or the target becomes ambiguous. For `condition: idle`, `idleMs` means the minimum system-wide time since the last Windows input (default 250 ms).
 
 ## Safety and recovery
 

@@ -398,7 +398,7 @@ export function useWorkspaceController() {
       const isNewTask = existingTask === undefined;
       let activeTask = existingTask ?? await createTask(prompt);
       failedTaskId = activeTask.id;
-      turnClaimToken = await window.lotagate.agent.turnClaim(activeTask.cwd, activeTask.id);
+      turnClaimToken = await window.lotagate.agent.turnClaim(activeTask.cwd, activeTask.id, activeTask.sessionId);
       resolveRendererOperationOwner(operationOwner, activeTask.id);
       draftTaskRef.current = activeTask;
       const attachmentIds = [...(attachmentIdsOverride ?? activeTask.draftAttachmentIds)];

@@ -7,9 +7,11 @@ const OVERLAY_MARGIN = 18;
 /** Small, click-through status indicator for native Computer Use activity. */
 export class ComputerOverlay {
   private window: BrowserWindow | undefined;
+  private activeCount = 0;
 
   show(): void {
     if (process.platform !== 'win32') return;
+    this.activeCount += 1;
     const display = screen.getPrimaryDisplay();
     const { x, y, width, height } = display.workArea;
     if (this.window === undefined || this.window.isDestroyed()) {
@@ -41,10 +43,13 @@ export class ComputerOverlay {
   }
 
   hide(): void {
+    if (this.activeCount > 0) this.activeCount -= 1;
+    if (this.activeCount > 0) return;
     if (this.window !== undefined && !this.window.isDestroyed()) this.window.hide();
   }
 
   destroy(): void {
+    this.activeCount = 0;
     if (this.window !== undefined && !this.window.isDestroyed()) this.window.destroy();
     this.window = undefined;
   }

@@ -32,4 +32,17 @@ describe('JsonFileStore', () => {
     await import('node:fs/promises').then(({ writeFile }) => writeFile(path, JSON.stringify(['invalid']), 'utf8'));
     await expect(store.read()).rejects.toThrow();
   });
+
+  it('does not let a failed write permanently poison later reads', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'lotagate-store-'));
+    temporaryDirectories.push(directory);
+    const path = join(directory, 'state.json');
+    const store = new JsonFileStore<number[]>(path, []);
+    await store.write([1]);
+    (store as unknown as { writeChain: Promise<void> }).writeChain = Promise.reject(new Error('transient write failure'));
+
+    await expect(store.read()).resolves.toEqual([1]);
+    await expect(store.write([2])).resolves.toBeUndefined();
+    await expect(store.read()).resolves.toEqual([2]);
+  });
 });

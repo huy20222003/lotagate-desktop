@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createReadStream } from 'node:fs';
-import { once } from 'node:events';
 import { desktopHostCancelSchema, desktopRequestSchema, parseDesktopEvent, parseDesktopHostRequest, parseDesktopResponse, type DesktopAgentResult, type DesktopEvent, type DesktopHostCancel, type DesktopHostRequest, type DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
-import { cliRequestTimeout, CLI_PROCESS_CLOSE_TIMEOUT_MS } from './cli-agent-timeouts.js';
+import { cliRequestTimeout, CLI_DEFAULT_REQUEST_TIMEOUT_MS } from './cli-agent-timeouts.js';
+import { terminateDesktopProcess } from '../process/process-termination.js';
 
 const MAX_JSONL_LINE_BYTES = 4 * 1024 * 1024;
 const DESKTOP_ATTACHMENT_CHUNK_BYTES = 512 * 1024;
@@ -83,25 +83,32 @@ export class CliAgentProcess {
     this.ensureStarted();
     const child = this.child;
     if (child === undefined || (this.stopping && method !== 'shutdown')) throw new CliAgentProcessError('The CLI agent process is not available.');
+    const generation = this.generation;
     const id = randomUUID();
+    const writeController = new AbortController();
     const operation = new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         if (!this.pending.delete(id)) return;
         const error = new CliAgentProcessError(`The CLI request timed out (method=${method}, timeoutMs=${cliRequestTimeout(method)}).`);
         this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: error.message, ...requestContext(requestParams) });
+        writeController.abort(error);
         reject(error);
-        this.failProcess(error);
+        this.failProcess(error, child, generation);
       }, cliRequestTimeout(method));
       this.pending.set(id, { method, requestParams, resolve, reject, timer });
     });
     try {
-      await writeLine(child, desktopRequestSchema.parse({ version: 1, id, method, params: requestParams }));
+      await writeLine(child, desktopRequestSchema.parse({ version: 1, id, method, params: requestParams }), writeController.signal, CLI_DEFAULT_REQUEST_TIMEOUT_MS);
       this.handler.onDiagnostic?.({ kind: 'protocol', message: `CLI request sent (method=${method}, id=${id}, pid=${child.pid ?? 'unknown'}).`, ...requestContext(requestParams) });
     } catch (error) {
       const pending = this.pending.get(id);
-      if (pending !== undefined) clearTimeout(pending.timer);
-      this.pending.delete(id);
-      throw new CliAgentProcessError('Unable to write to the CLI agent process.', error);
+      if (pending !== undefined) {
+        clearTimeout(pending.timer);
+        this.pending.delete(id);
+        const writeError = error instanceof CliAgentProcessError ? error : new CliAgentProcessError('Unable to write to the CLI agent process.', error);
+        pending.reject(writeError);
+        this.failProcess(writeError, child, generation);
+      }
     }
     return operation;
   }
@@ -136,12 +143,7 @@ export class CliAgentProcess {
       // The process may already be exiting; close handling below remains authoritative.
     }
     this.handler.onDiagnostic?.({ kind: 'protocol', message: `CLI process termination started (reason=${reason}, pid=${child.pid ?? 'unknown'}).` });
-    if (!child.killed) child.kill();
-    const closed = await Promise.race([once(child, 'close').then(() => true), delay(CLI_PROCESS_CLOSE_TIMEOUT_MS).then(() => false)]);
-    if (!closed && child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGKILL');
-      await Promise.race([once(child, 'close'), delay(CLI_PROCESS_CLOSE_TIMEOUT_MS)]);
-    }
+    await terminateDesktopProcess(child).catch(error => this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: `CLI process termination could not be confirmed (reason=${reason}, message=${error instanceof Error ? error.message : String(error)}).` }));
     this.rejectPending(new CliAgentProcessError('The CLI agent process was shut down.'));
     this.child = undefined;
     if (this.generation === generation) this.lineBuffer = Buffer.alloc(0);
@@ -162,6 +164,7 @@ export class CliAgentProcess {
         env: { ...process.env, ...this.options.environment },
         shell: false,
         windowsHide: true,
+        detached: process.platform !== 'win32',
         stdio: ['pipe', 'pipe', 'pipe'],
       });
     } catch (error) {
@@ -251,6 +254,7 @@ export class CliAgentProcess {
   private async handleHostRequest(request: DesktopHostRequest): Promise<void> {
     const child = this.child;
     if (child === undefined || this.stopping) return;
+    const generation = this.generation;
     let response: DesktopHostResponse;
     const controller = new AbortController();
     this.activeHostRequests.set(request.requestId, controller);
@@ -263,8 +267,9 @@ export class CliAgentProcess {
     } finally {
       if (this.activeHostRequests.get(request.requestId) === controller) this.activeHostRequests.delete(request.requestId);
     }
-    try { await writeLine(child, response); }
-    catch (error) { this.failProcess(new CliAgentProcessError('Unable to respond to the CLI host request.', error)); }
+    if (this.child !== child || this.generation !== generation || this.stopping) return;
+    try { await writeLine(child, response, undefined, CLI_DEFAULT_REQUEST_TIMEOUT_MS); }
+    catch (error) { this.failProcess(new CliAgentProcessError('Unable to respond to the CLI host request.', error), child, generation); }
   }
 
   private failProcess(error: CliAgentProcessError, sourceChild?: ChildProcessWithoutNullStreams, sourceGeneration = this.generation): void {
@@ -277,7 +282,7 @@ export class CliAgentProcess {
     this.lineBuffer = Buffer.alloc(0);
     this.initialized = false;
     this.initializationResult = undefined;
-    if (child !== undefined && !child.killed && child.exitCode === null && child.signalCode === null) child.kill();
+    if (child !== undefined && !child.killed && child.exitCode === null && child.signalCode === null) void terminateDesktopProcess(child).catch(terminationError => this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: `CLI process termination could not be confirmed (message=${terminationError instanceof Error ? terminationError.message : String(terminationError)}).` }));
     if (!this.stopping) this.handler.onExit?.(error);
   }
 
@@ -310,7 +315,41 @@ function isHostRequest(value: unknown): boolean { return typeof value === 'objec
 function isHostCancel(value: unknown): boolean { return typeof value === 'object' && value !== null && (value as Record<string, unknown>)['type'] === 'host.cancel'; }
 function parseHostCancel(value: unknown): DesktopHostCancel { return desktopHostCancelSchema.parse(value); }
 function deniedHostResponse(request: DesktopHostRequest, message: string): DesktopHostResponse { return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message, retryable: false } }; }
-async function writeLine(child: ChildProcessWithoutNullStreams, value: unknown): Promise<void> { if (child.stdin.write(`${JSON.stringify(value)}\n`)) return; await once(child.stdin, 'drain'); }
+async function writeLine(child: ChildProcessWithoutNullStreams, value: unknown, signal?: AbortSignal, timeoutMs = CLI_DEFAULT_REQUEST_TIMEOUT_MS): Promise<void> {
+  const payload = `${JSON.stringify(value)}\n`;
+  if (signal?.aborted === true) throw abortReason(signal);
+  if (child.stdin.write(payload)) return;
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => finish(new Error(`The CLI stdin remained backpressured for ${timeoutMs}ms.`)), timeoutMs);
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      child.stdin.removeListener('drain', onDrain);
+      child.stdin.removeListener('error', onError);
+      child.stdin.removeListener('close', onClose);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error === undefined) resolve(); else reject(error);
+    };
+    const onDrain = (): void => finish();
+    const onError = (error: Error): void => finish(error);
+    const onClose = (): void => finish(new Error('The CLI stdin closed before the request was written.'));
+    const onAbort = (): void => finish(abortReason(signal as AbortSignal));
+    child.stdin.once('drain', onDrain);
+    child.stdin.once('error', onError);
+    child.stdin.once('close', onClose);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted === true) onAbort();
+  });
+}
+
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error('The CLI request was cancelled.');
+}
 function delay(milliseconds: number): Promise<void> { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 type PendingRequest = { method: string; requestParams: Record<string, unknown>; resolve: (value: unknown) => void; reject: (error: CliAgentProcessError) => void; timer: ReturnType<typeof setTimeout> };
 

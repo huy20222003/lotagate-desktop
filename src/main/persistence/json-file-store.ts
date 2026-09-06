@@ -7,7 +7,7 @@ export class JsonFileStore<T> {
   constructor(private readonly filePath: string, private readonly fallback: T, private readonly parse: (value: unknown) => T = value => value as T) {}
 
   async read(): Promise<T> {
-    await this.writeChain;
+    await this.writeChain.catch(() => undefined);
     return this.readFromDisk();
   }
 
