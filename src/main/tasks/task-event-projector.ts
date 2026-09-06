@@ -91,10 +91,13 @@ export class TaskEventProjector {
     const data = event.data;
     const timing = turnTimingMarker(event.event, data);
     if (timing !== undefined) await this.tasks.appendEvent(task.id, 'context', 'Desktop turn timing marker.', { turnId: data['turnId'], [DESKTOP_TURN_TIMING_METADATA_KEY]: timing });
+    if (event.event === 'assistant.replaced' && typeof data['turnId'] === 'string' && typeof data['segmentId'] === 'string' && typeof data['content'] === 'string') {
+      await this.tasks.replaceAssistantResponse(task.id, data['turnId'], data['segmentId'], data['content'], redactMetadata(data));
+    }
     if (event.event === 'assistant.segment.completed' && typeof data['segmentId'] === 'string' && (data['phase'] === 'progress' || data['phase'] === 'final')) {
       await this.tasks.completeAssistantSegment(task.id, data['segmentId'], data['phase']);
     }
-    const text = eventText(event.event, data);
+    const text = event.event === 'assistant.replaced' ? undefined : eventText(event.event, data);
     if (text !== undefined) {
       const metadata = event.event === 'assistant.delta' ? { ...redactMetadata(data), assistantPhase: 'progress' } : { ...redactMetadata(data), ...(event.event.startsWith('work.') ? { orchestrationEvent: event.event } : {}) };
       if (event.event === 'assistant.delta') await this.tasks.appendAssistantDelta(task.id, text, metadata);

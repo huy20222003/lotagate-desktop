@@ -60,6 +60,22 @@ describe('ActivityLogStore', () => {
     expect((await reloaded.read())[0]?.metadata['assistantPhase']).toBe('final');
   });
 
+  it('replaces a provisional turn response atomically and preserves the correction after reload', async () => {
+    const directory = await createTemporaryDirectory();
+    const path = join(directory, 'activities.jsonl');
+    const store = new ActivityLogStore(path);
+    await store.append({ ...activity('assistant-1', 'Unsupported success claim.'), metadata: { turnId: 'turn-1', segmentId: 'run-1:1', assistantPhase: 'final' } });
+
+    await store.replaceAssistantResponse('task-1', 'turn-1', 'run-1:final', 'The result could not be verified.', { source: 'intent-gate' });
+
+    const activities = await store.read();
+    expect(activities).toHaveLength(2);
+    expect(activities[0]?.metadata['assistantPhase']).toBe('progress');
+    expect(activities[1]).toMatchObject({ id: 'assistant-replacement:task-1:run-1:final', text: 'The result could not be verified.', metadata: { turnId: 'turn-1', assistantPhase: 'final', assistantReplacement: true } });
+    const reloaded = new ActivityLogStore(path);
+    expect(await reloaded.read()).toEqual(activities);
+  });
+
   it('serializes concurrent appends without losing records', async () => {
     const directory = await createTemporaryDirectory();
     const store = new ActivityLogStore(join(directory, 'activities.jsonl'));

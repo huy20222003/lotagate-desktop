@@ -30,6 +30,11 @@ export function useAgentResponseNotifications(tasks: Task[], activeTaskId?: stri
       if (content.length > 0) responseByTurnRef.current.set(turnId, `${responseByTurnRef.current.get(turnId) ?? ''}${content}`);
       return;
     }
+    if (envelope.event.event === 'assistant.replaced') {
+      const content = typeof data['content'] === 'string' ? data['content'] : '';
+      responseByTurnRef.current.set(turnId, content);
+      return;
+    }
     if (!['turn.completed', 'turn.failed', 'turn.cancelled'].includes(envelope.event.event)) return;
     const task = findTask(tasksRef.current, data, envelope.cwd);
     const response = typeof data['content'] === 'string' ? data['content'] : responseByTurnRef.current.get(turnId) ?? '';

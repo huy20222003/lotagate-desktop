@@ -166,6 +166,40 @@ export class ActivityLogStore {
     return updated;
   }
 
+  async replaceAssistantResponse(taskId: string, turnId: string, segmentId: string, text: string, metadata: Record<string, unknown>): Promise<Activity> {
+    let updated: Activity | undefined;
+    await this.enqueue(async () => {
+      await this.ensureLoaded();
+      const replacementId = assistantReplacementId(taskId, segmentId);
+      const existing = this.activitiesCache!.find(activity => activity.id === replacementId);
+      const replacement = activitySchema.parse({
+        id: replacementId,
+        taskId,
+        kind: 'assistant',
+        text,
+        metadata: { ...metadata, turnId, segmentId, assistantPhase: 'final', assistantReplacement: true },
+        createdAt: existing?.createdAt ?? new Date().toISOString(),
+      });
+      const next = this.activitiesCache!
+        .filter(activity => activity.id !== replacementId)
+        .map(activity => activity.taskId === taskId && activity.kind === 'assistant' && activity.metadata['turnId'] === turnId
+          ? { ...activity, metadata: { ...activity.metadata, assistantPhase: 'progress' } }
+          : activity);
+      next.push(replacement);
+      const previous = this.activitiesCache;
+      this.activitiesCache = next.map(activity => activitySchema.parse(activity));
+      try {
+        await this.writeSnapshot();
+      } catch (error) {
+        this.activitiesCache = previous;
+        throw error;
+      }
+      updated = replacement;
+    });
+    if (updated === undefined) throw new Error('Assistant response replacement could not be persisted.');
+    return updated;
+  }
+
   private async enqueue(operation: () => Promise<void>): Promise<void> {
     const next = this.writeChain.catch(() => undefined).then(operation);
     this.writeChain = next;
@@ -326,6 +360,10 @@ function applyAssistantSegmentCompleted(activities: Activity[], taskId: string, 
   const next = [...activities];
   next[actualIndex] = activitySchema.parse({ ...previous, metadata: { ...previous.metadata, assistantPhase: phase } });
   return next;
+}
+
+function assistantReplacementId(taskId: string, segmentId: string): string {
+  return `assistant-replacement:${taskId}:${segmentId}`;
 }
 
 function isMissingFile(error: unknown): boolean {

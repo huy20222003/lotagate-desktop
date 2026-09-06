@@ -189,6 +189,20 @@ export class TaskStore {
     return this.withExclusive(() => this.activityStore.completeAssistantSegment(taskId, segmentId, phase));
   }
 
+  async replaceAssistantResponse(taskId: string, turnId: string, segmentId: string, text: string, metadata: Record<string, unknown>): Promise<Activity> {
+    return this.withExclusive(async () => {
+      const updated = await this.activityStore.replaceAssistantResponse(taskId, turnId, segmentId, text, metadata);
+      await this.taskStore.update(current => {
+        const index = current.findIndex(task => task.id === taskId);
+        if (index < 0) throw new Error('Task was not found.');
+        const next = [...current];
+        next[index] = taskSchema.parse({ ...next[index], updatedAt: updated.createdAt });
+        return next;
+      });
+      return updated;
+    });
+  }
+
   private async appendActivityInternal(taskId: string, kind: Activity['kind'], text: string, metadata: Record<string, unknown>): Promise<Activity> {
     const activity = activitySchema.parse({ id: randomUUID(), taskId, kind, text, metadata, createdAt: new Date().toISOString() });
     await this.activityStore.append(activity);

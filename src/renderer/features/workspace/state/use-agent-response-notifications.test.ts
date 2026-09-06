@@ -23,6 +23,18 @@ describe('useAgentResponseNotifications', () => {
     expect(notify).toHaveBeenCalledWith('Research session', 'The workspace check is complete.');
   });
 
+  it('uses an authoritative assistant replacement for the completion notification', () => {
+    let listener: ((envelope: { event: { event: string; data: Record<string, unknown> } }) => void) | undefined;
+    const notify = vi.fn();
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { agent: { onEvent: vi.fn(callback => { listener = callback; return () => undefined; }) }, operations: { notify } } });
+    renderHook(() => useAgentResponseNotifications([task], 'other-task'));
+
+    act(() => listener?.({ event: { event: 'assistant.replaced', data: { taskId: task.id, turnId: 'turn-1', content: 'The corrected final answer.' } } }));
+    act(() => listener?.({ event: { event: 'turn.completed', data: { taskId: task.id, turnId: 'turn-1' } } }));
+
+    expect(notify).toHaveBeenCalledWith('Research session', 'The corrected final answer.');
+  });
+
   it('waits for task synchronization when the terminal event arrives first', () => {
     const notify = vi.fn();
     let listener: ((envelope: { event: { event: string; data: Record<string, unknown> } }) => void) | undefined;

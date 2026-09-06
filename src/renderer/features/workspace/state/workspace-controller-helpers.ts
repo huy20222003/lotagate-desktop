@@ -1,6 +1,7 @@
 import type { Activity, Artifact, QueuedPrompt } from '../../../../contracts/ipc/v1/workspace.js';
 import type { AttachmentPreview } from '../../../services/attachment-types.js';
 import type { QueuedMessage } from './message-queue-service.js';
+import { replaceAssistantResponse, type AssistantReplacementInput, type PendingAssistantStream } from '../conversation/streaming-activity.js';
 
 export async function loadAttachmentPreviews(taskId: string, attachmentIds: readonly string[] = [], availableArtifacts?: Artifact[]): Promise<AttachmentPreview[]> {
   const artifacts = (availableArtifacts ?? await window.lotagate.tasks.artifacts(taskId)).filter(artifact => attachmentIds.includes(artifact.id));
@@ -65,6 +66,22 @@ export function mergeActivities(current: readonly Activity[], incoming: readonly
   const persistedAssistantKeys = new Set(incoming.filter(activity => activity.kind === 'assistant').map(activity => assistantActivityKey(activity)));
   for (const [id, activity] of byId) if (isLiveStreamingActivity(activity) && persistedAssistantKeys.has(assistantActivityKey(activity))) byId.delete(id);
   return [...byId.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
+}
+
+export function replaceCurrentTurnAssistantResponse(activities: readonly Activity[], streams: ReadonlyMap<string, PendingAssistantStream>, input: AssistantReplacementInput): { activities: Activity[]; pendingStreams: Map<string, PendingAssistantStream> } {
+  const pendingStreams = new Map(streams);
+  for (const [key, stream] of pendingStreams) if (stream.taskId === input.taskId && stream.turnId === input.turnId) pendingStreams.delete(key);
+  return { activities: replaceAssistantResponse(activities, input), pendingStreams };
+}
+
+export function applyAssistantReplacementEvent(activitiesRef: { current: Activity[] }, streamsRef: { current: Map<string, PendingAssistantStream> }, taskId: string, turnId: string | undefined, data: Record<string, unknown>, publish: (activities: Activity[]) => void): void {
+  const content = data['content'];
+  const segmentId = data['segmentId'];
+  if (turnId === undefined || typeof content !== 'string' || typeof segmentId !== 'string') return;
+  const replacement = replaceCurrentTurnAssistantResponse(activitiesRef.current, streamsRef.current, { taskId, turnId, segmentId, content, createdAt: new Date().toISOString(), metadata: { ...(typeof data['projectRoot'] === 'string' ? { projectRoot: data['projectRoot'] } : {}), ...(typeof data['executionCwd'] === 'string' ? { executionCwd: data['executionCwd'] } : {}) } });
+  streamsRef.current = replacement.pendingStreams;
+  activitiesRef.current = replacement.activities;
+  publish(replacement.activities);
 }
 
 function isLiveStreamingActivity(activity: Activity): boolean {

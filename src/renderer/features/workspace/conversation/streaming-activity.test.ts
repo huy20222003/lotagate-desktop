@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Activity } from '../../../../contracts/ipc/v1/workspace.js';
-import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, reconcilePendingAssistantStreams, type PendingAssistantStream } from './streaming-activity.js';
+import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, reconcilePendingAssistantStreams, replaceAssistantResponse, type PendingAssistantStream } from './streaming-activity.js';
 
 const createdAt = '2026-08-27T00:00:00.000Z';
 
@@ -40,6 +40,16 @@ describe('streaming activity projection', () => {
     const next = appendAssistantDelta(first, { taskId: 'task-1', turnId: 'turn-1', content: ' successfully.', createdAt });
 
     expect(next[0]?.metadata).toMatchObject({ projectRoot: 'D:\\project', executionCwd: 'D:\\session', turnId: 'turn-1' });
+  });
+
+  it('removes provisional text from the current turn when the final response is replaced', () => {
+    const activities: Activity[] = [
+      { ...activity('assistant-1', 'A provisional claim', 'turn-1'), metadata: { turnId: 'turn-1', segmentId: 'run-1:1', assistantPhase: 'progress' } },
+      { ...activity('assistant-2', 'An unrelated completed turn', 'turn-0'), metadata: { turnId: 'turn-0', segmentId: 'run-0:1', assistantPhase: 'final' } },
+    ];
+    const result = replaceAssistantResponse(activities, { taskId: 'task-1', turnId: 'turn-1', segmentId: 'run-1:final', content: 'The result could not be verified.', createdAt });
+    expect(result.map(item => item.id)).toEqual(['assistant-2', 'assistant-replacement:task-1:run-1:final']);
+    expect(result[1]).toMatchObject({ kind: 'assistant', text: 'The result could not be verified.', metadata: { turnId: 'turn-1', segmentId: 'run-1:final', assistantPhase: 'final', assistantReplacement: true } });
   });
 
   it('overlays a stream while persistence is catching up, then allows reconciliation', () => {

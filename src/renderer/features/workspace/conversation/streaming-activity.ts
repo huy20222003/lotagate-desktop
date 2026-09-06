@@ -26,6 +26,15 @@ export interface AssistantSegmentPhaseInput {
   phase: 'progress' | 'final';
 }
 
+export interface AssistantReplacementInput {
+  taskId: string;
+  turnId: string;
+  segmentId: string;
+  content: string;
+  createdAt: string;
+  metadata?: Readonly<Record<string, unknown>>;
+}
+
 export function appendAssistantDelta(activities: readonly Activity[], input: AssistantDeltaInput): Activity[] {
   if (input.content.length === 0) return [...activities];
   const index = findAssistantIndex(activities, input.taskId, input.turnId, input.segmentId);
@@ -77,6 +86,19 @@ export function markAssistantSegmentPhase(activities: readonly Activity[], input
   return next;
 }
 
+export function replaceAssistantResponse(activities: readonly Activity[], input: AssistantReplacementInput): Activity[] {
+  const replacementId = assistantReplacementId(input.taskId, input.segmentId);
+  const retained = activities.filter(activity => !(activity.taskId === input.taskId && activity.kind === 'assistant' && readTurnId(activity) === input.turnId));
+  return [...retained, {
+    id: replacementId,
+    taskId: input.taskId,
+    kind: 'assistant',
+    text: input.content,
+    metadata: { ...input.metadata, turnId: input.turnId, segmentId: input.segmentId, assistantPhase: 'final', assistantReplacement: true },
+    createdAt: input.createdAt,
+  }];
+}
+
 function findAssistantIndex(activities: readonly Activity[], taskId: string, turnId?: string, segmentId?: string): number {
   for (let index = activities.length - 1; index >= 0; index -= 1) {
     const activity = activities[index];
@@ -90,4 +112,8 @@ function findAssistantIndex(activities: readonly Activity[], taskId: string, tur
 function readTurnId(activity: Activity): string | undefined {
   const value = activity.metadata['turnId'];
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function assistantReplacementId(taskId: string, segmentId: string): string {
+  return `assistant-replacement:${taskId}:${segmentId}`;
 }

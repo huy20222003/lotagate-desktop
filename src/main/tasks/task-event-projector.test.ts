@@ -22,6 +22,7 @@ function createProjector(task: Task) {
     appendAssistantDelta: vi.fn(async () => task),
     appendAssistantDeltas: vi.fn(async () => [task]),
     completeAssistantSegment: vi.fn(async () => task),
+    replaceAssistantResponse: vi.fn(async () => task),
   } as unknown as TaskStore;
   return { projector: new TaskEventProjector(tasks), tasks };
 }
@@ -86,6 +87,14 @@ describe('TaskEventProjector turn lifecycle', () => {
     await projector.apply('C:\\workspace', { version: 1, type: 'event', scope: 'session', event: 'turn.started', data: { sessionId: 'session-1', turnId: 'turn-1' } });
     await projector.apply('C:\\workspace', { version: 1, type: 'event', scope: 'control', event: 'command.output', data: { content: 'command output' } });
     expect(tasks.appendEvent).not.toHaveBeenCalledWith('task-1', 'command', 'command output', expect.any(Object));
+  });
+
+  it('replaces provisional assistant text with the authoritative final response', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 1, type: 'event', scope: 'session', event: 'assistant.delta', data: { sessionId: 'session-1', turnId: 'turn-1', segmentId: 'run-1:1', content: 'The task is complete.' } });
+    await projector.apply('C:\\workspace', { version: 1, type: 'event', scope: 'session', event: 'assistant.replaced', data: { sessionId: 'session-1', turnId: 'turn-1', segmentId: 'run-1:final', content: 'I could not verify completion.' } });
+    expect(tasks.replaceAssistantResponse).toHaveBeenCalledWith('task-1', 'turn-1', 'run-1:final', 'I could not verify completion.', expect.objectContaining({ sessionId: 'session-1', segmentId: 'run-1:final' }));
+    expect(tasks.appendEvent).not.toHaveBeenCalledWith('task-1', 'assistant', expect.anything(), expect.anything());
   });
 
   it('batches assistant deltas and flushes them before the next lifecycle event', async () => {
