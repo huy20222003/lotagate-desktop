@@ -110,7 +110,7 @@ async function atomicCopy(source: string, target: string): Promise<void> {
 }
 async function normalizePathParams(cwd: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
   const normalized = { ...params };
-  for (const key of ['sourcePath', 'imagePath'] as const) if (normalized[key] !== undefined) normalized[key] = await requireExistingPath(requiredPath(normalized[key]), cwd);
+  for (const key of ['sourcePath', 'imagePath', 'mediaPath'] as const) if (normalized[key] !== undefined) normalized[key] = await requireExistingPath(requiredPath(normalized[key]), cwd);
   if (normalized['outputPath'] !== undefined) normalized['outputPath'] = await requireWorkspaceMutationPath(requiredPath(normalized['outputPath']), cwd);
   if (normalized['paths'] !== undefined) {
     const values = normalized['paths'];

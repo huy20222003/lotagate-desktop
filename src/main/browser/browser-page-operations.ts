@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron';
-import type { BrowserElementInspection, BrowserInteractionResult, BrowserPageState, BrowserTarget, BrowserWaitCondition } from './browser-types.js';
+import type { BrowserElementInspection, BrowserFrameSnapshot, BrowserInteractionResult, BrowserPageState, BrowserTableSnapshot, BrowserTarget, BrowserWaitCondition } from './browser-types.js';
 import { delay, isElementInspection, isInteractionResult, isPageInspection, serializeForJavaScript } from './browser-service-support.js';
 
 export async function inspectBrowserPage(contents: WebContents): Promise<Omit<BrowserPageState, 'tab'>> {
@@ -49,6 +49,68 @@ export async function inspectBrowserElement(contents: WebContents, target: Brows
   return result;
 }
 
+export async function extractBrowserTable(contents: WebContents, target: BrowserTarget, maxRows: number): Promise<BrowserTableSnapshot> {
+  const boundedRows = Math.min(500, Math.max(1, Math.floor(maxRows)));
+  const result = await contents.executeJavaScript(`(() => {
+    const target = ${serializeForJavaScript(target)};
+    const normalize = (input) => (input || '').trim().replace(/\\s+/gu, ' ');
+    const tables = Array.from(document.querySelectorAll('table'));
+    const nameOf = (element) => normalize(element.getAttribute('aria-label') || element.getAttribute('name') || element.innerText || element.textContent);
+    let element;
+    if (target.type === 'css') element = document.querySelector(target.selector);
+    else if (target.type === 'coordinates') element = document.elementFromPoint(target.x, target.y);
+    else if (target.type === 'text') element = tables.find((candidate) => nameOf(candidate).toLowerCase().includes(normalize(target.value).toLowerCase()));
+    else element = tables.find((candidate) => (!target.role || (candidate.getAttribute('role') || 'table') === target.role) && (!target.name || nameOf(candidate).toLowerCase().includes(normalize(target.name).toLowerCase())));
+    const table = element instanceof HTMLTableElement ? element : element?.closest?.('table');
+    if (!(table instanceof HTMLTableElement)) return { found: false, description: 'The requested HTML table was not found.', headers: [], rows: [], truncated: false };
+    const allRows = Array.from(table.querySelectorAll('tr'));
+    const headerSource = Array.from(table.querySelectorAll('thead tr')).at(-1) || allRows.find((row) => row.querySelector('th'));
+    const cells = (row) => Array.from(row.querySelectorAll(':scope > th, :scope > td')).slice(0, 100).map((cell) => normalize(cell.innerText || cell.textContent).slice(0, 4096));
+    const headers = headerSource ? cells(headerSource) : [];
+    const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
+    const sourceRows = bodyRows.length > 0 ? bodyRows : allRows.filter((row) => row !== headerSource);
+    const rows = sourceRows.slice(0, ${boundedRows}).map(cells);
+    return { found: true, description: 'Extracted HTML table.', headers, rows, truncated: sourceRows.length > rows.length };
+  })()`, true) as unknown;
+  if (!isTableSnapshot(result)) throw new Error('Browser returned an invalid table extraction.');
+  return result;
+}
+
+export async function dragBrowserTarget(contents: WebContents, from: BrowserTarget, to: BrowserTarget): Promise<BrowserInteractionResult> {
+  const result = await contents.executeJavaScript(`(() => {
+    const from = ${serializeForJavaScript(from)}; const to = ${serializeForJavaScript(to)};
+    const resolve = (target) => {
+      const candidates = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],[draggable="true"]'));
+      const normalize = (input) => (input || '').trim().replace(/\\s+/gu, ' ').toLowerCase();
+      const nameOf = (element) => normalize(element.getAttribute('aria-label') || element.getAttribute('name') || element.getAttribute('placeholder') || element.innerText || element.textContent);
+      if (target.type === 'css') return document.querySelector(target.selector);
+      if (target.type === 'coordinates') return document.elementFromPoint(target.x, target.y);
+      if (target.type === 'text') return candidates.find((candidate) => nameOf(candidate).includes(normalize(target.value)));
+      return candidates.find((candidate) => (!target.role || (candidate.getAttribute('role') || candidate.tagName.toLowerCase()) === target.role) && (!target.name || nameOf(candidate).includes(normalize(target.name))));
+    };
+    const source = resolve(from); const destination = resolve(to);
+    if (!(source instanceof HTMLElement) || !(destination instanceof HTMLElement)) return { found: false, description: 'The drag source or destination was not found.' };
+    source.scrollIntoView({ block: 'center', inline: 'center' }); destination.scrollIntoView({ block: 'center', inline: 'center' });
+    const sourceRect = source.getBoundingClientRect(); const destinationRect = destination.getBoundingClientRect();
+    const point = (rect) => ({ clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, bubbles: true, cancelable: true, view: window });
+    const data = new DataTransfer();
+    source.dispatchEvent(new DragEvent('dragstart', { ...point(sourceRect), dataTransfer: data }));
+    destination.dispatchEvent(new DragEvent('dragenter', { ...point(destinationRect), dataTransfer: data }));
+    destination.dispatchEvent(new DragEvent('dragover', { ...point(destinationRect), dataTransfer: data }));
+    destination.dispatchEvent(new DragEvent('drop', { ...point(destinationRect), dataTransfer: data }));
+    source.dispatchEvent(new DragEvent('dragend', { ...point(destinationRect), dataTransfer: data }));
+    return { found: true, description: 'Dragged the page element to the destination.', tag: source.tagName.toLowerCase() };
+  })()`, true) as unknown;
+  if (!isBrowserInteractionResult(result)) throw new Error('Browser returned an invalid drag result.');
+  return result;
+}
+
+export async function listBrowserFrames(contents: WebContents): Promise<BrowserFrameSnapshot[]> {
+  const result = await contents.executeJavaScript(`Array.from(document.querySelectorAll('iframe,frame')).slice(0, 100).map((frame, index) => ({ frameId: frame.id || frame.name || 'frame-' + index, name: frame.name || frame.id || '', url: frame.src || '', sameOrigin: (() => { try { return frame.contentWindow?.location.origin === window.location.origin; } catch { return false; } })() }))`, true) as unknown;
+  if (!Array.isArray(result) || result.some((item) => !isFrameSnapshot(item))) throw new Error('Browser returned an invalid frame list.');
+  return result as BrowserFrameSnapshot[];
+}
+
 export async function executeBrowserTargetAction(contents: WebContents, target: BrowserTarget, action: 'click' | 'type' | 'focus' | 'clear' | 'hover' | 'check' | 'select' | 'read', value?: string): Promise<BrowserInteractionResult> {
   const serializedTarget = serializeForJavaScript(target);
   const serializedAction = JSON.stringify(action);
@@ -91,3 +153,8 @@ export async function waitForBrowserCondition(contents: WebContents, condition: 
   }
   return { found: false, description: `Timed out waiting for ${condition.type}.` };
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
+function isBrowserInteractionResult(value: unknown): value is BrowserInteractionResult { return isRecord(value) && typeof value['found'] === 'boolean' && typeof value['description'] === 'string'; }
+function isTableSnapshot(value: unknown): value is BrowserTableSnapshot { return isRecord(value) && typeof value['found'] === 'boolean' && typeof value['description'] === 'string' && Array.isArray(value['headers']) && value['headers'].every((item) => typeof item === 'string') && Array.isArray(value['rows']) && value['rows'].every((row) => Array.isArray(row) && row.every((item) => typeof item === 'string')) && typeof value['truncated'] === 'boolean'; }
+function isFrameSnapshot(value: unknown): value is BrowserFrameSnapshot { return isRecord(value) && typeof value['frameId'] === 'string' && typeof value['name'] === 'string' && typeof value['url'] === 'string' && typeof value['sameOrigin'] === 'boolean'; }

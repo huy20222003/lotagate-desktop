@@ -32,4 +32,7 @@ export interface BrowserElementInspection {
   description: string;
 }
 export interface BrowserInteractionResult { found: boolean; description: string; tag?: string; name?: string; value?: string; checked?: boolean; }
+export interface BrowserTableSnapshot { found: boolean; description: string; headers: string[]; rows: string[][]; truncated: boolean; }
+export interface BrowserFrameSnapshot { frameId: string; name: string; url: string; sameOrigin: boolean; }
+export interface BrowserPdfOptions { overwrite: boolean; printBackground: boolean; landscape: boolean; pageSize: 'A4' | 'Letter'; }
 export type BrowserWaitCondition = { type: 'selector' | 'text' | 'url'; value: string };

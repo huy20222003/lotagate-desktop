@@ -6,13 +6,17 @@ allowed-tools:
   - computer.inspect
   - computer.screenshot
   - computer.readText
+  - computer.readSelection
+  - computer.readGrid
   - computer.recognizeText
+  - computer.listDisplays
   - computer.focus
   - computer.click
   - computer.type
   - computer.keypress
   - computer.scroll
   - computer.drag
+  - computer.selectText
   - computer.launch
   - computer.wait
   - computer.move
@@ -24,6 +28,10 @@ allowed-tools:
   - computer.scrollIntoView
   - computer.setWindowState
   - computer.closeWindow
+  - computer.readClipboard
+  - computer.writeClipboard
+  - computer.waitForState
+  - computer.manageFileDialog
 ---
 
 # Computer Use
@@ -75,6 +83,17 @@ Use the `computer.*` tools only when the user explicitly asks LotaGate to intera
 - `computer.closeWindow`: treat `closed: false` as unresolved; do not dismiss a save or security dialog without explicit user intent and approval.
 - `computer.launch`: launch only an application explicitly allowed in the Computer Use settings. If launch fails, report the error instead of trying alternate launch mechanisms.
 - `computer.wait`: use bounded waits and stop when the condition times out or the target becomes ambiguous. For `condition: idle`, `idleMs` means the minimum system-wide time since the last Windows input (default 250 ms).
+
+## Additional tools
+
+- `computer.readSelection`: read selected items from a fresh selection-control observation.
+- `computer.readGrid`: read only a bounded rectangular grid region; keep row and column limits explicit.
+- `computer.selectText`: select one requested occurrence in a non-password text control and verify it with `computer.readText`.
+- `computer.listDisplays`: inspect connected display bounds, work areas, and system DPI before multi-monitor actions.
+- `computer.readClipboard`: read only the current text clipboard; an empty result means no text clipboard is available.
+- `computer.writeClipboard`: replace clipboard text only with explicit user intent; keep content bounded and never copy secrets unless requested.
+- `computer.waitForState`: wait on a fresh element observation for a named UI Automation property; refresh the observation after structural UI changes.
+- `computer.manageFileDialog`: use only for a currently visible standard Windows file dialog; set the exact path first and confirm or cancel explicitly.
 
 ## Safety and recovery
 

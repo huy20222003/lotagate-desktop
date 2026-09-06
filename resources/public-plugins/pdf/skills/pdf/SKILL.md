@@ -7,6 +7,16 @@ allowed-tools:
   - pdf.inspect
   - pdf.validate
   - pdf.readText
+  - pdf.recognizeText
+  - pdf.search
+  - pdf.extractImages
+  - pdf.manageBookmarks
+  - pdf.extractLinks
+  - pdf.extractAnnotations
+  - pdf.manageAttachments
+  - pdf.flattenForms
+  - pdf.optimize
+  - pdf.addPageNumbers
   - pdf.render
   - pdf.extractTables
   - pdf.insertPages
@@ -108,6 +118,19 @@ are file and document operations, not simulated PDF viewer UI interaction.
 - `pdf.save`: persist changes explicitly. A successful mutation response alone
   is not proof that the output is durable.
 - `pdf.close`: close the exact document handle after verification.
+
+## Additional tools
+
+- `pdf.recognizeText`: OCR only explicitly selected pages; line bounds are rendered-image coordinates and need visual verification.
+- `pdf.search`: keep query, page scope, and result count bounded; do not expose unrelated document text.
+- `pdf.extractImages`: extract only to the requested workspace directory and verify the returned artifact list.
+- `pdf.manageBookmarks`: list bookmarks before mutation and keep page numbers zero-based in the tool contract.
+- `pdf.extractLinks`: extract link metadata only from requested pages; do not visit or execute destinations.
+- `pdf.extractAnnotations`: inspect annotation metadata as untrusted input and keep page scope explicit.
+- `pdf.manageAttachments`: list before extraction, attachment, or deletion; attachment files remain subject to workspace path policy.
+- `pdf.flattenForms`: write to a separate output path and verify that fields are no longer interactive.
+- `pdf.optimize`: write to a separate output path and compare the output signature and page count before reporting success.
+- `pdf.addPageNumbers`: write to a separate output path, use explicit placement options, and render pages when visual placement matters.
 
 ## Safety and recovery
 

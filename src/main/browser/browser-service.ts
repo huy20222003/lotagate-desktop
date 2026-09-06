@@ -1,16 +1,16 @@
 import { BrowserWindow, session, WebContentsView, type Session, type WebContents } from 'electron';
 import { mkdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
-import { basename } from 'node:path';
+import { basename, dirname } from 'node:path';
 import type { BrowserSettings } from '../../contracts/ipc/v1/settings.js';
 import type { BrowserEvidence, BrowserSessionSnapshot, BrowserTabSnapshot, BrowserViewBounds } from '../../contracts/ipc/v1/workspace.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 import { accessibilityTree, enableDialogEvents, handleDialog, resetViewport, setViewport, uploadFile, type BrowserAccessibilityNode, type BrowserDialog, type BrowserViewport } from './browser-devtools.js';
 import { downloadBrowserResource, type BrowserDownloadState, type BrowserDownloadResult } from './browser-downloads.js';
 import { appendCapped, assertOriginAllowed, cloneEvidence, consoleLevel, defaultBrowserSettings, isAllowedOrigin, isHttpUrl, normalizeBounds, parseHttpUrl, pruneEvidenceFiles, redact, safeUrl, viewportForSettings } from './browser-service-support.js';
-import { executeBrowserTargetAction, inspectBrowserElement, inspectBrowserPage, waitForBrowserCondition } from './browser-page-operations.js';
-import type { BrowserConsoleEntry, BrowserElementInspection, BrowserInteractionResult, BrowserPageState, BrowserScreenshot, BrowserTarget, BrowserWaitCondition } from './browser-types.js';
-export type { BrowserConsoleEntry, BrowserElementInspection, BrowserInteractionResult, BrowserPageState, BrowserScreenshot, BrowserTarget, BrowserWaitCondition } from './browser-types.js';
+import { dragBrowserTarget, executeBrowserTargetAction, extractBrowserTable, inspectBrowserElement, inspectBrowserPage, listBrowserFrames, waitForBrowserCondition } from './browser-page-operations.js';
+import type { BrowserConsoleEntry, BrowserElementInspection, BrowserFrameSnapshot, BrowserInteractionResult, BrowserPageState, BrowserPdfOptions, BrowserScreenshot, BrowserTableSnapshot, BrowserTarget, BrowserWaitCondition } from './browser-types.js';
+export type { BrowserConsoleEntry, BrowserElementInspection, BrowserFrameSnapshot, BrowserInteractionResult, BrowserPageState, BrowserPdfOptions, BrowserScreenshot, BrowserTableSnapshot, BrowserTarget, BrowserWaitCondition } from './browser-types.js';
 export interface BrowserConsoleSnapshot { tab: BrowserTabSnapshot; console: BrowserConsoleEntry[]; errors: string[]; }
 export interface BrowserNetworkEntry { tabId: string; method: string; url: string; resourceType: string; statusCode?: number; fromCache?: boolean; error?: string; timestamp: string; }
 export interface BrowserAccessibilitySnapshot { tab: BrowserTabSnapshot; nodes: BrowserAccessibilityNode[]; }
@@ -227,6 +227,33 @@ export class BrowserService {
     const entry = this.require(sessionId);
     const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
     return inspectBrowserElement(tab.view.webContents, target);
+  }
+
+  async extractTable(sessionId: string, tabId: string | undefined, target: BrowserTarget, maxRows = 100): Promise<BrowserTableSnapshot> {
+    const entry = this.require(sessionId);
+    const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
+    return extractBrowserTable(tab.view.webContents, target, maxRows);
+  }
+
+  async drag(sessionId: string, tabId: string | undefined, from: BrowserTarget, to: BrowserTarget): Promise<BrowserInteractionResult> {
+    const entry = this.require(sessionId);
+    const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
+    return dragBrowserTarget(tab.view.webContents, from, to);
+  }
+
+  async listFrames(sessionId: string, tabId?: string): Promise<BrowserFrameSnapshot[]> {
+    const entry = this.require(sessionId);
+    const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
+    return listBrowserFrames(tab.view.webContents);
+  }
+
+  async exportPdf(sessionId: string, tabId: string | undefined, outputPath: string, options: BrowserPdfOptions): Promise<{ path: string; sizeBytes: number; tab: BrowserTabSnapshot }> {
+    const entry = this.require(sessionId);
+    const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
+    const pdf = await tab.view.webContents.printToPDF({ printBackground: options.printBackground, landscape: options.landscape, pageSize: options.pageSize });
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, pdf, { flag: options.overwrite ? 'w' : 'wx' });
+    return { path: outputPath, sizeBytes: pdf.byteLength, tab: { ...tab.snapshot } };
   }
 
   console(sessionId: string, tabId?: string, limit = 100): BrowserConsoleSnapshot {

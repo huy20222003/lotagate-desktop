@@ -18,6 +18,7 @@ public static class LotaGateComputerNative {
   [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
   [StructLayout(LayoutKind.Sequential)] private struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
   [DllImport("user32.dll")] private static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+  [DllImport("user32.dll")] private static extern uint GetDpiForSystem();
   [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int command);
   [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
@@ -41,6 +42,7 @@ public static class LotaGateComputerNative {
   public static bool SetBounds(IntPtr hWnd, int x, int y, int width, int height) { if (width <= 0 || height <= 0) throw new ArgumentOutOfRangeException("Window bounds must be positive."); return SetWindowPos(hWnd, IntPtr.Zero, x, y, width, height, 0x0014u); }
   public static bool Close(IntPtr hWnd) { if (!IsWindow(hWnd)) throw new InvalidOperationException("The target window no longer exists."); return PostMessage(hWnd, 0x0010u, IntPtr.Zero, IntPtr.Zero); }
   public static uint IdleMilliseconds() { var info = new LASTINPUTINFO(); info.cbSize = (uint)Marshal.SizeOf(typeof(LASTINPUTINFO)); if (!GetLastInputInfo(ref info)) throw new InvalidOperationException("Unable to read Windows input state."); return unchecked((uint)Environment.TickCount) - info.dwTime; }
+  public static int SystemDpi() { return (int)GetDpiForSystem(); }
   public static int[] Bounds(IntPtr hWnd) { RECT rect; if (!GetWindowRect(hWnd, out rect)) throw new InvalidOperationException("Unable to read target window bounds."); return new[] { rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top }; }
   public static void Focus(IntPtr hWnd) { if (!IsWindow(hWnd)) throw new InvalidOperationException("The target window no longer exists."); ShowWindow(hWnd, 9); SetForegroundWindow(hWnd); }
   public static void Move(int x, int y) { SetCursorPos(x, y); }
@@ -56,6 +58,8 @@ public static class LotaGateComputerNative {
 
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+. (Join-Path $PSScriptRoot '..\\document-use\\windows-ocr.ps1')
+Add-Type -AssemblyName System.Windows.Forms
 
 $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
 $action = [string]$request.action
@@ -162,6 +166,27 @@ function Read-ElementText([System.Windows.Automation.AutomationElement]$element,
   if ($readScope -eq 'document') { return [string]$text.DocumentRange.GetText(-1) }
   throw "Unsupported text scope '$readScope'."
 }
+function Read-Selection([System.Windows.Automation.AutomationElement]$element) {
+  $items = @(); $container = Get-Pattern $element ([System.Windows.Automation.SelectionPattern]::Pattern)
+  if ($null -ne $container) { $items = @($container.Current.GetSelection()) } else { $items = @($element.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $pattern = Get-Pattern $_ ([System.Windows.Automation.SelectionItemPattern]::Pattern); $null -ne $pattern -and [bool]$pattern.Current.IsSelected }) }
+  return @($items | Select-Object -First 500 | ForEach-Object { $current = $_.Current; $value = Get-Pattern $_ ([System.Windows.Automation.ValuePattern]::Pattern); [ordered]@{ name = Bound-Text ([string]$current.Name); role = [string]$current.ControlType.ProgrammaticName; selected = $true; value = if ($null -eq $value) { $null } else { Bound-Text ([string]$value.Current.Value) } } })
+}
+function Read-Grid([System.Windows.Automation.AutomationElement]$element) {
+  $pattern = Get-Pattern $element ([System.Windows.Automation.GridPattern]::Pattern)
+  if ($null -eq $pattern) { throw 'The UI element does not expose the Grid pattern.' }
+  $grid = $pattern.Current; $rowStart = if ($null -eq $params.rowStart) { 0 } else { [int]$params.rowStart }; $columnStart = if ($null -eq $params.columnStart) { 0 } else { [int]$params.columnStart }; $rowCount = if ($null -eq $params.rowCount) { $grid.RowCount } else { [int]$params.rowCount }; $columnCount = if ($null -eq $params.columnCount) { $grid.ColumnCount } else { [int]$params.columnCount }
+  if ($rowStart -lt 0 -or $columnStart -lt 0 -or $rowCount -lt 1 -or $columnCount -lt 1 -or $rowCount -gt 100 -or $columnCount -gt 100 -or $rowStart + $rowCount -gt $grid.RowCount -or $columnStart + $columnCount -gt $grid.ColumnCount) { throw 'The requested grid range is invalid or exceeds the 100 by 100 limit.' }
+  $rows = @(); for ($row = $rowStart; $row -lt $rowStart + $rowCount; $row++) { $cells = @(); for ($column = $columnStart; $column -lt $columnStart + $columnCount; $column++) { $cell = $grid.GetItem($row, $column); $current = $cell.Current; $value = Get-Pattern $cell ([System.Windows.Automation.ValuePattern]::Pattern); $cells += [ordered]@{ row = $row; column = $column; name = Bound-Text ([string]$current.Name); value = if ($null -eq $value) { $null } else { Bound-Text ([string]$value.Current.Value) } } }; $rows += ,$cells }
+  return [ordered]@{ rowStart = $rowStart; columnStart = $columnStart; rowCount = $rowCount; columnCount = $columnCount; rows = $rows }
+}
+function Select-Text([System.Windows.Automation.AutomationElement]$element, [string]$text, [int]$occurrence) {
+  if ([bool]$element.Current.IsPassword) { throw 'Selecting text in password controls is not permitted.' }
+  if ([string]::IsNullOrWhiteSpace($text) -or $text.Length -gt 4096) { throw 'The text selection query is invalid.' }
+  $pattern = Get-Pattern $element ([System.Windows.Automation.TextPattern]::Pattern); if ($null -eq $pattern) { throw 'The UI element does not expose the Text pattern.' }
+  $targetOccurrence = [Math]::Max($occurrence, 1); $cursor = $pattern.DocumentRange; $found = $null
+  for ($index = 1; $index -le $targetOccurrence; $index++) { $found = $cursor.FindText($text, $false, $true); if ($null -eq $found) { throw "Text occurrence $targetOccurrence was not found." }; if ($index -lt $targetOccurrence) { $cursor = $found.Clone(); $moved = 0; [void]$cursor.Move([System.Windows.Automation.TextUnit]::Character, 1, [ref]$moved) } }
+  $found.Select(); return [ordered]@{ selected = $true; text = Bound-Text ($found.GetText(4096)); occurrence = $targetOccurrence; elementId = [string]$params.elementId }
+}
 function Set-ElementValue([System.Windows.Automation.AutomationElement]$element, [string]$value) {
   Require-Enabled $element
   $valuePattern = Get-Pattern $element ([System.Windows.Automation.ValuePattern]::Pattern)
@@ -209,25 +234,6 @@ function Capture-WindowImage([IntPtr]$handle, [object]$region) {
   }
   return @{ bytes = $bytes; bounds = $resultBounds }
 }
-function Await-WinRt([object]$operation) {
-  try { Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction SilentlyContinue; return [System.WindowsRuntimeSystemExtensions]::AsTask($operation).GetAwaiter().GetResult() }
-  catch { throw 'Windows OCR is unavailable in this Desktop runtime.' }
-}
-function Recognize-ImageText([byte[]]$png, [string]$language) {
-  $engine = if ([string]::IsNullOrWhiteSpace($language)) { [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages() } else { [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage([Windows.Globalization.Language]::new($language)) }
-  if ($null -eq $engine) { throw 'No compatible Windows OCR language is installed.' }
-  $stream = [Windows.Storage.Streams.InMemoryRandomAccessStream]::new()
-  $writer = [Windows.Storage.Streams.DataWriter]::new($stream)
-  $writer.WriteBytes($png)
-  [void](Await-WinRt $writer.StoreAsync())
-  $writer.DetachStream()
-  $stream.Seek(0)
-  $decoder = Await-WinRt ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream))
-  $bitmap = Await-WinRt $decoder.GetSoftwareBitmapAsync()
-  $ocr = Await-WinRt $engine.RecognizeAsync($bitmap)
-  $lines = @($ocr.Lines | ForEach-Object { $rect = $_.BoundingRect; [ordered]@{ text = [string]$_.Text; bounds = @{ x = [int]$rect.X; y = [int]$rect.Y; width = [int]$rect.Width; height = [int]$rect.Height } } })
-  return [ordered]@{ text = Bound-Text ([string]$ocr.Text); language = [string]$engine.RecognizerLanguage.LanguageTag; lines = $lines }
-}
 function Key-Code([string]$key) {
   $map = @{ Enter = 13; Tab = 9; Escape = 27; Backspace = 8; Delete = 46; Insert = 45; Home = 36; End = 35; PageUp = 33; PageDown = 34; Left = 37; Right = 39; Up = 38; Down = 40; Space = 32; F1 = 112; F2 = 113; F3 = 114; F4 = 115; F5 = 116; F6 = 117; F7 = 118; F8 = 119; F9 = 120; F10 = 121; F11 = 122; F12 = 123 }
   if ($map.ContainsKey($key)) { return [uint16]$map[$key] }
@@ -238,6 +244,58 @@ function Apply-Modifier([string]$modifier, [bool]$down) { $code = if ($modifier 
 function Text-Exists([IntPtr]$handle, [string]$text) { $root = [System.Windows.Automation.AutomationElement]::FromHandle($handle); foreach ($element in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) { if ([string]$element.Current.Name -like "*$text*") { return $true } }; return $false }
 function Application-Key([string]$value) { return $value.Trim().ToLowerInvariant() -replace '\.exe$', '' }
 function Is-ApplicationAllowed([string]$value) { $key = Application-Key $value; if ([string]::IsNullOrWhiteSpace($key)) { return $false }; foreach ($allowed in $allowedApplications) { if ($key -eq (Application-Key ([string]$allowed))) { return $true } }; return $false }
+function Read-ClipboardText { if (-not [System.Windows.Forms.Clipboard]::ContainsText()) { return '' }; return Bound-Text ([System.Windows.Forms.Clipboard]::GetText()) }
+function Write-ClipboardText([string]$text) { if ($text.Length -gt 1MB) { throw 'Clipboard text exceeds the 1 MB limit.' }; [System.Windows.Forms.Clipboard]::SetText($text); return @{ written = $true; characterCount = $text.Length } }
+function Find-DialogControl([IntPtr]$handle, [string[]]$controlTypes, [string[]]$names) {
+  $root = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
+  foreach ($element in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) {
+    $current = $element.Current
+    if ($controlTypes -notcontains ([string]$current.ControlType.ProgrammaticName)) { continue }
+    if ($names.Count -gt 0 -and $names -notcontains ([string]$current.Name)) { continue }
+    return $element
+  }
+  return $null
+}
+function Manage-FileDialog([IntPtr]$handle, [string]$mode, [string]$path) {
+  Assert-Window $handle
+  if ($mode -eq 'setPath' -or $mode -eq 'confirm') {
+    if ([string]::IsNullOrWhiteSpace($path) -or $path.Length -gt 4096) { throw 'A valid file dialog path is required.' }
+    $edit = Find-DialogControl $handle @('ControlType.Edit') @()
+    if ($null -eq $edit) { throw 'The file dialog path field was not found.' }
+    $value = Get-Pattern $edit ([System.Windows.Automation.ValuePattern]::Pattern)
+    if ($null -eq $value -or [bool]$value.Current.IsReadOnly) { throw 'The file dialog path field is not writable.' }
+    $value.SetValue($path)
+  }
+  if ($mode -eq 'setPath') { return @{ action = $mode; path = $path; updated = $true } }
+  $buttonNames = if ($mode -eq 'confirm') { @('Open', 'Save', 'Select Folder', 'Choose', 'OK') } else { @('Cancel') }
+  $button = Find-DialogControl $handle @('ControlType.Button') $buttonNames
+  if ($null -eq $button) { throw "The file dialog '$mode' button was not found." }
+  $invoke = Get-Pattern $button ([System.Windows.Automation.InvokePattern]::Pattern)
+  if ($null -eq $invoke) { throw 'The file dialog button does not expose Invoke.' }
+  $invoke.Invoke()
+  return @{ action = $mode; path = if ($null -eq $path) { $null } else { $path }; submitted = $true }
+}
+function Read-StateValue([System.Windows.Automation.AutomationElement]$element, [string]$property) {
+  $current = $element.Current
+  if ($property -eq 'name') { return [string]$current.Name }
+  if ($property -eq 'value') { $value = Get-Pattern $element ([System.Windows.Automation.ValuePattern]::Pattern); if ($null -eq $value) { throw 'The element does not expose Value.' }; return [string]$value.Current.Value }
+  if ($property -eq 'isEnabled') { return [string][bool]$current.IsEnabled }
+  if ($property -eq 'isOffscreen') { return [string][bool]$current.IsOffscreen }
+  if ($property -eq 'toggleState') { $value = Get-Pattern $element ([System.Windows.Automation.TogglePattern]::Pattern); if ($null -eq $value) { throw 'The element does not expose Toggle.' }; return $value.Current.ToggleState.ToString().ToLowerInvariant() }
+  if ($property -eq 'expandCollapseState') { $value = Get-Pattern $element ([System.Windows.Automation.ExpandCollapsePattern]::Pattern); if ($null -eq $value) { throw 'The element does not expose ExpandCollapse.' }; return $value.Current.ExpandCollapseState.ToString().ToLowerInvariant() }
+  if ($property -eq 'selectionState') { $value = Get-Pattern $element ([System.Windows.Automation.SelectionItemPattern]::Pattern); if ($null -eq $value) { throw 'The element does not expose SelectionItem.' }; return [string][bool]$value.Current.IsSelected }
+  throw "Unsupported state property '$property'."
+}
+function Wait-ForState([IntPtr]$handle) {
+  $timeout = [Math]::Min([Math]::Max([int]$params.timeoutMs, 100), 120000)
+  $interval = if ($null -eq $params.intervalMs) { 150 } else { [Math]::Min([Math]::Max([int]$params.intervalMs, 50), 2000) }
+  $property = Require-String 'property'; $expected = Require-String 'expected'; $watch = [Diagnostics.Stopwatch]::StartNew(); $last = $null
+  do {
+    try { $element = Find-Element $handle (Require-String 'elementId'); $last = Read-StateValue $element $property; if ($last -eq $expected) { return @{ condition = 'state'; satisfied = $true; property = $property; value = $last } } } catch { $last = $null }
+    Start-Sleep -Milliseconds $interval
+  } while ($watch.ElapsedMilliseconds -lt $timeout)
+  throw "The UI state wait timed out for property '$property'."
+}
 
 try {
   switch ($action) {
@@ -245,7 +303,11 @@ try {
     'computer.inspect' { $handle = Window-Handle; Assert-Window $handle; $root = [System.Windows.Automation.AutomationElement]::FromHandle($handle); $observationId = [guid]::NewGuid().ToString(); $maxDepth = if ($null -eq $params.maxDepth) { 8 } else { [Math]::Min([Math]::Max([int]$params.maxDepth, 1), 32) }; $elements = @(); foreach ($element in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) { if ($elements.Count -ge 300) { break }; if ((Element-Depth $element) -gt $maxDepth) { continue }; $current = $element.Current; if (-not (Query-Matches $current $params.query)) { continue }; $rect = $current.BoundingRectangle; $valuePattern = Get-Pattern $element ([System.Windows.Automation.ValuePattern]::Pattern); $rangePattern = Get-Pattern $element ([System.Windows.Automation.RangeValuePattern]::Pattern); $selectionPattern = Get-Pattern $element ([System.Windows.Automation.SelectionItemPattern]::Pattern); $togglePattern = Get-Pattern $element ([System.Windows.Automation.TogglePattern]::Pattern); $expandPattern = Get-Pattern $element ([System.Windows.Automation.ExpandCollapsePattern]::Pattern); $details = [ordered]@{ elementId = Encode-ElementId $observationId (Runtime-Id $element) $current.ControlType.ProgrammaticName ([string]$current.AutomationId) ([string]$current.Name); role = $current.ControlType.ProgrammaticName; name = [string]$current.Name; enabled = [bool]$current.IsEnabled; visible = -not [bool]$current.IsOffscreen -and [LotaGateComputerNative]::Visible($handle); isPassword = [bool]$current.IsPassword; supportedPatterns = Get-SupportedPatterns $element; bounds = @{ x = [int]$rect.X; y = [int]$rect.Y; width = [int]$rect.Width; height = [int]$rect.Height } }; if ($null -ne $valuePattern -and -not [bool]$current.IsPassword) { $details['value'] = [string]$valuePattern.Current.Value; $details['readOnly'] = [bool]$valuePattern.Current.IsReadOnly }; if ($null -ne $rangePattern) { $details['range'] = @{ value = $rangePattern.Current.Value; minimum = $rangePattern.Current.Minimum; maximum = $rangePattern.Current.Maximum; readOnly = [bool]$rangePattern.Current.IsReadOnly } }; if ($null -ne $selectionPattern) { $details['selected'] = [bool]$selectionPattern.Current.IsSelected }; if ($null -ne $togglePattern) { $details['toggleState'] = $togglePattern.Current.ToggleState.ToString().ToLowerInvariant() }; if ($null -ne $expandPattern) { $details['expandedState'] = $expandPattern.Current.ExpandCollapseState.ToString().ToLowerInvariant() }; $elements += $details }; Write-Result ([ordered]@{ observationId = $observationId; windowId = $handle.ToString(); bounds = Window-Bounds $handle; elements = $elements }); break }
     'computer.screenshot' { $handle = Window-Handle; Assert-Window $handle; $image = Capture-WindowImage $handle $params.region; $bounds = $image.bounds; Write-Result ([ordered]@{ mimeType = 'image/png'; width = $bounds.width; height = $bounds.height; dataBase64 = [Convert]::ToBase64String($image.bytes) }); break }
     'computer.readText' { $handle = Window-Handle; Assert-Window $handle; $element = Get-TargetElement $handle; $scope = if ($null -eq $params.scope) { 'value' } else { [string]$params.scope }; Write-Result ([ordered]@{ elementId = [string]$params.elementId; scope = $scope; text = Bound-Text (Read-ElementText $element $scope) }); break }
+    'computer.readSelection' { $handle = Window-Handle; Assert-Window $handle; $element = Get-TargetElement $handle; Write-Result ([ordered]@{ elementId = [string]$params.elementId; items = Read-Selection $element }); break }
+    'computer.readGrid' { $handle = Window-Handle; Assert-Window $handle; $element = Get-TargetElement $handle; Write-Result ([ordered]@{ elementId = [string]$params.elementId; grid = Read-Grid $element }); break }
     'computer.recognizeText' { $handle = Window-Handle; Assert-Window $handle; $image = Capture-WindowImage $handle $params.region; $result = Recognize-ImageText $image.bytes ([string]$params.language); $result['bounds'] = $image.bounds; Write-Result $result; break }
+    'computer.selectText' { $handle = Window-Handle; Assert-Window $handle; $element = Get-TargetElement $handle; $occurrence = if ($null -eq $params.occurrence) { 1 } else { [int]$params.occurrence }; Write-Result (Select-Text $element (Require-String 'text') $occurrence); break }
+    'computer.listDisplays' { $dpi = [LotaGateComputerNative]::SystemDpi(); $items = @([System.Windows.Forms.Screen]::AllScreens | ForEach-Object { [ordered]@{ deviceName = $_.DeviceName; bounds = @{ x = $_.Bounds.X; y = $_.Bounds.Y; width = $_.Bounds.Width; height = $_.Bounds.Height }; workArea = @{ x = $_.WorkingArea.X; y = $_.WorkingArea.Y; width = $_.WorkingArea.Width; height = $_.WorkingArea.Height }; primary = [bool]$_.Primary; dpi = @{ x = $dpi; y = $dpi; source = 'system' } } }); Write-Result $items; break }
     'computer.focus' { $handle = Window-Handle; Assert-Window $handle; if ($null -ne $params.elementId) { $element = Find-Element $handle ([string]$params.elementId); $element.SetFocus() } else { [LotaGateComputerNative]::Focus($handle) }; Write-Result @{ focused = $true; windowId = $handle.ToString() }; break }
     'computer.click' { $handle = Window-Handle; Assert-Window $handle; [LotaGateComputerNative]::Focus($handle); $target = if ($null -ne $params.elementId) { $params } else { $params.point }; $point = Target-Point $handle $target; $button = if ($null -eq $params.button) { 'left' } else { [string]$params.button }; $down = if ($button -eq 'right') { 8 } elseif ($button -eq 'middle') { 32 } else { 2 }; $count = if ($null -eq $params.clickCount) { 1 } else { [Math]::Min([Math]::Max([int]$params.clickCount, 1), 2) }; [LotaGateComputerNative]::Click($point.x, $point.y, [uint32]$down, [uint32]($down * 2), $count); Write-Result @{ clicked = $true; point = $point }; break }
     'computer.type' { $handle = Window-Handle; Assert-Window $handle; [LotaGateComputerNative]::Focus($handle); $text = [string]$params.text; if ($text.Length -gt 32000) { throw 'The text input is too large.' }; if ($null -ne $params.elementId) { $element = Find-Element $handle ([string]$params.elementId); $element.SetFocus() }; [LotaGateComputerNative]::Unicode($text); Write-Result @{ typed = $true; characterCount = $text.Length }; break }
@@ -260,6 +322,10 @@ try {
     'computer.scrollIntoView' { $handle = Window-Handle; Assert-Window $handle; $element = Get-TargetElement $handle; $pattern = Get-Pattern $element ([System.Windows.Automation.ScrollItemPattern]::Pattern); if ($null -eq $pattern) { throw 'The UI element does not expose the ScrollItem pattern.' }; $pattern.ScrollIntoView(); Write-Result @{ scrolledIntoView = $true; elementId = [string]$params.elementId }; break }
     'computer.setWindowState' { $handle = Window-Handle; Assert-Window $handle; $state = [string]$params.state; $command = if ($state -eq 'normal') { 9 } elseif ($state -eq 'minimized') { 6 } elseif ($state -eq 'maximized') { 3 } else { throw "Unsupported window state '$state'." }; [void][LotaGateComputerNative]::SetState($handle, $command); if ($null -ne $params.bounds) { $bounds = $params.bounds; [void][LotaGateComputerNative]::SetBounds($handle, [int]$bounds.x, [int]$bounds.y, [int]$bounds.width, [int]$bounds.height) }; Write-Result @{ state = $state; bounds = Window-Bounds $handle; isForeground = [LotaGateComputerNative]::Foreground($handle) }; break }
     'computer.closeWindow' { $handle = Window-Handle; Assert-Window $handle; [void][LotaGateComputerNative]::Close($handle); Start-Sleep -Milliseconds 150; $closed = -not [LotaGateComputerNative]::Exists($handle); Write-Result @{ closeRequested = $true; closed = $closed; blockedByDialog = -not $closed; windowId = $handle.ToString() }; break }
+    'computer.readClipboard' { Write-Result @{ text = Read-ClipboardText; available = [System.Windows.Forms.Clipboard]::ContainsText() }; break }
+    'computer.writeClipboard' { $text = Require-String 'text'; Write-Result (Write-ClipboardText $text); break }
+    'computer.waitForState' { $handle = Window-Handle; Assert-Window $handle; Write-Result (Wait-ForState $handle); break }
+    'computer.manageFileDialog' { $handle = Window-Handle; $mode = Require-String 'action'; $path = if ($null -eq $params.path) { $null } else { [string]$params.path }; Write-Result (Manage-FileDialog $handle $mode $path); break }
     'computer.drag' { $handle = Window-Handle; Assert-Window $handle; [LotaGateComputerNative]::Focus($handle); $from = Target-Point $handle $params.from; $to = Target-Point $handle $params.to; $duration = if ($null -eq $params.durationMs) { 300 } else { [Math]::Min([Math]::Max([int]$params.durationMs, 50), 5000) }; [LotaGateComputerNative]::Move($from.x, $from.y); [LotaGateComputerNative]::Button($from.x, $from.y, $true, $false); $steps = [Math]::Max([int]($duration / 25), 1); for ($i = 1; $i -le $steps; $i++) { $ratio = $i / $steps; [LotaGateComputerNative]::Move([int]($from.x + ($to.x - $from.x) * $ratio), [int]($from.y + ($to.y - $from.y) * $ratio)); Start-Sleep -Milliseconds 25 }; [LotaGateComputerNative]::Button($to.x, $to.y, $false, $false); Write-Result @{ dragged = $true; from = $from; to = $to }; break }
     'computer.launch' { $appId = (Require-String 'appId').Trim(); if (-not (Is-ApplicationAllowed $appId)) { throw "Application '$appId' is not allowlisted." }; $process = Start-Process -FilePath $appId -PassThru; Write-Result @{ launched = $true; appId = $appId; processId = $process.Id }; break }
     'computer.wait' {

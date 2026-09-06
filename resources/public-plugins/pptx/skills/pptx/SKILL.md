@@ -7,6 +7,15 @@ allowed-tools:
   - pptx.inspect
   - pptx.validate
   - pptx.readSlide
+  - pptx.duplicateSlide
+  - pptx.importSlides
+  - pptx.arrangeElements
+  - pptx.findReplace
+  - pptx.extractText
+  - pptx.manageMedia
+  - pptx.manageHyperlinks
+  - pptx.manageTransitions
+  - pptx.manageLayouts
   - pptx.addSlide
   - pptx.deleteSlide
   - pptx.reorderSlides
@@ -96,6 +105,18 @@ modify presentation structures rather than simulating PowerPoint UI actions.
 - `pptx.save`: persist changes explicitly. A successful mutation response is
   not proof of durability until save and post-save verification complete.
 - `pptx.close`: close the exact document handle after work is complete.
+
+## Additional tools
+
+- `pptx.duplicateSlide`: read the source slide first and verify the duplicate position and content.
+- `pptx.importSlides`: import only from the explicit source presentation and verify the number of appended slides.
+- `pptx.arrangeElements`: use element identifiers from the latest slide read and limit changes to those elements.
+- `pptx.findReplace`: replace only requested slide text and re-read every affected slide before reporting completion.
+- `pptx.extractText`: extract only the requested slide indexes and keep returned text bounded.
+- `pptx.manageMedia`: list media before insert, update, or delete; preserve exact element identity and bounds.
+- `pptx.manageHyperlinks`: set or clear links only on a freshly read slide element; do not follow or execute destinations.
+- `pptx.manageTransitions`: inspect transitions before changing the requested slide and verify the rendered result when timing matters.
+- `pptx.manageLayouts`: list layouts before applying one and verify the slide's resulting layout without rewriting its content.
 
 ## Safety and recovery
 

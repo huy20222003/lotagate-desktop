@@ -1,7 +1,7 @@
 import type { DesktopHostRequest, DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
 import type { AutomationBrowserAccess } from '../../contracts/ipc/v1/automation.js';
 import { BrowserService, type BrowserTarget, type BrowserWaitCondition } from '../browser/browser-service.js';
-import { requireExistingPath } from '../security/path-policy.js';
+import { requireExistingPath, requireWorkspaceMutationPath } from '../security/path-policy.js';
 
 export interface BrowserHostActivity {
   event: 'browser.session.created' | 'browser.action.started' | 'browser.action.completed';
@@ -185,6 +185,12 @@ export class BrowserHostToolBroker {
         return this.browser.inspect(sessionId, activeTabId);
       case 'browser.inspectElement':
         return this.browser.inspectElement(sessionId, activeTabId, requiredTarget(params['target']));
+      case 'browser.extractTable':
+        return this.browser.extractTable(sessionId, activeTabId, requiredTarget(params['target']), optionalInteger(params, 'maxRows', 1, 500, 100));
+      case 'browser.drag':
+        return this.browser.drag(sessionId, activeTabId, requiredTarget(params['from']), requiredTarget(params['to']));
+      case 'browser.listFrames':
+        return { frames: await this.browser.listFrames(sessionId, activeTabId) };
       case 'browser.console':
         return this.browser.console(sessionId, activeTabId, optionalLimit(params, 'limit'));
       case 'browser.network':
@@ -227,6 +233,10 @@ export class BrowserHostToolBroker {
       }
       case 'browser.download':
         return this.browser.download(sessionId, activeTabId, requiredString(params, 'url', 4_096));
+      case 'browser.exportPdf': {
+        const outputPath = await requireWorkspaceMutationPath(requiredString(params, 'outputPath', 4_096), cwd);
+        return this.browser.exportPdf(sessionId, activeTabId, outputPath, { overwrite: optionalBoolean(params, 'overwrite', false), printBackground: optionalBoolean(params, 'printBackground', true), landscape: optionalBoolean(params, 'landscape', false), pageSize: requiredPageSize(params['pageSize']) });
+      }
       case 'browser.dialog':
         return this.browser.dialog(sessionId, activeTabId, requiredDialogAction(params), optionalString(params, 'promptText', 4_096));
       case 'browser.press':
@@ -252,7 +262,7 @@ export class BrowserHostToolBroker {
 function assertBrowserAccess(request: DesktopHostRequest, access: AutomationBrowserAccess | undefined): void {
   if (access === undefined || access === 'autonomous' || access === 'interactive') return;
   if (access === 'disabled') throw new Error('Browser access is disabled for this automation.');
-  const readOnlyActions = new Set(['browser.navigate', 'browser.inspect', 'browser.inspectElement', 'browser.console', 'browser.network', 'browser.accessibility', 'browser.setViewport', 'browser.resetViewport', 'browser.screenshot', 'browser.readField', 'browser.waitFor', 'browser.tabs', 'browser.back', 'browser.forward', 'browser.reload']);
+  const readOnlyActions = new Set(['browser.navigate', 'browser.inspect', 'browser.inspectElement', 'browser.extractTable', 'browser.listFrames', 'browser.console', 'browser.network', 'browser.accessibility', 'browser.setViewport', 'browser.resetViewport', 'browser.screenshot', 'browser.readField', 'browser.waitFor', 'browser.tabs', 'browser.back', 'browser.forward', 'browser.reload']);
   if (!readOnlyActions.has(request.action)) throw new Error('This automation only has read-only browser access.');
 }
 
@@ -272,6 +282,10 @@ function optionalNumber(params: Record<string, unknown>, key: string, fallback =
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`Browser parameter "${key}" is invalid.`);
   return value;
 }
+
+function optionalBoolean(params: Record<string, unknown>, key: string, fallback: boolean): boolean { const value = params[key]; if (value === undefined) return fallback; if (typeof value !== 'boolean') throw new Error(`Browser parameter "${key}" is invalid.`); return value; }
+function optionalInteger(params: Record<string, unknown>, key: string, minimum: number, maximum: number, fallback: number): number { const value = params[key]; if (value === undefined) return fallback; if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum || value > maximum) throw new Error(`Browser parameter "${key}" is invalid.`); return value; }
+function requiredPageSize(value: unknown): 'A4' | 'Letter' { if (value === undefined) return 'A4'; if (value === 'A4' || value === 'Letter') return value; throw new Error('Browser parameter "pageSize" is invalid.'); }
 
 function requiredViewport(params: Record<string, unknown>): { width: number; height: number; mobile: boolean; deviceScaleFactor: number } {
   const width = boundedInteger(params, 'width', 320, 3_840);

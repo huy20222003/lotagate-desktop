@@ -7,6 +7,15 @@ allowed-tools:
   - docs.inspect
   - docs.validate
   - docs.readContent
+  - docs.manageTable
+  - docs.manageImage
+  - docs.fillTemplate
+  - docs.updateFields
+  - docs.inspectStructure
+  - docs.manageBookmarks
+  - docs.manageHyperlinks
+  - docs.manageLists
+  - docs.manageFootnotes
   - docs.insertContent
   - docs.updateContent
   - docs.deleteContent
@@ -109,6 +118,18 @@ are library-driven document operations, not simulated mouse and keyboard input.
   complete.
 - `docs.close`: close the exact handle after work. Never use a stale handle
   after close, session reset, navigation, or a failed ownership check.
+
+## Additional tools
+
+- `docs.manageTable`: list or read tables before targeted create, update, or delete operations; keep values bounded.
+- `docs.manageImage`: list images before insert, update, or delete and verify returned indexes and dimensions.
+- `docs.fillTemplate`: fill only explicitly tagged or titled content controls from the supplied values object.
+- `docs.updateFields`: update fields only for the requested document workflow, then re-read or render the affected content.
+- `docs.inspectStructure`: inspect bounded paragraphs, heading metadata, tables, and sections before structural edits.
+- `docs.manageBookmarks`: list bookmarks before adding, updating, or deleting one; preserve exact bookmark names and ranges.
+- `docs.manageHyperlinks`: list links before mutation and change only the explicitly requested range and destination.
+- `docs.manageLists`: apply or remove list formatting only on the requested character range; preserve surrounding paragraphs.
+- `docs.manageFootnotes`: list footnotes before mutation and add or delete only the explicitly requested note.
 
 ## Safety and recovery
 

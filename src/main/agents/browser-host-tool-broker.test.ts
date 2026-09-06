@@ -16,6 +16,9 @@ describe('BrowserHostToolBroker', () => {
       selectTab: vi.fn().mockResolvedValue({}),
       inspect: vi.fn().mockResolvedValue({}),
       inspectElement: vi.fn().mockResolvedValue({}),
+      extractTable: vi.fn().mockResolvedValue({}),
+      drag: vi.fn().mockResolvedValue({}),
+      listFrames: vi.fn().mockResolvedValue([]),
       console: vi.fn().mockReturnValue({}),
       network: vi.fn().mockReturnValue({}),
       accessibility: vi.fn().mockResolvedValue({}),
@@ -32,6 +35,7 @@ describe('BrowserHostToolBroker', () => {
       type: vi.fn().mockResolvedValue({}),
       upload: vi.fn().mockResolvedValue({}),
       download: vi.fn().mockResolvedValue({}),
+      exportPdf: vi.fn().mockResolvedValue({}),
       dialog: vi.fn().mockResolvedValue({}),
       press: vi.fn().mockResolvedValue({}),
       scroll: vi.fn().mockResolvedValue({}),
@@ -43,13 +47,13 @@ describe('BrowserHostToolBroker', () => {
     const broker = new BrowserHostToolBroker(browser);
     const cases: Array<[string, Record<string, unknown>]> = [
       ['browser.navigate', { url: 'https://example.test' }], ['browser.newTab', {}], ['browser.closeTab', {}], ['browser.selectTab', { tabId: 'tab-1' }],
-      ['browser.inspect', {}], ['browser.inspectElement', { target: { type: 'css', selector: 'body' } }], ['browser.console', {}], ['browser.network', {}], ['browser.accessibility', {}],
+      ['browser.inspect', {}], ['browser.inspectElement', { target: { type: 'css', selector: 'body' } }], ['browser.extractTable', { target: { type: 'css', selector: 'table' } }], ['browser.drag', { from: { type: 'css', selector: '#from' }, to: { type: 'css', selector: '#to' } }], ['browser.listFrames', {}], ['browser.console', {}], ['browser.network', {}], ['browser.accessibility', {}],
       ['browser.setViewport', { width: 1280, height: 720 }], ['browser.resetViewport', {}], ['browser.screenshot', {}], ['browser.click', { target: { type: 'text', value: 'Open' } }],
       ['browser.focus', { target: { type: 'css', selector: '#name' } }], ['browser.clear', { target: { type: 'css', selector: '#name' } }], ['browser.hover', { target: { type: 'css', selector: '#menu' } }],
       ['browser.check', { target: { type: 'css', selector: '#terms' }, checked: true }], ['browser.select', { target: { type: 'css', selector: '#country' }, value: 'VN' }],
       ['browser.readField', { target: { type: 'css', selector: '#name' } }], ['browser.type', { target: { type: 'css', selector: '#name' }, value: 'LotaGate' }],
       ['browser.upload', { target: { type: 'css', selector: 'input[type=file]' }, path: 'package.json' }], ['browser.download', { url: 'https://example.test/file.txt' }],
-      ['browser.dialog', { action: 'read' }], ['browser.press', { key: 'Enter' }], ['browser.scroll', { deltaY: 500 }], ['browser.back', {}], ['browser.forward', {}], ['browser.reload', {}],
+      ['browser.dialog', { action: 'read' }], ['browser.exportPdf', { outputPath: 'page.pdf' }], ['browser.press', { key: 'Enter' }], ['browser.scroll', { deltaY: 500 }], ['browser.back', {}], ['browser.forward', {}], ['browser.reload', {}],
       ['browser.waitFor', { condition: { type: 'text', value: 'Done' } }], ['browser.tabs', {}],
     ];
     for (const [action, params] of cases) {

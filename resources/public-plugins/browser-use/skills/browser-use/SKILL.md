@@ -119,6 +119,13 @@ limited to the user's stated goal, and verified against the current page state.
 - `browser.waitFor`: use bounded waits for a selector, text, or URL. Stop and
   report a timeout or ambiguous match instead of retrying indefinitely.
 
+## Additional tools
+
+- `browser.extractTable`: target the table or an element inside it, keep `maxRows` bounded, and verify truncation.
+- `browser.listFrames`: treat frame inventory as point-in-time; same-origin status does not authorize cross-origin access.
+- `browser.drag`: use fresh source and destination targets and verify the page after the drag.
+- `browser.exportPdf`: use an explicit workspace output path and set `overwrite` only with explicit user intent.
+
 ## Safety and recovery
 
 - Stop if the page, tab, target, or requested scope becomes ambiguous.

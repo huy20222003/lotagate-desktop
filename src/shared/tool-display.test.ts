@@ -6,6 +6,12 @@ describe('tool display names', () => {
     expect(Object.keys(BUILTIN_TOOL_DISPLAY_NAMES)).toEqual(expect.arrayContaining([
       'filesystem.read', 'shell.exec', 'browser.navigate', 'computer.inspect',
       'pdf.open', 'pptx.open', 'excel.open', 'docs.open',
+      'browser.extractTable', 'browser.listFrames', 'browser.exportPdf',
+      'computer.readSelection', 'computer.readGrid', 'computer.selectText', 'computer.listDisplays',
+      'pdf.recognizeText', 'pdf.search', 'pdf.extractImages', 'pdf.manageBookmarks', 'pdf.extractLinks', 'pdf.extractAnnotations', 'pdf.manageAttachments', 'pdf.flattenForms', 'pdf.optimize', 'pdf.addPageNumbers',
+      'pptx.duplicateSlide', 'pptx.importSlides', 'pptx.arrangeElements', 'pptx.findReplace',
+      'excel.find', 'excel.manageNamedRange', 'excel.setDataValidation', 'excel.managePivotTable',
+      'docs.manageTable', 'docs.manageImage', 'docs.fillTemplate', 'docs.updateFields',
     ]));
   });
 
