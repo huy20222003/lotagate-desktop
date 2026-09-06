@@ -5,6 +5,7 @@ export type ExtensionScope = 'user' | 'project' | 'plugin' | 'builtin';
 
 export interface ExtensionRow {
   name: string;
+  displayName?: string;
   status: string;
   detail: string;
   description?: string;
@@ -27,6 +28,7 @@ export interface PluginContribution {
 export interface PluginDetail {
   plugin: {
     name: string;
+    displayName?: string;
     version: string;
     description?: string;
     author?: string;
@@ -85,10 +87,11 @@ export function parseExtensionRows(value: unknown, kind: ExtensionKind): Extensi
   });
 }
 
-function readListMetadata(row: Record<string, unknown>): Pick<ExtensionRow, 'description' | 'version'> {
+function readListMetadata(row: Record<string, unknown>): Pick<ExtensionRow, 'displayName' | 'description' | 'version'> {
+  const displayName = typeof row['displayName'] === 'string' ? row['displayName'] : undefined;
   const description = typeof row['description'] === 'string' ? row['description'] : undefined;
   const version = typeof row['version'] === 'string' ? row['version'] : undefined;
-  return { ...(description === undefined ? {} : { description }), ...(version === undefined ? {} : { version }) };
+  return { ...(displayName === undefined ? {} : { displayName }), ...(description === undefined ? {} : { description }), ...(version === undefined ? {} : { version }) };
 }
 
 function readScope(value: unknown): ExtensionScope | undefined { return value === 'user' || value === 'project' || value === 'plugin' || value === 'builtin' ? value : undefined; }
@@ -117,10 +120,10 @@ function parseContribution(value: unknown): PluginContribution[] {
   return typeof name === 'string' && typeof sourceName === 'string' && typeof description === 'string' && (status === 'ENABLED' || status === 'DISABLED') ? [{ kind: value['kind'], name, sourceName, description, status }] : [];
 }
 
-function readOptionalPluginMetadata(value: Record<string, unknown>): Pick<PluginDetail['plugin'], 'description' | 'author' | 'license' | 'homepage' | 'repository' | 'keywords'> {
-  const optional = ['description', 'author', 'license', 'homepage', 'repository'].reduce<Record<string, string>>((result, key) => { if (typeof value[key] === 'string') result[key] = value[key] as string; return result; }, {});
+function readOptionalPluginMetadata(value: Record<string, unknown>): Pick<PluginDetail['plugin'], 'displayName' | 'description' | 'author' | 'license' | 'homepage' | 'repository' | 'keywords'> {
+  const optional = ['displayName', 'description', 'author', 'license', 'homepage', 'repository'].reduce<Record<string, string>>((result, key) => { if (typeof value[key] === 'string') result[key] = value[key] as string; return result; }, {});
   const keywords = Array.isArray(value['keywords']) && value['keywords'].every(item => typeof item === 'string') ? value['keywords'] as string[] : undefined;
-  return { ...optional, ...(keywords === undefined ? {} : { keywords }) } as Pick<PluginDetail['plugin'], 'description' | 'author' | 'license' | 'homepage' | 'repository' | 'keywords'>;
+  return { ...optional, ...(keywords === undefined ? {} : { keywords }) } as Pick<PluginDetail['plugin'], 'displayName' | 'description' | 'author' | 'license' | 'homepage' | 'repository' | 'keywords'>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }

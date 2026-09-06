@@ -5,6 +5,8 @@ allowed-tools:
   - computer.listWindows
   - computer.inspect
   - computer.screenshot
+  - computer.readText
+  - computer.recognizeText
   - computer.focus
   - computer.click
   - computer.type
@@ -14,6 +16,14 @@ allowed-tools:
   - computer.launch
   - computer.wait
   - computer.move
+  - computer.setValue
+  - computer.invoke
+  - computer.select
+  - computer.setToggleState
+  - computer.setExpandedState
+  - computer.scrollIntoView
+  - computer.setWindowState
+  - computer.closeWindow
 ---
 
 # Computer Use
@@ -35,16 +45,19 @@ Use the `computer.*` tools only when the user explicitly asks LotaGate to intera
 3. After launching, call `computer.wait` for the target window to exist or for a meaningful title/text condition. Do not guess timing with repeated blind actions.
 4. Call `computer.inspect` on the selected window before interacting. Use the latest `elementId` whenever possible.
 5. Call `computer.focus` before a sequence that depends on the active window or focused control.
-6. Use `computer.click`, `computer.type`, `computer.keypress`, `computer.scroll`, or `computer.drag` only within the selected window.
-7. Use `computer.wait` after an action that changes the UI, then use `computer.inspect` again if element ids may have changed.
-8. Call `computer.screenshot` when visual confirmation is needed, especially after a consequential action or when accessibility information is ambiguous.
-9. Report what was actually completed. Do not claim success from an issued input alone; verify the resulting window state.
+6. Use semantic controls such as `computer.setValue`, `computer.select`, `computer.setToggleState`, `computer.setExpandedState`, `computer.invoke`, and `computer.scrollIntoView` when the inspected element supports the required pattern.
+7. Use `computer.click`, `computer.type`, `computer.keypress`, `computer.scroll`, or `computer.drag` only within the selected window.
+8. Use `computer.wait` after an action that changes the UI, then use `computer.inspect` again if element ids may have changed.
+9. Call `computer.screenshot` or `computer.recognizeText` when visual confirmation is needed, especially after a consequential action or when accessibility information is ambiguous.
+10. Report what was actually completed. Do not claim success from an issued input alone; verify the resulting window state.
 
 ## Tool-specific operating rules
 
 - `computer.listWindows`: use it to discover targets; do not assume a process name or window id remains valid after launch, close, or restart.
 - `computer.inspect`: treat the returned UI tree as a point-in-time observation. Use `query.role`, `query.name`, `query.text`, and `maxDepth` to limit the returned tree when the full tree is unnecessary. Element ids are tied to the inspected UI Automation runtime identity and must be refreshed after navigation, modal changes, or major content updates.
 - `computer.screenshot`: use the returned image for visual verification; do not infer hidden content outside the captured target window. When needed, pass `region: {x, y, width, height}` relative to the target window.
+- `computer.readText`: read a currently inspected element using `scope: value`, `document`, or `selection`; never use it to extract password fields.
+- `computer.recognizeText`: use OCR only for visible content that is not exposed through UI Automation; pass a bounded region and treat OCR text as observational evidence, not an element id.
 - `computer.focus`: focus only the requested target window or a currently inspected element.
 - `computer.click`: prefer an inspected `elementId`; use coordinates only when no stable element target exists and the point is unambiguous.
 - `computer.type`: focus the intended editable control first and keep text within the user's requested scope. Never type secrets unless the user explicitly asks and the action is approved.
@@ -52,6 +65,14 @@ Use the `computer.*` tools only when the user explicitly asks LotaGate to intera
 - `computer.scroll`: scroll the selected window only; recheck the UI after scrolling because visible elements may change.
 - `computer.drag`: use inspected elements or validated points for both endpoints and keep the drag within the selected window.
 - `computer.move`: use an inspected `elementId` or a point relative to the selected window. The point is validated against the window bounds; use `durationMs` for a bounded pointer movement.
+- `computer.setValue`: prefer this for editable fields and ranges; verify the returned value or inspect the control again after setting it.
+- `computer.invoke`: prefer the control's default UI Automation action for buttons and menu items; verify the resulting state afterward.
+- `computer.select`: use `replace`, `add`, or `remove` only when the control exposes SelectionItem; verify the final selected state.
+- `computer.setToggleState`: set the requested state instead of blindly toggling; stop if the control does not expose Toggle.
+- `computer.setExpandedState`: set the requested expanded state and reinspect when expanding changes the UI tree.
+- `computer.scrollIntoView`: use it before interacting with an inspected element that may be virtualized or outside the viewport.
+- `computer.setWindowState`: use `normal`, `minimized`, or `maximized`; screen bounds are optional and must be verified after the operation.
+- `computer.closeWindow`: treat `closed: false` as unresolved; do not dismiss a save or security dialog without explicit user intent and approval.
 - `computer.launch`: launch only an application explicitly allowed in the Computer Use settings. If launch fails, report the error instead of trying alternate launch mechanisms.
 - `computer.wait`: use bounded waits and stop when the condition times out or the target becomes ambiguous. For `condition: idle`, `idleMs` means the minimum system-wide time since the last Windows input (default 250 ms).
 

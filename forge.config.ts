@@ -41,6 +41,7 @@ const config: ForgeConfig = {
       'resources/icons/lotagate.ico',
       'resources/public-plugins',
       'resources/computer-use',
+      'resources/document-use',
       'node_modules/@lotagate/cli/bin/lotagate.exe',
       'node_modules/node-pty',
     ],

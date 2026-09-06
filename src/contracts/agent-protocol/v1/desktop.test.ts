@@ -14,6 +14,11 @@ describe('Desktop JSONL contract', () => {
     expect(desktopRequestSchema.parse({ version: 1, id: 'request-1', method: 'title.generate', params: { prompt: 'Summarize this request.' } })).toMatchObject({ method: 'title.generate' });
   });
 
+  it('accepts extension requests forwarded to the CLI agent', () => {
+    const methods = ['extension.listPublicPlugins', 'extension.resolvePublicPluginSource', 'extension.readPublicPluginContribution', 'extension.readDetail', 'extension.readPluginIcon'] as const;
+    for (const method of methods) expect(desktopRequestSchema.parse({ version: 1, id: `request-${method}`, method, params: {} })).toMatchObject({ method });
+  });
+
   it('derives the event scope when the installed CLI omits it', () => {
     expect(parseDesktopEvent({ version: 1, type: 'event', event: 'command.output', data: { content: 'hello' } })).toMatchObject({ scope: 'control' });
     expect(parseDesktopEvent({ version: 1, type: 'event', event: 'assistant.delta', data: { sessionId: 'session-1', content: 'hello' } })).toMatchObject({ scope: 'session' });

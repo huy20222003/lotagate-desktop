@@ -16,6 +16,7 @@ export interface CliAgentProcessOptions {
   executableArgs?: readonly string[];
   environment?: NodeJS.ProcessEnv;
   computerHost?: boolean;
+  documentHost?: boolean;
 }
 
 export interface CliAgentEventHandler {
@@ -66,10 +67,10 @@ export class CliAgentProcess {
   private async performInitialization(): Promise<DesktopAgentResult> {
     if (this.initialized && this.initializationResult !== undefined) return this.initializationResult;
     this.ensureStarted();
-    const result = await this.request('initialize', { client: 'lotagate-desktop', version: 1, browserHost: true, executionBroker: true, computerHost: this.options.computerHost === true });
+    const result = await this.request('initialize', { client: 'lotagate-desktop', version: 1, browserHost: true, executionBroker: true, computerHost: this.options.computerHost === true, documentHost: this.options.documentHost === true });
     if (!isDesktopAgentResult(result)) throw new CliAgentProcessError('The CLI returned an invalid Desktop protocol handshake.');
     if (result.version !== 1) throw new CliAgentProcessError(`Unsupported Desktop protocol version: ${String(result.version)}.`);
-    const missing = [...REQUIRED_DESKTOP_CAPABILITIES, ...(this.options.computerHost === true ? ['computer-host'] : [])].filter(capability => !result.capabilities.includes(capability));
+    const missing = [...REQUIRED_DESKTOP_CAPABILITIES, ...(this.options.computerHost === true ? ['computer-host'] : []), ...(this.options.documentHost === true ? ['document-host'] : [])].filter(capability => !result.capabilities.includes(capability));
     if (missing.length > 0) {
       await this.shutdown();
       throw new CliAgentProcessError(`The CLI does not support the required Desktop execution protocol. Missing capabilities: ${missing.join(', ')}.`);

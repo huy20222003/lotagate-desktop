@@ -1,6 +1,7 @@
 {
   "name": "computer-use",
-  "version": "1.0.0",
+  "displayName": "Computer Use",
+  "version": "1.1.0",
   "description": "Control approved Windows applications directly through LotaGate.",
   "author": "LotaGate",
   "license": "MIT",

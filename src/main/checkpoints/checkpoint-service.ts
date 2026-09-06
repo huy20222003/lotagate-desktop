@@ -139,7 +139,12 @@ export class CheckpointService {
   private async enqueueResult<T>(cwd: string, operation: () => Promise<T>): Promise<T> { const key = resolve(cwd); const previous = this.queues.get(key) ?? Promise.resolve(); const next = previous.catch(() => undefined).then(operation); const queued = next.then(() => undefined, () => undefined); this.queues.set(key, queued); try { return await next; } finally { if (this.queues.get(key) === queued) this.queues.delete(key); } }
 }
 
-function isMutationRequest(request: DesktopHostRequest): boolean { return request.tool === 'filesystem' && request.action === 'filesystem.write' || request.tool === 'shell' || request.tool === 'git'; }
+function isMutationRequest(request: DesktopHostRequest): boolean {
+  if (request.tool === 'filesystem' && request.action === 'filesystem.write' || request.tool === 'shell' || request.tool === 'git') return true;
+  if (request.tool !== 'document') return false;
+  return !DOCUMENT_READ_ACTIONS.has(request.action.split('.', 2)[1] ?? '');
+}
+const DOCUMENT_READ_ACTIONS = new Set(['open', 'inspect', 'validate', 'readText', 'extractTables', 'readForm', 'readSlide', 'readRange', 'readContent']);
 async function buildMutations(before: Map<string, WorkspaceEntry>, after: Map<string, WorkspaceEntry>, store: CheckpointStore, sequenceStart: number): Promise<CheckpointMutation[]> {
   const removed = [...before.keys()].filter(path => !after.has(path));
   const added = [...after.keys()].filter(path => !before.has(path));

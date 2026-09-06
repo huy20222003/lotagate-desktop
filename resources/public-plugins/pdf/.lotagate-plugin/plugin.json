@@ -1,0 +1,11 @@
+{
+  "name": "pdf",
+  "displayName": "PDF",
+  "version": "1.0.0",
+  "description": "Read, validate, render, and govern PDF document workflows through LotaGate Desktop.",
+  "author": "LotaGate",
+  "license": "MIT",
+  "homepage": "https://lotagate.com/",
+  "repository": "https://github.com/huy20222003/lotagate-desktop",
+  "keywords": ["pdf", "documents", "pdf-automation"]
+}

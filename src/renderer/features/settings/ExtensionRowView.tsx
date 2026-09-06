@@ -1,16 +1,10 @@
-import { Blocks, Check, CircleOff, Plug, Puzzle, Trash2, Workflow } from 'lucide-react';
+import { Check, CircleOff, Trash2 } from 'lucide-react';
 import { ActionMenu, type ActionMenuItem } from '../../components/ActionMenu.js';
-import { Card, Icon } from '../../components/ui.js';
+import { Card } from '../../components/ui.js';
 import { formatTextClamp } from '../../utils/text.js';
 import type { ExtensionRow } from './extension-command-client.js';
 import type { ExtensionRowViewProps } from './extensions-view-types.js';
-
-const EXTENSION_KIND_ICONS = {
-  hook: Workflow,
-  skill: Puzzle,
-  plugin: Blocks,
-  mcp: Plug,
-} as const;
+import { DEFAULT_EXTENSION_ICONS } from './extension-icons.js';
 
 export function ExtensionRowView({ kind, row, busy, readOnly, canToggle, canRemove, onOpen, onToggle, onRemove }: ExtensionRowViewProps) {
   const enabled = row.status === 'ENABLED';
@@ -19,7 +13,7 @@ export function ExtensionRowView({ kind, row, busy, readOnly, canToggle, canRemo
     ...(readOnly || !canToggle ? [] : [{ label: enabled ? 'Disable' : 'Enable', icon: enabled ? CircleOff : Check, disabled: busy, onSelect: onToggle }]),
     ...(readOnly || !canRemove ? [] : [{ label: `Remove ${copy.title}`, icon: Trash2, tone: 'danger' as const, disabled: busy, onSelect: onRemove }]),
   ];
-  return <div className="settings-extension-row-clickable" role="button" tabIndex={0} onClick={onOpen} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); } }}><Card className="settings-extension-row"><span className="settings-extension-icon"><Icon icon={EXTENSION_KIND_ICONS[kind]} size={19} /></span><div className="settings-extension-copy"><strong>{copy.title}</strong><span>{copy.description}</span></div>{actions.length > 0 ? <div className="settings-extension-item-actions" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}><ActionMenu ariaLabel={`Actions for ${copy.title}`} items={actions} /></div> : null}</Card></div>;
+  return <div className="settings-extension-row-clickable" role="button" tabIndex={0} onClick={onOpen} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); } }}><Card className="settings-extension-row"><span className="settings-extension-icon"><img src={DEFAULT_EXTENSION_ICONS[kind]} alt="" /></span><div className="settings-extension-copy"><strong>{copy.title}</strong><span>{copy.description}</span></div>{actions.length > 0 ? <div className="settings-extension-item-actions" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}><ActionMenu ariaLabel={`Actions for ${copy.title}`} items={actions} /></div> : null}</Card></div>;
 }
 
 function extensionCopy(kind: ExtensionRowViewProps['kind'], row: ExtensionRow): { title: string; description: string } {

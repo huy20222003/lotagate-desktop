@@ -20,6 +20,8 @@ public static class LotaGateComputerNative {
   [DllImport("user32.dll")] private static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
   [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int command);
+  [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+  [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
   [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, int data, UIntPtr extraInfo);
   [DllImport("user32.dll")] private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
@@ -35,6 +37,9 @@ public static class LotaGateComputerNative {
   public static bool Visible(IntPtr hWnd) { return IsWindowVisible(hWnd); }
   public static bool Minimized(IntPtr hWnd) { return IsIconic(hWnd); }
   public static bool Foreground(IntPtr hWnd) { return GetForegroundWindow() == hWnd; }
+  public static bool SetState(IntPtr hWnd, int command) { if (!IsWindow(hWnd)) throw new InvalidOperationException("The target window no longer exists."); return ShowWindow(hWnd, command); }
+  public static bool SetBounds(IntPtr hWnd, int x, int y, int width, int height) { if (width <= 0 || height <= 0) throw new ArgumentOutOfRangeException("Window bounds must be positive."); return SetWindowPos(hWnd, IntPtr.Zero, x, y, width, height, 0x0014u); }
+  public static bool Close(IntPtr hWnd) { if (!IsWindow(hWnd)) throw new InvalidOperationException("The target window no longer exists."); return PostMessage(hWnd, 0x0010u, IntPtr.Zero, IntPtr.Zero); }
   public static uint IdleMilliseconds() { var info = new LASTINPUTINFO(); info.cbSize = (uint)Marshal.SizeOf(typeof(LASTINPUTINFO)); if (!GetLastInputInfo(ref info)) throw new InvalidOperationException("Unable to read Windows input state."); return unchecked((uint)Environment.TickCount) - info.dwTime; }
   public static int[] Bounds(IntPtr hWnd) { RECT rect; if (!GetWindowRect(hWnd, out rect)) throw new InvalidOperationException("Unable to read target window bounds."); return new[] { rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top }; }
   public static void Focus(IntPtr hWnd) { if (!IsWindow(hWnd)) throw new InvalidOperationException("The target window no longer exists."); ShowWindow(hWnd, 9); SetForegroundWindow(hWnd); }
@@ -118,6 +123,111 @@ function Element-Depth([System.Windows.Automation.AutomationElement]$element) {
   while ($null -ne $current -and $depth -le 64) { $current = [System.Windows.Automation.TreeWalker]::ControlViewWalker.GetParent($current); if ($null -ne $current) { $depth += 1 } }
   return $depth
 }
+function Get-Pattern([System.Windows.Automation.AutomationElement]$element, [object]$pattern) {
+  try { return $element.GetCurrentPattern($pattern) } catch { return $null }
+}
+function Get-SupportedPatterns([System.Windows.Automation.AutomationElement]$element) {
+  $patterns = @(
+    @{ name = 'Invoke'; pattern = [System.Windows.Automation.InvokePattern]::Pattern },
+    @{ name = 'Value'; pattern = [System.Windows.Automation.ValuePattern]::Pattern },
+    @{ name = 'RangeValue'; pattern = [System.Windows.Automation.RangeValuePattern]::Pattern },
+    @{ name = 'SelectionItem'; pattern = [System.Windows.Automation.SelectionItemPattern]::Pattern },
+    @{ name = 'Toggle'; pattern = [System.Windows.Automation.TogglePattern]::Pattern },
+    @{ name = 'ExpandCollapse'; pattern = [System.Windows.Automation.ExpandCollapsePattern]::Pattern },
+    @{ name = 'ScrollItem'; pattern = [System.Windows.Automation.ScrollItemPattern]::Pattern },
+    @{ name = 'Text'; pattern = [System.Windows.Automation.TextPattern]::Pattern },
+    @{ name = 'Window'; pattern = [System.Windows.Automation.WindowPattern]::Pattern }
+  )
+  return @($patterns | Where-Object { $null -ne (Get-Pattern $element $_.pattern) } | ForEach-Object { $_.name })
+}
+function Require-Enabled([System.Windows.Automation.AutomationElement]$element) {
+  if (-not [bool]$element.Current.IsEnabled) { throw 'The target UI element is disabled.' }
+}
+function Bound-Text([string]$value) {
+  if ($value.Length -le 100000) { return $value }
+  return $value.Substring(0, 100000) + "`n[truncated]"
+}
+function Read-ElementText([System.Windows.Automation.AutomationElement]$element, [string]$scope) {
+  if ([bool]$element.Current.IsPassword) { throw 'Reading password controls is not permitted.' }
+  $readScope = if ([string]::IsNullOrWhiteSpace($scope)) { 'value' } else { $scope }
+  if ($readScope -eq 'value') {
+    $value = Get-Pattern $element ([System.Windows.Automation.ValuePattern]::Pattern)
+    if ($null -eq $value) { $value = Get-Pattern $element ([System.Windows.Automation.RangeValuePattern]::Pattern) }
+    if ($null -eq $value) { throw 'The UI element does not expose a readable value.' }
+    return [string]$value.Current.Value
+  }
+  $text = Get-Pattern $element ([System.Windows.Automation.TextPattern]::Pattern)
+  if ($null -eq $text) { throw 'The UI element does not expose the Text pattern.' }
+  if ($readScope -eq 'selection') { return [string]::Join("`n", @($text.GetSelection() | ForEach-Object { $_.GetText(-1) })) }
+  if ($readScope -eq 'document') { return [string]$text.DocumentRange.GetText(-1) }
+  throw "Unsupported text scope '$readScope'."
+}
+function Set-ElementValue([System.Windows.Automation.AutomationElement]$element, [string]$value) {
+  Require-Enabled $element
+  $valuePattern = Get-Pattern $element ([System.Windows.Automation.ValuePattern]::Pattern)
+  if ($null -ne $valuePattern) {
+    if ([bool]$valuePattern.Current.IsReadOnly) { throw 'The UI element is read-only.' }
+    $valuePattern.SetValue($value)
+    return [string]$valuePattern.Current.Value
+  }
+  $rangePattern = Get-Pattern $element ([System.Windows.Automation.RangeValuePattern]::Pattern)
+  if ($null -eq $rangePattern) { throw 'The UI element does not expose a writable Value or RangeValue pattern.' }
+  if ([bool]$rangePattern.Current.IsReadOnly) { throw 'The UI element is read-only.' }
+  try { $number = [double]::Parse($value, [Globalization.CultureInfo]::InvariantCulture) } catch { throw "The range value is invalid: $value." }
+  if ($number -lt $rangePattern.Current.Minimum -or $number -gt $rangePattern.Current.Maximum) { throw 'The range value is outside the control limits.' }
+  $rangePattern.SetValue($number)
+  return [string]$rangePattern.Current.Value
+}
+function Desired-ToggleState([string]$value) {
+  if ($value -eq 'on') { return [System.Windows.Automation.ToggleState]::On }
+  if ($value -eq 'off') { return [System.Windows.Automation.ToggleState]::Off }
+  if ($value -eq 'indeterminate') { return [System.Windows.Automation.ToggleState]::Indeterminate }
+  throw "Unsupported toggle state '$value'."
+}
+function Set-ToggleState([System.Windows.Automation.AutomationElement]$element, [string]$desired) {
+  Require-Enabled $element
+  $pattern = Get-Pattern $element ([System.Windows.Automation.TogglePattern]::Pattern)
+  if ($null -eq $pattern) { throw 'The UI element does not expose the Toggle pattern.' }
+  $target = Desired-ToggleState $desired
+  for ($attempt = 0; $attempt -lt 3 -and $pattern.Current.ToggleState -ne $target; $attempt++) { $pattern.Toggle() }
+  if ($pattern.Current.ToggleState -ne $target) { throw 'The UI element did not reach the requested toggle state.' }
+  return $pattern.Current.ToggleState.ToString().ToLowerInvariant()
+}
+function Get-TargetElement([IntPtr]$handle) {
+  $elementId = Require-String 'elementId'
+  return Find-Element $handle $elementId
+}
+function Capture-WindowImage([IntPtr]$handle, [object]$region) {
+  $windowBounds = Window-Bounds $handle
+  $bytes = [LotaGateComputerNative]::CapturePng($handle)
+  $resultBounds = $windowBounds
+  if ($null -ne $region) {
+    $x = [int]$region.x; $y = [int]$region.y; $width = [int]$region.width; $height = [int]$region.height
+    if ($x -lt 0 -or $y -lt 0 -or $width -le 0 -or $height -le 0 -or $x + $width -gt $windowBounds.width -or $y + $height -gt $windowBounds.height) { throw 'The screenshot region is outside the target window.' }
+    $bytes = [LotaGateComputerNative]::CropPng($bytes, $x, $y, $width, $height)
+    $resultBounds = @{ x = $windowBounds.x + $x; y = $windowBounds.y + $y; width = $width; height = $height }
+  }
+  return @{ bytes = $bytes; bounds = $resultBounds }
+}
+function Await-WinRt([object]$operation) {
+  try { Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction SilentlyContinue; return [System.WindowsRuntimeSystemExtensions]::AsTask($operation).GetAwaiter().GetResult() }
+  catch { throw 'Windows OCR is unavailable in this Desktop runtime.' }
+}
+function Recognize-ImageText([byte[]]$png, [string]$language) {
+  $engine = if ([string]::IsNullOrWhiteSpace($language)) { [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages() } else { [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage([Windows.Globalization.Language]::new($language)) }
+  if ($null -eq $engine) { throw 'No compatible Windows OCR language is installed.' }
+  $stream = [Windows.Storage.Streams.InMemoryRandomAccessStream]::new()
+  $writer = [Windows.Storage.Streams.DataWriter]::new($stream)
+  $writer.WriteBytes($png)
+  [void](Await-WinRt $writer.StoreAsync())
+  $writer.DetachStream()
+  $stream.Seek(0)
+  $decoder = Await-WinRt ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream))
+  $bitmap = Await-WinRt $decoder.GetSoftwareBitmapAsync()
+  $ocr = Await-WinRt $engine.RecognizeAsync($bitmap)
+  $lines = @($ocr.Lines | ForEach-Object { $rect = $_.BoundingRect; [ordered]@{ text = [string]$_.Text; bounds = @{ x = [int]$rect.X; y = [int]$rect.Y; width = [int]$rect.Width; height = [int]$rect.Height } } })
+  return [ordered]@{ text = Bound-Text ([string]$ocr.Text); language = [string]$engine.RecognizerLanguage.LanguageTag; lines = $lines }
+}
 function Key-Code([string]$key) {
   $map = @{ Enter = 13; Tab = 9; Escape = 27; Backspace = 8; Delete = 46; Insert = 45; Home = 36; End = 35; PageUp = 33; PageDown = 34; Left = 37; Right = 39; Up = 38; Down = 40; Space = 32; F1 = 112; F2 = 113; F3 = 114; F4 = 115; F5 = 116; F6 = 117; F7 = 118; F8 = 119; F9 = 120; F10 = 121; F11 = 122; F12 = 123 }
   if ($map.ContainsKey($key)) { return [uint16]$map[$key] }
@@ -132,14 +242,24 @@ function Is-ApplicationAllowed([string]$value) { $key = Application-Key $value; 
 try {
   switch ($action) {
     'computer.listWindows' { $includeMinimized = [bool]$params.includeMinimized; $items = @(Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and ([string]$_.MainWindowTitle).Trim().Length -gt 0 -and [LotaGateComputerNative]::Visible([IntPtr]$_.MainWindowHandle) -and ($includeMinimized -or -not [LotaGateComputerNative]::Minimized([IntPtr]$_.MainWindowHandle)) } | ForEach-Object { $handle = [IntPtr]$_.MainWindowHandle; $bounds = Window-Bounds $handle; [ordered]@{ windowId = $handle.ToString(); appId = $_.ProcessName.ToLowerInvariant(); processName = $_.ProcessName; title = $_.MainWindowTitle; bounds = $bounds; state = if ([LotaGateComputerNative]::Minimized($handle)) { 'minimized' } else { 'active' }; isForeground = [LotaGateComputerNative]::Foreground($handle) } }); Write-Result $items; break }
-    'computer.inspect' { $handle = Window-Handle; Assert-Window $handle; $root = [System.Windows.Automation.AutomationElement]::FromHandle($handle); $observationId = [guid]::NewGuid().ToString(); $maxDepth = if ($null -eq $params.maxDepth) { 8 } else { [Math]::Min([Math]::Max([int]$params.maxDepth, 1), 32) }; $elements = @(); foreach ($element in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) { if ($elements.Count -ge 300) { break }; if ((Element-Depth $element) -gt $maxDepth) { continue }; $current = $element.Current; if (-not (Query-Matches $current $params.query)) { continue }; $rect = $current.BoundingRectangle; $elements += [ordered]@{ elementId = Encode-ElementId $observationId (Runtime-Id $element) $current.ControlType.ProgrammaticName ([string]$current.AutomationId) ([string]$current.Name); role = $current.ControlType.ProgrammaticName; name = [string]$current.Name; enabled = [bool]$current.IsEnabled; visible = -not [bool]$current.IsOffscreen -and [LotaGateComputerNative]::Visible($handle); bounds = @{ x = [int]$rect.X; y = [int]$rect.Y; width = [int]$rect.Width; height = [int]$rect.Height } } }; Write-Result ([ordered]@{ observationId = $observationId; windowId = $handle.ToString(); bounds = Window-Bounds $handle; elements = $elements }); break }
-    'computer.screenshot' { $handle = Window-Handle; Assert-Window $handle; $bounds = Window-Bounds $handle; $region = $params.region; $bytes = [LotaGateComputerNative]::CapturePng($handle); if ($null -ne $region) { $x = [int]$region.x; $y = [int]$region.y; $width = [int]$region.width; $height = [int]$region.height; if ($x -lt 0 -or $y -lt 0 -or $width -le 0 -or $height -le 0 -or $x + $width -gt $bounds.width -or $y + $height -gt $bounds.height) { throw 'The screenshot region is outside the target window.' }; $bytes = [LotaGateComputerNative]::CropPng($bytes, $x, $y, $width, $height); $bounds = @{ x = $bounds.x + $x; y = $bounds.y + $y; width = $width; height = $height } }; Write-Result ([ordered]@{ mimeType = 'image/png'; width = $bounds.width; height = $bounds.height; dataBase64 = [Convert]::ToBase64String($bytes) }); break }
+    'computer.inspect' { $handle = Window-Handle; Assert-Window $handle; $root = [System.Windows.Automation.AutomationElement]::FromHandle($handle); $observationId = [guid]::NewGuid().ToString(); $maxDepth = if ($null -eq $params.maxDepth) { 8 } else { [Math]::Min([Math]::Max([int]$params.maxDepth, 1), 32) }; $elements = @(); foreach ($element in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) { if ($elements.Count -ge 300) { break }; if ((Element-Depth $element) -gt $maxDepth) { continue }; $current = $element.Current; if (-not (Query-Matches $current $params.query)) { continue }; $rect = $current.BoundingRectangle; $valuePattern = Get-Pattern $element ([System.Windows.Automation.ValuePattern]::Pattern); $rangePattern = Get-Pattern $element ([System.Windows.Automation.RangeValuePattern]::Pattern); $selectionPattern = Get-Pattern $element ([System.Windows.Automation.SelectionItemPattern]::Pattern); $togglePattern = Get-Pattern $element ([System.Windows.Automation.TogglePattern]::Pattern); $expandPattern = Get-Pattern $element ([System.Windows.Automation.ExpandCollapsePattern]::Pattern); $details = [ordered]@{ elementId = Encode-ElementId $observationId (Runtime-Id $element) $current.ControlType.ProgrammaticName ([string]$current.AutomationId) ([string]$current.Name); role = $current.ControlType.ProgrammaticName; name = [string]$current.Name; enabled = [bool]$current.IsEnabled; visible = -not [bool]$current.IsOffscreen -and [LotaGateComputerNative]::Visible($handle); isPassword = [bool]$current.IsPassword; supportedPatterns = Get-SupportedPatterns $element; bounds = @{ x = [int]$rect.X; y = [int]$rect.Y; width = [int]$rect.Width; height = [int]$rect.Height } }; if ($null -ne $valuePattern -and -not [bool]$current.IsPassword) { $details['value'] = [string]$valuePattern.Current.Value; $details['readOnly'] = [bool]$valuePattern.Current.IsReadOnly }; if ($null -ne $rangePattern) { $details['range'] = @{ value = $rangePattern.Current.Value; minimum = $rangePattern.Current.Minimum; maximum = $rangePattern.Current.Maximum; readOnly = [bool]$rangePattern.Current.IsReadOnly } }; if ($null -ne $selectionPattern) { $details['selected'] = [bool]$selectionPattern.Current.IsSelected }; if ($null -ne $togglePattern) { $details['toggleState'] = $togglePattern.Current.ToggleState.ToString().ToLowerInvariant() }; if ($null -ne $expandPattern) { $details['expandedState'] = $expandPattern.Current.ExpandCollapseState.ToString().ToLowerInvariant() }; $elements += $details }; Write-Result ([ordered]@{ observationId = $observationId; windowId = $handle.ToString(); bounds = Window-Bounds $handle; elements = $elements }); break }
+    'computer.screenshot' { $handle = Window-Handle; Assert-Window $handle; $image = Capture-WindowImage $handle $params.region; $bounds = $image.bounds; Write-Result ([ordered]@{ mimeType = 'image/png'; width = $bounds.width; height = $bounds.height; dataBase64 = [Convert]::ToBase64String($image.bytes) }); break }
+    'computer.readText' { $handle = Window-Handle; Assert-Window $handle; $element = Get-TargetElement $handle; $scope = if ($null -eq $params.scope) { 'value' } else { [string]$params.scope }; Write-Result ([ordered]@{ elementId = [string]$params.elementId; scope = $scope; text = Bound-Text (Read-ElementText $element $scope) }); break }
+    'computer.recognizeText' { $handle = Window-Handle; Assert-Window $handle; $image = Capture-WindowImage $handle $params.region; $result = Recognize-ImageText $image.bytes ([string]$params.language); $result['bounds'] = $image.bounds; Write-Result $result; break }
     'computer.focus' { $handle = Window-Handle; Assert-Window $handle; if ($null -ne $params.elementId) { $element = Find-Element $handle ([string]$params.elementId); $element.SetFocus() } else { [LotaGateComputerNative]::Focus($handle) }; Write-Result @{ focused = $true; windowId = $handle.ToString() }; break }
     'computer.click' { $handle = Window-Handle; Assert-Window $handle; [LotaGateComputerNative]::Focus($handle); $target = if ($null -ne $params.elementId) { $params } else { $params.point }; $point = Target-Point $handle $target; $button = if ($null -eq $params.button) { 'left' } else { [string]$params.button }; $down = if ($button -eq 'right') { 8 } elseif ($button -eq 'middle') { 32 } else { 2 }; $count = if ($null -eq $params.clickCount) { 1 } else { [Math]::Min([Math]::Max([int]$params.clickCount, 1), 2) }; [LotaGateComputerNative]::Click($point.x, $point.y, [uint32]$down, [uint32]($down * 2), $count); Write-Result @{ clicked = $true; point = $point }; break }
     'computer.type' { $handle = Window-Handle; Assert-Window $handle; [LotaGateComputerNative]::Focus($handle); $text = [string]$params.text; if ($text.Length -gt 32000) { throw 'The text input is too large.' }; if ($null -ne $params.elementId) { $element = Find-Element $handle ([string]$params.elementId); $element.SetFocus() }; [LotaGateComputerNative]::Unicode($text); Write-Result @{ typed = $true; characterCount = $text.Length }; break }
     'computer.keypress' { $handle = Window-Handle; Assert-Window $handle; [LotaGateComputerNative]::Focus($handle); $modifiers = [System.Collections.Generic.List[string]]::new(); if ($null -ne $params.modifiers) { if ($params.modifiers -is [Array]) { foreach ($modifierValue in $params.modifiers) { $modifiers.Add([string]$modifierValue) } } else { $modifiers.Add([string]$params.modifiers) } }; foreach ($modifier in $modifiers) { Apply-Modifier $modifier $true }; $code = Key-Code ([string]$params.key); [LotaGateComputerNative]::Key($code, $true); [LotaGateComputerNative]::Key($code, $false); for ($modifierIndex = $modifiers.Count - 1; $modifierIndex -ge 0; $modifierIndex--) { Apply-Modifier $modifiers[$modifierIndex] $false }; Write-Result @{ pressed = $true; key = [string]$params.key }; break }
     'computer.scroll' { $handle = Window-Handle; Assert-Window $handle; [LotaGateComputerNative]::Focus($handle); if ($null -ne $params.point) { $point = Target-Point $handle $params.point; [LotaGateComputerNative]::Move($point.x, $point.y) }; if ($null -ne $params.deltaY) { [LotaGateComputerNative]::Scroll([int]$params.deltaY, $false) }; if ($null -ne $params.deltaX) { [LotaGateComputerNative]::Scroll([int]$params.deltaX, $true) }; Write-Result @{ scrolled = $true }; break }
     'computer.move' { $handle = Window-Handle; Assert-Window $handle; $target = if ($null -ne $params.elementId) { $params } else { $params.point }; $point = Target-Point $handle $target; $duration = if ($null -eq $params.durationMs) { 0 } else { [int]$params.durationMs }; Move-Pointer $point $duration; Write-Result @{ moved = $true; point = $point; durationMs = [Math]::Min([Math]::Max($duration, 0), 5000) }; break }
+    'computer.setValue' { $handle = Window-Handle; Assert-Window $handle; $element = Get-TargetElement $handle; $value = Require-String 'value'; $actual = Set-ElementValue $element $value; Write-Result @{ set = $true; elementId = [string]$params.elementId; value = $actual }; break }
+    'computer.invoke' { $handle = Window-Handle; Assert-Window $handle; $element = Get-TargetElement $handle; Require-Enabled $element; $pattern = Get-Pattern $element ([System.Windows.Automation.InvokePattern]::Pattern); if ($null -eq $pattern) { throw 'The UI element does not expose the Invoke pattern.' }; $pattern.Invoke(); Write-Result @{ invoked = $true; elementId = [string]$params.elementId }; break }
+    'computer.select' { $handle = Window-Handle; Assert-Window $handle; $element = Get-TargetElement $handle; Require-Enabled $element; $pattern = Get-Pattern $element ([System.Windows.Automation.SelectionItemPattern]::Pattern); if ($null -eq $pattern) { throw 'The UI element does not expose the SelectionItem pattern.' }; $mode = if ($null -eq $params.mode) { 'replace' } else { [string]$params.mode }; if ($mode -eq 'replace') { $pattern.Select() } elseif ($mode -eq 'add') { $pattern.AddToSelection() } elseif ($mode -eq 'remove') { $pattern.RemoveFromSelection() } else { throw "Unsupported selection mode '$mode'." }; Write-Result @{ selected = [bool]$pattern.Current.IsSelected; mode = $mode; elementId = [string]$params.elementId }; break }
+    'computer.setToggleState' { $handle = Window-Handle; Assert-Window $handle; $element = Get-TargetElement $handle; $state = if ($null -eq $params.state) { '' } else { [string]$params.state }; Write-Result @{ toggleState = Set-ToggleState $element $state; elementId = [string]$params.elementId }; break }
+    'computer.setExpandedState' { $handle = Window-Handle; Assert-Window $handle; $element = Get-TargetElement $handle; Require-Enabled $element; $pattern = Get-Pattern $element ([System.Windows.Automation.ExpandCollapsePattern]::Pattern); if ($null -eq $pattern) { throw 'The UI element does not expose the ExpandCollapse pattern.' }; $expanded = [bool]$params.expanded; if ($expanded) { $pattern.Expand() } else { $pattern.Collapse() }; Write-Result @{ expanded = $pattern.Current.ExpandCollapseState.ToString().ToLowerInvariant(); elementId = [string]$params.elementId }; break }
+    'computer.scrollIntoView' { $handle = Window-Handle; Assert-Window $handle; $element = Get-TargetElement $handle; $pattern = Get-Pattern $element ([System.Windows.Automation.ScrollItemPattern]::Pattern); if ($null -eq $pattern) { throw 'The UI element does not expose the ScrollItem pattern.' }; $pattern.ScrollIntoView(); Write-Result @{ scrolledIntoView = $true; elementId = [string]$params.elementId }; break }
+    'computer.setWindowState' { $handle = Window-Handle; Assert-Window $handle; $state = [string]$params.state; $command = if ($state -eq 'normal') { 9 } elseif ($state -eq 'minimized') { 6 } elseif ($state -eq 'maximized') { 3 } else { throw "Unsupported window state '$state'." }; [void][LotaGateComputerNative]::SetState($handle, $command); if ($null -ne $params.bounds) { $bounds = $params.bounds; [void][LotaGateComputerNative]::SetBounds($handle, [int]$bounds.x, [int]$bounds.y, [int]$bounds.width, [int]$bounds.height) }; Write-Result @{ state = $state; bounds = Window-Bounds $handle; isForeground = [LotaGateComputerNative]::Foreground($handle) }; break }
+    'computer.closeWindow' { $handle = Window-Handle; Assert-Window $handle; [void][LotaGateComputerNative]::Close($handle); Start-Sleep -Milliseconds 150; $closed = -not [LotaGateComputerNative]::Exists($handle); Write-Result @{ closeRequested = $true; closed = $closed; blockedByDialog = -not $closed; windowId = $handle.ToString() }; break }
     'computer.drag' { $handle = Window-Handle; Assert-Window $handle; [LotaGateComputerNative]::Focus($handle); $from = Target-Point $handle $params.from; $to = Target-Point $handle $params.to; $duration = if ($null -eq $params.durationMs) { 300 } else { [Math]::Min([Math]::Max([int]$params.durationMs, 50), 5000) }; [LotaGateComputerNative]::Move($from.x, $from.y); [LotaGateComputerNative]::Button($from.x, $from.y, $true, $false); $steps = [Math]::Max([int]($duration / 25), 1); for ($i = 1; $i -le $steps; $i++) { $ratio = $i / $steps; [LotaGateComputerNative]::Move([int]($from.x + ($to.x - $from.x) * $ratio), [int]($from.y + ($to.y - $from.y) * $ratio)); Start-Sleep -Milliseconds 25 }; [LotaGateComputerNative]::Button($to.x, $to.y, $false, $false); Write-Result @{ dragged = $true; from = $from; to = $to }; break }
     'computer.launch' { $appId = (Require-String 'appId').Trim(); if (-not (Is-ApplicationAllowed $appId)) { throw "Application '$appId' is not allowlisted." }; $process = Start-Process -FilePath $appId -PassThru; Write-Result @{ launched = $true; appId = $appId; processId = $process.Id }; break }
     'computer.wait' {

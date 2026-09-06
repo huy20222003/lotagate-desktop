@@ -50,7 +50,7 @@ export function ComputerUseSettingsPage() {
   if (loading) return <SettingsPageSkeleton rows={3} />;
 
   return <div className="appearance-page">
-    <section className="appearance-section appearance-settings-card">
+    <section className="appearance-section appearance-settings-card computer-use-settings-card">
       <div className="appearance-section-heading"><div><h2>Application access</h2><p>Choose which Windows applications LotaGate may launch through Computer Use.</p></div></div>
       <div className="appearance-setting-row appearance-setting-row-stacked">
         <div><strong>Allowed applications</strong><span>Enter application names or executable paths separated by commas. You can use either <code>notepad</code> or <code>notepad.exe</code>; matching is case-insensitive.</span></div>

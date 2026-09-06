@@ -1,2 +1,14 @@
+<!--
+  LotaGate Desktop installer user-interface fragment.
+
+  This file is injected into the generated WiX Product definition by
+  electron-wix-msi through MakerWix.ui.template. It must remain a fragment:
+  do not add an XML declaration or a second Wix/Product root element here.
+
+  WixUI_InstallDir provides the standard Windows Installer flow, including
+  the license agreement, installation-directory selection, readiness review,
+  progress, completion, repair, and uninstall dialogs. The license document
+  is supplied by forge.config.ts through the WixUILicenseRtf linker variable.
+-->
 <Property Id="WIXUI_INSTALLDIR" Value="APPLICATIONROOTDIRECTORY" />
 <UIRef Id="WixUI_InstallDir" />

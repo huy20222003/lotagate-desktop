@@ -1,0 +1,11 @@
+{
+  "name": "pptx",
+  "displayName": "PowerPoint",
+  "version": "1.0.0",
+  "description": "Inspect and automate PowerPoint presentations through LotaGate Desktop.",
+  "author": "LotaGate",
+  "license": "MIT",
+  "homepage": "https://lotagate.com/",
+  "repository": "https://github.com/huy20222003/lotagate-desktop",
+  "keywords": ["pptx", "powerpoint", "presentations"]
+}

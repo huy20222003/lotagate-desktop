@@ -1,0 +1,11 @@
+{
+  "name": "excel",
+  "displayName": "Excel",
+  "version": "1.0.0",
+  "description": "Read, update, calculate, and export Excel workbooks through LotaGate Desktop.",
+  "author": "LotaGate",
+  "license": "MIT",
+  "homepage": "https://lotagate.com/",
+  "repository": "https://github.com/huy20222003/lotagate-desktop",
+  "keywords": ["excel", "xlsx", "spreadsheets"]
+}

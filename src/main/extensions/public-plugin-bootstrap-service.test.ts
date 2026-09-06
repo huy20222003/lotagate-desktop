@@ -28,9 +28,9 @@ describe('PublicPluginBootstrapService', () => {
 
     await service.run();
 
-    expect(commands.commandExecuteResult).toHaveBeenCalledTimes(2);
-    expect(commands.commandExecuteResult).toHaveBeenLastCalledWith('C:\\user-data', { actionId: 'plugin.install', positionals: ['C:\\public-plugins\\browser-use'], options: { scope: 'user' } });
-    expect(sources.resolvePublicPluginSource).toHaveBeenCalledOnce();
+    expect(commands.commandExecuteResult).toHaveBeenCalledTimes(6);
+    expect(commands.commandExecuteResult).toHaveBeenLastCalledWith('C:\\user-data', { actionId: 'plugin.install', positionals: ['C:\\public-plugins\\docs'], options: { scope: 'user' } });
+    expect(sources.resolvePublicPluginSource).toHaveBeenCalledTimes(5);
     expect(store.write).toHaveBeenCalledWith({ completed: true, completedAt: '2026-09-05T12:00:00.000Z' });
   });
 

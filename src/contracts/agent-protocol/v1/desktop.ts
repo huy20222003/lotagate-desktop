@@ -19,6 +19,11 @@ export const desktopRequestSchema = z.discriminatedUnion('method', [
   requestBase.extend({ method: z.literal('session.create'), params }),
   requestBase.extend({ method: z.literal('session.list'), params }),
   requestBase.extend({ method: z.literal('session.resume'), params }),
+  requestBase.extend({ method: z.literal('extension.listPublicPlugins'), params }),
+  requestBase.extend({ method: z.literal('extension.resolvePublicPluginSource'), params }),
+  requestBase.extend({ method: z.literal('extension.readPublicPluginContribution'), params }),
+  requestBase.extend({ method: z.literal('extension.readDetail'), params }),
+  requestBase.extend({ method: z.literal('extension.readPluginIcon'), params }),
   requestBase.extend({ method: z.literal('title.generate'), params }),
   requestBase.extend({ method: z.literal('attachment.begin'), params }),
   requestBase.extend({ method: z.literal('attachment.chunk'), params }),
@@ -62,7 +67,7 @@ export const desktopHostRequestSchema = z.object({
   version: z.literal(DESKTOP_PROTOCOL_VERSION),
   type: z.literal('host.request'),
   requestId: id,
-  tool: z.enum(['browser', 'computer', 'filesystem', 'shell', 'git', 'artifact']),
+  tool: z.enum(['browser', 'computer', 'document', 'filesystem', 'shell', 'git', 'artifact']),
   sessionId: id,
   runId: id,
   action: z.string().min(1).max(128),
@@ -78,7 +83,7 @@ export const desktopHostCancelSchema = z.object({
   version: z.literal(DESKTOP_PROTOCOL_VERSION),
   type: z.literal('host.cancel'),
   requestId: id,
-  tool: z.enum(['browser', 'computer', 'filesystem', 'shell', 'git', 'artifact']),
+  tool: z.enum(['browser', 'computer', 'document', 'filesystem', 'shell', 'git', 'artifact']),
   sessionId: id,
 });
 
@@ -86,7 +91,7 @@ export const desktopHostResponseSchema = z.object({
   version: z.literal(DESKTOP_PROTOCOL_VERSION),
   type: z.literal('host.response'),
   requestId: id,
-  tool: z.enum(['browser', 'computer', 'filesystem', 'shell', 'git', 'artifact']),
+  tool: z.enum(['browser', 'computer', 'document', 'filesystem', 'shell', 'git', 'artifact']),
   ok: z.boolean(),
   result: z.unknown().optional(),
   error: z.object({

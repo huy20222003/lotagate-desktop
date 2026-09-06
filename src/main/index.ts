@@ -44,6 +44,7 @@ import { AutomationExecutionService } from './automation/automation-execution-se
 import { RemoteControlService } from './remote-control/remote-control-service.js';
 import { DesktopUpdateService } from './updates/desktop-update-service.js';
 import { ComputerHostToolBroker } from './computer/computer-host-tool-broker.js';
+import { DocumentHostToolBroker } from './documents/document-host-tool-broker.js';
 import { ComputerOverlay } from './computer/computer-overlay.js';
 import { COMPUTER_ACTION_TIMEOUT_MS, WindowsComputerService } from './computer/windows-computer-service.js';
 import { PublicPluginBootstrapService } from './extensions/public-plugin-bootstrap-service.js';
@@ -54,6 +55,7 @@ const automationDispatchRequested = process.argv.includes('--automation-dispatch
 let agentManager: AgentManager | undefined;
 let browserService: BrowserService | undefined;
 let computerBroker: ComputerHostToolBroker | undefined;
+let documentBroker: DocumentHostToolBroker | undefined;
 let automationService: AutomationService | undefined;
 let approvalCoordinator: ApprovalCoordinator | undefined;
 let taskProjector: TaskEventProjector | undefined;
@@ -131,6 +133,7 @@ app.whenReady().then(async () => {
   const automationSessions = new Map<string, { runId: string; cwd: string }>();
   if (process.platform === 'win32') {
     computerBroker = new ComputerHostToolBroker(new WindowsComputerService(desktopResourcePath('computer-use', 'windows-computer.ps1'), COMPUTER_ACTION_TIMEOUT_MS, async () => (await settings.get()).computer.applicationAllowlist), new ComputerOverlay());
+    documentBroker = new DocumentHostToolBroker(desktopResourcePath('document-use', 'windows-document.ps1'));
   }
   const agents = new AgentManager({
     onEvent: (projectRoot, event) => {
@@ -173,6 +176,11 @@ app.whenReady().then(async () => {
         if (computerBroker === undefined) throw new Error('Computer Use is unavailable on this platform.');
         return computerBroker.handle(projectRoot, request, signal);
       }
+      if (request.tool === 'document') {
+        const broker = documentBroker;
+        if (broker === undefined) throw new Error('Document tools are unavailable on this platform.');
+        return checkpoints.withHostRequest(projectRoot, request, () => broker.handle(projectRoot, request, signal));
+      }
       if (request.executionCwd === undefined) throw new Error('The CLI host request is missing its execution workspace.');
       return checkpoints.withHostRequest(projectRoot, request, () => hostExecution.handle(request.executionCwd as string, request, signal));
     },
@@ -181,6 +189,7 @@ app.whenReady().then(async () => {
       if (sessionId !== undefined) {
         void browserHost.closeForSession(projectRoot, sessionId);
         if (computerBroker !== undefined) computerBroker.cancelForSession(projectRoot, sessionId);
+        void documentBroker?.closeForSession(projectRoot, sessionId);
         void tasks.interruptActiveBySession(sessionId, error.message).catch(() => undefined);
         taskTurns.releaseSession(sessionId);
       }
@@ -190,7 +199,7 @@ app.whenReady().then(async () => {
   }, cache, async () => {
     const configured = await settings.get();
     return buildInteractiveDesktopExecutionPolicy(configured.sandbox.hostFallback);
-  }, { computerHost: computerBroker !== undefined });
+  }, { computerHost: computerBroker !== undefined, documentHost: documentBroker !== undefined });
   agentManager = agents;
   const extensionFiles = new ExtensionFileService(workspaces, desktopResourcePath('public-plugins'), {
     listPublicPlugins: root => agents.extensionListPublicPlugins(root),
@@ -264,6 +273,7 @@ app.on('before-quit', (event) => {
     await remoteControlService?.stop();
     await agentManager?.shutdownAll('app.before-quit');
     await computerBroker?.close();
+    await documentBroker?.closeForWorkspace(process.cwd());
     await taskProjector?.flush();
     await browserService?.closeAll();
   })().catch(error => logger.error('app.shutdown.failed', { message: error instanceof Error ? error.message : 'Desktop shutdown failed.' })).finally(async () => { await logger.close().catch(() => undefined); app.quit(); });

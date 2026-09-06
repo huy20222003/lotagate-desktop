@@ -30,6 +30,7 @@ export interface PublicPluginCatalogContribution {
 export interface PublicPluginCatalogEntry {
   directory: string;
   name: string;
+  displayName?: string;
   version: string;
   description: string;
   author?: string;

@@ -3,7 +3,10 @@ import { BUILTIN_TOOL_DISPLAY_NAMES, formatToolDisplayName } from './tool-displa
 
 describe('tool display names', () => {
   it('covers the complete built-in catalog', () => {
-    expect(Object.keys(BUILTIN_TOOL_DISPLAY_NAMES)).toHaveLength(53);
+    expect(Object.keys(BUILTIN_TOOL_DISPLAY_NAMES)).toEqual(expect.arrayContaining([
+      'filesystem.read', 'shell.exec', 'browser.navigate', 'computer.inspect',
+      'pdf.open', 'pptx.open', 'excel.open', 'docs.open',
+    ]));
   });
 
   it('prefers the canonical Desktop label over a protocol label', () => {

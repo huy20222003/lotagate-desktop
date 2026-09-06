@@ -21,7 +21,7 @@ export interface CliAttachmentInput { id: string; name: string; mimeType: string
 interface ProcessBinding { key: string; projectRoot: string; sessionId?: string; process: CliAgentProcess; }
 interface CommandEventBuffer { events: DesktopEvent[]; bytes: number; resolve: (events: DesktopEvent[]) => void; operation: Promise<DesktopEvent[]>; timer: ReturnType<typeof setTimeout> }
 
-export interface AgentManagerOptions { idleTimeoutMs?: number; computerHost?: boolean; }
+export interface AgentManagerOptions { idleTimeoutMs?: number; computerHost?: boolean; documentHost?: boolean; }
 const DEFAULT_AGENT_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
 const COMMAND_EVENT_BUFFER_TTL_MS = 30_000;
 const MAX_COMMAND_EVENT_BUFFER_BYTES = 256 * 1024;
@@ -178,7 +178,7 @@ export class AgentManager {
         this.scheduleRecovery(binding);
       },
     };
-    binding = { key, projectRoot, process: new CliAgentProcess({ cwd: projectRoot, ...resolveCliInvocation(), computerHost: this.options.computerHost === true }, eventHandler) }; this.processes.set(key, binding); this.touch(binding); return binding;
+    binding = { key, projectRoot, process: new CliAgentProcess({ cwd: projectRoot, ...resolveCliInvocation(), computerHost: this.options.computerHost === true, documentHost: this.options.documentHost === true }, eventHandler) }; this.processes.set(key, binding); this.touch(binding); return binding;
   }
 
   private async sessionProcess(projectRoot: string, sessionId: string): Promise<ProcessBinding> {

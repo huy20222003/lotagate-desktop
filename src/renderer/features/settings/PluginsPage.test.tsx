@@ -19,7 +19,7 @@ describe('PluginsPage', () => {
     mocks.list.mockReset().mockResolvedValue([{ name: 'example', version: '1.0.0', description: 'An example plugin', detail: 'user · v1.0.0', status: 'ENABLED', scope: 'user' }]);
     mocks.execute.mockReset().mockResolvedValue('');
     mocks.detail.mockReset().mockResolvedValue({ plugin: { name: 'example', version: '1.0.0', description: 'An example plugin', scope: 'user', status: 'ENABLED' }, contributions: [{ kind: 'skill', name: 'example:review', sourceName: 'review', description: 'Review code', status: 'ENABLED' }] });
-    window.lotagate = { extensions: { readPluginIcon: vi.fn().mockResolvedValue(undefined), listPublicPlugins: vi.fn().mockResolvedValue([{ directory: 'computer-use', name: 'computer-use', version: '1.0.0', description: 'Control approved Windows applications directly through LotaGate.', author: 'LotaGate', license: 'MIT', homepage: 'https://lotagate.com/', privacyPolicy: 'https://lotagate.com/privacy', termsOfService: 'https://lotagate.com/terms', contributions: [{ kind: 'skill', sourceName: 'computer-use', description: 'Control approved Windows applications through LotaGate native computer tools.' }] }]), resolvePublicPluginSource: vi.fn().mockResolvedValue('C:\\public-plugins\\computer-use'), readDetail: vi.fn().mockResolvedValue({ content: '---\nname: computer-use\ndescription: Computer use\n---\n', format: 'markdown', editable: false, fileName: 'SKILL.md' }), readPublicPluginContribution: vi.fn().mockResolvedValue({ content: '---\nname: computer-use\ndescription: Computer use\n---\n', format: 'markdown', editable: false, fileName: 'SKILL.md' }), listProjectHooks: vi.fn() } } as unknown as typeof window.lotagate;
+    window.lotagate = { extensions: { readPluginIcon: vi.fn().mockResolvedValue(undefined), listPublicPlugins: vi.fn().mockResolvedValue([{ directory: 'computer-use', name: 'computer-use', displayName: 'Computer Use', version: '1.0.0', description: 'Control approved Windows applications directly through LotaGate.', author: 'LotaGate', license: 'MIT', homepage: 'https://lotagate.com/', privacyPolicy: 'https://lotagate.com/privacy', termsOfService: 'https://lotagate.com/terms', contributions: [{ kind: 'skill', sourceName: 'computer-use', description: 'Control approved Windows applications through LotaGate native computer tools.' }] }]), resolvePublicPluginSource: vi.fn().mockResolvedValue('C:\\public-plugins\\computer-use'), readDetail: vi.fn().mockResolvedValue({ content: '---\nname: computer-use\ndescription: Computer use\n---\n', format: 'markdown', editable: false, fileName: 'SKILL.md' }), readPublicPluginContribution: vi.fn().mockResolvedValue({ content: '---\nname: computer-use\ndescription: Computer use\n---\n', format: 'markdown', editable: false, fileName: 'SKILL.md' }), listProjectHooks: vi.fn() } } as unknown as typeof window.lotagate;
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -34,7 +34,7 @@ describe('PluginsPage', () => {
 
   it('renders curated Public plugins and resolves their packaged source before install', async () => {
     render(<ToastProvider><PluginsPage cwd={'C:\\workspace'} /></ToastProvider>);
-    expect(await screen.findByText('computer-use')).toBeVisible();
+    expect(await screen.findByText('Computer Use')).toBeVisible();
     fireEvent.click(screen.getAllByRole('button', { name: 'Install' })[0]!);
     await waitFor(() => expect(window.lotagate.extensions.resolvePublicPluginSource).toHaveBeenCalledWith('computer-use'));
     expect(mocks.execute).toHaveBeenCalledWith('C:\\workspace', { actionId: 'plugin.install', positionals: ['C:\\public-plugins\\computer-use'], options: { scope: 'user' } });
@@ -53,7 +53,7 @@ describe('PluginsPage', () => {
 
   it('renders contribution summaries for an uninstalled Public plugin before showing its install action', async () => {
     render(<ToastProvider><PluginsPage cwd={'C:\\workspace'} /></ToastProvider>);
-    fireEvent.click(await screen.findByText('computer-use'));
+    fireEvent.click(await screen.findByText('Computer Use'));
     expect(await screen.findByRole('heading', { name: 'Skills' })).toBeVisible();
     expect(screen.queryByText('Agents')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /install/i })).toBeVisible();
@@ -70,14 +70,14 @@ describe('PluginsPage', () => {
   });
 
   it('keeps the Public plugin detail open after installation', async () => {
-    mocks.detail.mockResolvedValue({ plugin: { name: 'computer-use', version: '1.0.0', description: 'Computer use', scope: 'user', status: 'ENABLED' }, contributions: [] });
+    mocks.detail.mockResolvedValue({ plugin: { name: 'computer-use', displayName: 'Computer Use', version: '1.0.0', description: 'Computer use', scope: 'user', status: 'ENABLED' }, contributions: [] });
     render(<ToastProvider><PluginsPage cwd={'C:\\workspace'} /></ToastProvider>);
-    fireEvent.click(await screen.findByText('computer-use'));
+    fireEvent.click(await screen.findByText('Computer Use'));
     fireEvent.click(screen.getByRole('button', { name: /install/i }));
     await waitFor(() => expect(mocks.execute).toHaveBeenCalledWith('C:\\workspace', { actionId: 'plugin.install', positionals: ['C:\\public-plugins\\computer-use'], options: { scope: 'user' } }));
     fireEvent.keyDown(screen.getByRole('button', { name: 'Plugin actions' }), { key: 'Enter' });
     expect(await screen.findByRole('menuitem', { name: /uninstall plugin/i })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'computer-use', hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Computer Use', hidden: true })).toBeInTheDocument();
   });
 
   it('shows Personal plugins in pages of up to 40 items', async () => {
