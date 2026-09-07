@@ -112,7 +112,7 @@ export class DesktopHostExecutionBroker {
     if (script !== undefined) {
       if (typeof script !== 'string' || script.trim().length === 0 || Buffer.byteLength(script, 'utf8') > MAX_SCRIPT_BYTES) throw new Error('shell.exec script is invalid or exceeds the configured limit.');
       if (!isPowerShellExecutable(command) || args.length > 0) throw new Error('shell.exec script requires powershell.exe or pwsh.exe and cannot be combined with args.');
-      args = ['-NoProfile', '-NonInteractive', '-Command', script];
+      args = createPowerShellScriptArguments(script);
     }
     const cwd = await this.resolveExistingPath(root, typeof params['cwd'] === 'string' ? params['cwd'] : '.');
     const timeoutMs = typeof params['timeoutMs'] === 'number' && Number.isSafeInteger(params['timeoutMs']) ? Math.min(Math.max(params['timeoutMs'], 100), 120_000) : DEFAULT_TIMEOUT_MS;
@@ -136,6 +136,11 @@ export class DesktopHostExecutionBroker {
 function isPowerShellExecutable(command: string): boolean {
   const executable = command.replace(/^.*[\\/]/u, '').toLowerCase();
   return executable === 'powershell' || executable === 'powershell.exe' || executable === 'pwsh' || executable === 'pwsh.exe';
+}
+
+function createPowerShellScriptArguments(script: string): string[] {
+  const command = `${script}\n$__lotagateExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }\nexit $__lotagateExitCode`;
+  return ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')];
 }
 
 function runProcess(command: string, args: string[], cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Record<string, unknown>> {

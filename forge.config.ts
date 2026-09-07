@@ -1,5 +1,5 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
-import { readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { MakerDMG } from '@electron-forge/maker-dmg';
@@ -88,6 +88,7 @@ const config: ForgeConfig = {
 export default config;
 
 function removeSourceMaps(directory: string): void {
+  if (!existsSync(directory)) return;
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const entryPath = join(directory, entry.name);
     if (entry.isDirectory()) {
