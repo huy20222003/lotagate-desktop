@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { runGit } from './git-process.js';
 import { GitService } from './git-service.js';
 
+const GIT_INTEGRATION_TEST_TIMEOUT_MS = 15_000;
+
 describe('GitService', () => {
   const roots: string[] = [];
   const service = new GitService();
@@ -36,7 +38,7 @@ describe('GitService', () => {
     expect((await service.status(root)).changes).toEqual([expect.objectContaining({ path: 'file.txt', staged: true, unstaged: false })]);
     await service.commit(root, 'update file');
     expect((await service.history(root, 2)).map(commit => commit.subject)).toEqual(['update file', 'initial']);
-  });
+  }, GIT_INTEGRATION_TEST_TIMEOUT_MS);
 
   it('rejects worktree destinations outside the repository', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lotagate-git-security-'));

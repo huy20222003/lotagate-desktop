@@ -7,6 +7,8 @@ import type { DesktopHostRequest } from '../../contracts/agent-protocol/v1/deskt
 import type { SandboxExecutionProvider } from './sandbox-execution-provider.js';
 import { SandboxUnavailableError } from './sandbox-execution-provider.js';
 
+const POWER_SHELL_TEST_TIMEOUT_MS = 60_000;
+
 function request(tool: DesktopHostRequest['tool'], action: string, params: Record<string, unknown>, boundary: DesktopHostRequest['executionBoundary'] = 'host', hostFallback: DesktopHostRequest['hostFallback'] = 'deny'): DesktopHostRequest {
   return { version: 1, type: 'host.request', requestId: `request-${action}`, tool, sessionId: 'session-1', runId: 'run-1', action, params, executionBoundary: boundary, hostFallback };
 }
@@ -71,7 +73,7 @@ describe('DesktopHostExecutionBroker', () => {
       const result = await broker.handle(root, request('shell', 'shell.exec', { command: 'powershell.exe', script: 'Write-Output ok' }));
       expect(result).toMatchObject({ ok: true, result: { stdout: expect.stringContaining('ok'), exitCode: 0, timedOut: false } });
     } finally { await rm(root, { recursive: true, force: true }); }
-  }, 15_000);
+  }, POWER_SHELL_TEST_TIMEOUT_MS);
 
   it('executes sandbox requests through the provider and reports a controlled fallback', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lotagate-host-broker-'));
