@@ -33,7 +33,7 @@
     "speech:prepare": "node scripts/prepare-speech-runtime.mjs",
     "prepackage": "npm run speech:prepare",
     "package": "electron-forge package",
-    "premake": "npm run speech:prepare",
+    "premake": "node scripts/prepare-speech-lifecycle.mjs",
     "make": "electron-forge make",
     "make:installers": "node scripts/build-installers.mjs",
     "release:target": "node scripts/build-release-matrix.mjs",

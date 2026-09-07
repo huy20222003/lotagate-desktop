@@ -88,12 +88,13 @@ if (!options.skipValidation) {
   await runNpm(['test'], 'Running Desktop tests');
 }
 
-await runNpm(['run', 'speech:prepare', '--', '--platform', targetPlatform, '--arch', options.arch], 'Preparing whisper.cpp speech runtime');
 const stagedCliPath = resolve(desktopRoot, '.tools', 'packaging', 'cli', targetId);
 await runNpm(['run', 'cli:prepare', '--', '--platform', targetPlatform, '--arch', options.arch, '--output', stagedCliPath], 'Staging target-specific CLI runtime');
 process.env['LOTAGATE_PACKAGED_CLI_PATH'] = resolve(stagedCliPath, 'lotagate.exe');
 await rm(outputRoot, { recursive: true, force: true });
 await runNpm(['run', 'build'], 'Building Desktop bundles');
+process.env['LOTAGATE_BUILD_PLATFORM'] = targetPlatform;
+process.env['LOTAGATE_BUILD_ARCH'] = options.arch;
 await runNpm(
   ['run', 'make', '--', '--platform', targetPlatform, '--arch', options.arch],
   `Creating ${plan.name} installers`,
