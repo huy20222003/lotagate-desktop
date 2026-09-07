@@ -90,7 +90,7 @@
 /* The prompt textarea is the input surface of the surrounding composer. */
 .ui-input.prompt-input {
   min-height: 62px;
-  max-height: 220px;
+  max-height: 260px;
   border: 0;
   border-radius: 0;
   padding: 11px;

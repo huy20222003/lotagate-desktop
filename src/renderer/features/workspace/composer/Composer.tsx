@@ -25,7 +25,7 @@ import { DESKTOP_REASONING_EFFORTS, type DesktopReasoningEffort } from '../../..
 export { AttachmentPreviewList } from './AttachmentPreviewList.js';
 
 const PROMPT_INPUT_MIN_HEIGHT = 62;
-const PROMPT_INPUT_MAX_HEIGHT = 220;
+const PROMPT_INPUT_MAX_HEIGHT = 260;
 
 type ComposerModelPickerProps = {
   models: WorkspaceModelOption[];

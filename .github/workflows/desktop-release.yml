@@ -1,0 +1,113 @@
+name: Desktop Release Build and Google Drive Upload
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Desktop version from package.json, for example 0.1.0'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lotagate-desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Resolve supported release targets
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+      version: ${{ steps.targets.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24.13.1
+
+      - name: Resolve target matrix from the Desktop build source of truth
+        id: targets
+        shell: bash
+        run: |
+          echo "matrix=$(node scripts/build-release-matrix.mjs --github-matrix)" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build Desktop (${{ matrix.id }})
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0856c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build validated native release target
+        env:
+          LOTAGATE_SPEECH_MODEL_URL: ${{ vars.LOTAGATE_SPEECH_MODEL_URL }}
+        run: npm run release:target -- --target "${{ matrix.id }}" --skip-install
+
+      - name: Upload target artifacts to the workflow run
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-${{ matrix.id }}
+          path: out/make
+          if-no-files-found: error
+          retention-days: 1
+
+  upload:
+    name: Upload complete Desktop release to Google Drive
+    needs: [plan, build]
+    if: ${{ needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_VERSION: ${{ inputs.version || needs.plan.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Download all target artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: desktop-*
+          path: release-artifacts
+          merge-multiple: false
+
+      - name: Authenticate to Google Cloud without a long-lived key
+        id: google-auth
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc693a # v2.1.8
+        with:
+          workload_identity_provider: ${{ secrets.LOTAGATE_GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.LOTAGATE_GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/drive
+
+      - name: Upload immutable release tree to Google Drive
+        env:
+          GOOGLE_DRIVE_ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
+          LOTAGATE_DRIVE_PARENT_FOLDER_ID: ${{ vars.LOTAGATE_DRIVE_PARENT_FOLDER_ID }}
+        run: node scripts/upload-google-drive.mjs --root release-artifacts --version "$RELEASE_VERSION"

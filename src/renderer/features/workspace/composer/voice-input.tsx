@@ -1,131 +1,109 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Mic, Square } from 'lucide-react';
+import { LoaderCircle, Mic, Square } from 'lucide-react';
 import { IconButton } from '../../../components/ui.js';
+import { recordingToWav } from './audio-wav.js';
 
-interface SpeechResultEventLike { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }
-interface SpeechRecognitionLike {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onend: (() => void) | null;
-  onerror: ((event: { error?: string }) => void) | null;
-  onresult: ((event: SpeechResultEventLike) => void) | null;
-  start(): void;
-  stop(): void;
-  abort?(): void;
-}
-type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
-type SpeechWindow = Window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor; mozSpeechRecognition?: SpeechRecognitionConstructor; msSpeechRecognition?: SpeechRecognitionConstructor };
+const AUDIO_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
 
 export function VoiceInput({ disabled, onComplete, onError }: { disabled: boolean; onComplete: (transcript: string) => void; onError: (message: string) => void }) {
   const [recording, setRecording] = useState(false);
-  const [levels, setLevels] = useState<number[]>(() => Array.from({ length: 48 }, () => 0));
-  const [interim, setInterim] = useState('');
-  const recognitionRef = useRef<SpeechRecognitionLike | undefined>();
-  const recognitionStartedRef = useRef(false);
-  const finalTextRef = useRef('');
+  const [transcribing, setTranscribing] = useState(false);
+  const [levels, setLevels] = useState<number[]>(() => createSilentLevels());
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const recorderRef = useRef<MediaRecorder | undefined>();
+  const chunksRef = useRef<Blob[]>([]);
   const recordingRef = useRef(false);
   const audioCleanupRef = useRef<(() => void) | undefined>();
 
   const stopAudio = useCallback(() => {
     audioCleanupRef.current?.();
     audioCleanupRef.current = undefined;
-    setLevels(Array.from({ length: 48 }, () => 0));
+    setLevels(createSilentLevels());
   }, []);
-  const finish = useCallback((commit: boolean) => {
-    if (!recordingRef.current) return;
-    recordingRef.current = false;
-    setRecording(false);
-    setInterim('');
-    recognitionRef.current = undefined;
-    recognitionStartedRef.current = false;
-    stopAudio();
-    if (commit) onComplete(finalTextRef.current.trim());
-  }, [onComplete, stopAudio]);
-  const startAudio = useCallback(async (): Promise<boolean> => {
-    if (!navigator.mediaDevices?.getUserMedia) return false;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (!recordingRef.current) { stream.getTracks().forEach(track => track.stop()); return false; }
-      const AudioContextConstructor = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AudioContextConstructor) { stream.getTracks().forEach(track => track.stop()); return true; }
-      const context = new AudioContextConstructor();
-      const source = context.createMediaStreamSource(stream);
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 64;
-      source.connect(analyser);
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      let frame = 0;
-      const update = () => {
-        analyser.getByteFrequencyData(data);
-        const average = data.reduce((total, value) => total + value, 0) / Math.max(1, data.length) / 255;
-        setLevels(Array.from({ length: 48 }, (_, index) => Math.max(0, Math.min(1, average * (0.65 + Math.sin(index * 1.7) * 0.25)))));
-        frame = window.requestAnimationFrame(update);
-      };
-      update();
-      audioCleanupRef.current = () => { window.cancelAnimationFrame(frame); source.disconnect(); analyser.disconnect(); stream.getTracks().forEach(track => track.stop()); void context.close(); };
-      return true;
-    } catch (error) {
-      const name = error instanceof DOMException ? error.name : undefined;
-      onError(microphoneErrorMessage(name));
-      return false;
-    }
+  const startAudio = useCallback((stream: MediaStream): void => {
+    audioCleanupRef.current = () => stopStream(stream);
+    const AudioContextConstructor = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (AudioContextConstructor === undefined) return;
+    const context = new AudioContextConstructor();
+    const source = context.createMediaStreamSource(stream);
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 64;
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    let frame = 0;
+    const update = () => {
+      analyser.getByteFrequencyData(data);
+      const average = data.reduce((total, value) => total + value, 0) / Math.max(1, data.length) / 255;
+      setLevels(Array.from({ length: 48 }, (_, index) => Math.max(0, Math.min(1, average * (0.65 + Math.sin(index * 1.7) * 0.25)))));
+      frame = window.requestAnimationFrame(update);
+    };
+    void context.resume();
+    update();
+    audioCleanupRef.current = () => { window.cancelAnimationFrame(frame); source.disconnect(); analyser.disconnect(); void context.close(); stopStream(stream); };
   }, []);
   const start = async () => {
-    if (disabled || recordingRef.current) return;
-    const Recognition = (window as SpeechWindow).SpeechRecognition ?? (window as SpeechWindow).webkitSpeechRecognition ?? (window as SpeechWindow).mozSpeechRecognition ?? (window as SpeechWindow).msSpeechRecognition;
-    if (!Recognition) { onError('Speech recognition is not supported by this app environment.'); return; }
-    const recognition = new Recognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = navigator.language || 'en-US';
-    recognition.onresult = event => {
-      let interimText = '';
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        if (result?.isFinal) finalTextRef.current += `${result[0]?.transcript ?? ''} `;
-        else interimText += result?.[0]?.transcript ?? '';
-      }
-      setInterim(interimText);
-    };
-    recognition.onerror = event => {
-      if (event.error !== 'aborted') onError(speechErrorMessage(event.error));
-      finish(false);
-    };
-    recognition.onend = () => finish(true);
-    finalTextRef.current = '';
-    setInterim('');
-    recognitionRef.current = recognition;
-    recordingRef.current = true;
-    setRecording(true);
-    const microphoneReady = await startAudio();
-    if (!recordingRef.current) return;
-    if (!microphoneReady) {
-      finish(false);
-      return;
+    if (disabled || recordingRef.current || transcribing) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { onError('Audio recording is not supported by this app environment.'); return; }
+    const mimeType = AUDIO_MIME_TYPES.find(value => MediaRecorder.isTypeSupported(value));
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, mimeType === undefined ? undefined : { mimeType });
+      chunksRef.current = [];
+      recorder.ondataavailable = event => { if (event.data.size > 0) chunksRef.current.push(event.data); };
+      recorderRef.current = recorder;
+      recordingRef.current = true;
+      setElapsedSeconds(0);
+      setRecording(true);
+      startAudio(stream);
+      recorder.start();
+    } catch (error) {
+      stopAudio();
+      recordingRef.current = false;
+      recorderRef.current = undefined;
+      onError(audioErrorMessage(error));
     }
-    try { recognition.start(); recognitionStartedRef.current = true; } catch { finish(false); onError('Speech recognition could not be started.'); }
   };
   const stop = () => {
-    if (!recordingRef.current) return;
-    if (recognitionStartedRef.current) recognitionRef.current?.stop();
-    else finish(false);
+    if (!recordingRef.current || transcribing) return;
+    recordingRef.current = false;
+    setRecording(false);
+    setTranscribing(true);
+    const recorder = recorderRef.current;
+    void finalizeRecorder(recorder, chunksRef.current).then(async blob => {
+      stopAudio();
+      recorderRef.current = undefined;
+      const result = await window.lotagate.speech.transcribe(await recordingToWav(blob));
+      onComplete(result.text);
+    }).catch(error => onError(error instanceof Error ? error.message : 'Unable to transcribe the recording.')).finally(() => { setTranscribing(false); chunksRef.current = []; });
   };
-  useEffect(() => () => { recognitionRef.current?.abort?.(); recordingRef.current = false; stopAudio(); }, [stopAudio]);
-  return recording ? <div className="voice-input voice-input-recording"><div className="voice-wave" aria-label="Recording"><span className="voice-wave-line" />{levels.map((level, index) => <span key={index} style={{ height: `${3 + Math.round(level * 17)}px` }} />)}<span className="voice-wave-line" /></div>{interim ? <span className="voice-interim" aria-live="polite">{interim}</span> : null}<IconButton icon={Square} iconSize={14} className="voice-stop-button" label="Stop voice input" onClick={stop} /> </div> : <IconButton icon={Mic} iconSize={16} className="voice-input-button" label="Start voice input" disabled={disabled} onClick={start} />;
+  useEffect(() => {
+    if (!recording) return;
+    const timer = window.setInterval(() => setElapsedSeconds(value => value + 1), 1_000);
+    return () => window.clearInterval(timer);
+  }, [recording]);
+  useEffect(() => () => { recordingRef.current = false; const recorder = recorderRef.current; if (recorder?.state === 'recording') recorder.stop(); stopAudio(); }, [stopAudio]);
+  if (transcribing) return <div className="voice-input voice-input-processing"><IconButton icon={LoaderCircle} iconSize={16} className="voice-processing-button" label="Transcribing recording" disabled /></div>;
+  if (!recording) return <IconButton icon={Mic} iconSize={16} className="voice-input-button" label="Start voice input" disabled={disabled} onClick={() => void start()} />;
+  return <div className="voice-input voice-input-recording"><div className="voice-wave" aria-label="Recording">{levels.map((level, index) => <span key={index} style={{ height: `${3 + Math.round(level * 17)}px` }} />)}</div><span className="voice-elapsed" aria-live="polite">{formatElapsed(elapsedSeconds)}</span><IconButton icon={Square} iconSize={14} className="voice-stop-button" label="Stop voice input" onClick={stop} /></div>;
 }
 
-function microphoneErrorMessage(error: string | undefined): string {
-  if (error === 'NotAllowedError' || error === 'SecurityError') return 'Microphone access was denied. Enable microphone access for desktop apps in Windows Privacy settings, then try again.';
-  if (error === 'NotFoundError' || error === 'DevicesNotFoundError') return 'No microphone is available. Connect a microphone and try again.';
-  if (error === 'NotReadableError' || error === 'TrackStartError') return 'The microphone is busy or unavailable to this app. Close other apps using it and try again.';
-  return `Microphone access failed${error ? ` (${error})` : ''}. Check the Windows microphone settings and try again.`;
+async function finalizeRecorder(recorder: MediaRecorder | undefined, chunks: Blob[]): Promise<Blob> {
+  if (recorder === undefined) throw new Error('Audio recording was not initialized.');
+  if (recorder.state === 'inactive') return new Blob(chunks, { type: recorder.mimeType });
+  return new Promise((resolve, reject) => {
+    recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType }));
+    recorder.onerror = () => reject(new Error('Audio recording failed.'));
+    try { recorder.stop(); } catch (error) { reject(error instanceof Error ? error : new Error('Audio recording could not be stopped.')); }
+  });
 }
 
-function speechErrorMessage(error: string | undefined): string {
-  if (error === 'not-allowed') return 'Microphone access was denied. Enable microphone access for desktop apps in Windows Privacy settings, then try again.';
-  if (error === 'audio-capture') return 'No microphone is available. Connect a microphone and try again.';
-  if (error === 'network') return 'Speech recognition service is unavailable in this Electron app. Microphone access is available, but the browser speech service could not connect.';
-  if (error === 'service-not-allowed') return 'Speech recognition service is not available in this Electron app.';
-  return `Speech recognition failed${error ? ` (${error})` : ''}.`;
+function createSilentLevels(): number[] { return Array.from({ length: 48 }, () => 0); }
+function stopStream(stream: MediaStream): void { stream.getTracks().forEach(track => track.stop()); }
+function formatElapsed(seconds: number): string { return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`; }
+function audioErrorMessage(error: unknown): string {
+  const name = error instanceof DOMException ? error.name : undefined;
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Microphone access was denied. Enable microphone access for desktop apps in Windows Privacy settings, then try again.';
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return 'No microphone is available. Connect a microphone and try again.';
+  if (name === 'NotReadableError' || name === 'TrackStartError') return 'The microphone is busy or unavailable to this app. Close other apps using it and try again.';
+  return `Microphone recording failed${name === undefined ? '' : ` (${name})`}. Check the Windows microphone settings and try again.`;
 }

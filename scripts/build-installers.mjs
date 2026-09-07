@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, readdir } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, relative, resolve } from 'node:path';
@@ -46,6 +46,7 @@ if (options.help) {
 
 const targetPlatform = options.platform ?? process.platform;
 const plan = platformPlans[targetPlatform];
+const targetId = `${targetPlatform}-${options.arch}`;
 
 if (!plan) {
   fail(`Unsupported platform '${targetPlatform}'. Use win32, darwin, or linux.`);
@@ -87,12 +88,17 @@ if (!options.skipValidation) {
   await runNpm(['test'], 'Running Desktop tests');
 }
 
+await runNpm(['run', 'speech:prepare', '--', '--platform', targetPlatform, '--arch', options.arch], 'Preparing whisper.cpp speech runtime');
+const stagedCliPath = resolve(desktopRoot, '.tools', 'packaging', 'cli', targetId);
+await runNpm(['run', 'cli:prepare', '--', '--platform', targetPlatform, '--arch', options.arch, '--output', stagedCliPath], 'Staging target-specific CLI runtime');
+process.env['LOTAGATE_PACKAGED_CLI_PATH'] = resolve(stagedCliPath, 'lotagate.exe');
+await rm(outputRoot, { recursive: true, force: true });
 await runNpm(['run', 'build'], 'Building Desktop bundles');
 await runNpm(
   ['run', 'make', '--', '--platform', targetPlatform, '--arch', options.arch],
   `Creating ${plan.name} installers`,
 );
-await printArtifacts();
+await printArtifacts(targetPlatform, options.arch);
 
 function parseOptions(args) {
   const parsed = {
@@ -279,7 +285,7 @@ function runNpm(args, label) {
   });
 }
 
-async function printArtifacts() {
+async function printArtifacts(platform, architecture) {
   let entries;
   try {
     entries = await readdir(outputRoot, { withFileTypes: true, recursive: true });
@@ -293,14 +299,22 @@ async function printArtifacts() {
     .sort();
   if (artifacts.length === 0) fail(`Forge completed but no installer artifact was found under ${outputRoot}.`);
 
+  const packageManifest = JSON.parse(await readFile(resolve(desktopRoot, 'package.json'), 'utf8'));
+  const artifactDetails = await Promise.all(artifacts.map(async artifact => {
+    const artifactPath = resolve(outputRoot, artifact);
+    return { file: artifact, sizeBytes: (await stat(artifactPath)).size, sha256: createHash('sha256').update(await readFile(artifactPath)).digest('hex') };
+  }));
+  await writeFile(resolve(outputRoot, 'release-manifest.json'), `${JSON.stringify({ version: 1, product: 'lotagate-desktop', desktopVersion: packageManifest.version, target: { id: `${platform}-${architecture}`, platform, architecture }, artifacts: artifactDetails }, null, 2)}\n`, 'utf8');
+
   console.log('\nInstaller artifacts:');
-  for (const artifact of artifacts) console.log(`- ${resolve(outputRoot, artifact)}`);
+  for (const artifact of artifactDetails) console.log(`- ${resolve(outputRoot, artifact.file)} (${artifact.sizeBytes} bytes, sha256 ${artifact.sha256})`);
 }
 
 function printPlan(plan, selectedOptions) {
   console.log(`Host: ${plan.name} (${process.arch})`);
   console.log(`Architecture: ${selectedOptions.arch}`);
   console.log(`Artifacts: ${plan.artifacts.join(', ')}`);
+  console.log('Speech runtime: whisper.cpp v1.9.1; model is downloaded lazily on first use');
   if (process.platform === 'darwin' && process.env['LOTAGATE_MAC_INSTALLER_IDENTITY']?.trim()) {
     console.log('macOS PKG: enabled by LOTAGATE_MAC_INSTALLER_IDENTITY');
   } else if (process.platform === 'darwin') {
@@ -323,9 +337,9 @@ Options:
   --dry-run             Print the resolved build plan without changing files
   -h, --help            Show this help
 
-Outputs are written under out/make. Run this script on each native OS to produce
-the complete release set. Windows requires WiX Toolset 3; Linux requires dpkg-deb
-and rpmbuild. macOS PKG is enabled only when LOTAGATE_MAC_INSTALLER_IDENTITY is set.
+Outputs are written under out/make. Run this script on a native runner for the
+selected target. Windows requires WiX Toolset 3; Linux requires dpkg-deb and
+rpmbuild. macOS PKG is enabled only when LOTAGATE_MAC_INSTALLER_IDENTITY is set.
 `);
 }
 

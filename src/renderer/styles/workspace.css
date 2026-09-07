@@ -337,10 +337,10 @@
 .queued-attachment-list { display: contents; padding: 0; overflow: visible; }
 .queued-attachment-list .attachment-preview { max-width: 150px; padding-top: 2px; padding-bottom: 2px; }
 .queued-attachment-list .image-attachment-preview { width: 32px; height: 32px; flex: 0 0 32px; }
-.prompt-input-wrap { position: relative; min-height: 62px; max-height: 220px; overflow: hidden; }
+.prompt-input-wrap { position: relative; min-height: 62px; max-height: 260px; overflow: hidden; }
 .prompt-highlight-layer { position: absolute; top: 0; right: 0; left: 0; z-index: 2; min-height: 100%; height: max-content; overflow: visible; padding: 11px; color: transparent; font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; }
 .prompt-highlight-layer .prompt-token { color: var(--color-accent); }
-.prompt-input { position: relative; z-index: 1; width: 100%; min-height: 62px; max-height: 220px; overflow-y: hidden; border: 0; background: transparent; color: var(--color-text); caret-color: var(--color-text); font-size: 13px; line-height: 1.45; padding: 11px; scrollbar-color: var(--color-scrollbar) transparent; scrollbar-width: thin; }
+.prompt-input { position: relative; z-index: 1; width: 100%; min-height: 62px; max-height: 260px; overflow-y: hidden; border: 0; background: transparent; color: var(--color-text); caret-color: var(--color-text); font-size: 13px; line-height: 1.45; padding: 11px; scrollbar-color: var(--color-scrollbar) transparent; scrollbar-width: thin; }
 .prompt-input:focus { box-shadow: none; }
 .prompt-input::selection { background: var(--color-selection); color: var(--color-text); }
 .prompt-input::placeholder { color: var(--color-text-tertiary); opacity: 1; }
@@ -422,11 +422,15 @@
 .composer-footer { display: flex; min-height: 46px; align-items: center; gap: 7px; padding: 0 10px 9px; }
 .voice-input { display: inline-flex; min-width: 0; align-items: center; gap: 6px; }
 .voice-input-button, .voice-stop-button { flex: 0 0 auto; }
+.voice-input-processing { margin-left: auto; }
+.voice-processing-button svg { animation: voice-processing-spin 1s linear infinite; }
+@keyframes voice-processing-spin { to { transform: rotate(360deg); } }
 .voice-input-recording { width: min(260px, 32vw); max-width: min(260px, 32vw); margin-left: auto; }
 .voice-wave { display: flex; min-width: 72px; max-width: 190px; height: 24px; align-items: center; gap: 2px; overflow: hidden; color: var(--color-text-tertiary); }
 .voice-wave > span:not(.voice-wave-line) { width: 2px; flex: 0 0 2px; border-radius: 99px; background: var(--color-text-link); transition: height .08s linear; }
 .voice-wave-line { width: 5px; height: 2px; flex: 0 0 5px; border-radius: 99px; background: var(--color-scrollbar-strong); }
 .voice-interim { min-width: 0; max-width: 100px; overflow: hidden; color: var(--color-text-tertiary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.voice-elapsed { color: var(--color-text-tertiary); font-family: var(--font-code); font-size: 10px; font-variant-numeric: tabular-nums; }
 .composer-option { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--color-text-tertiary); font-size: 12px; }
 .composer-option:hover { color: var(--color-text); }
 .approval-mode { min-width: 0; flex: 0 1 auto; }

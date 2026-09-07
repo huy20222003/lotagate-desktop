@@ -1,0 +1,38 @@
+[
+  {
+    "id": "win32-x64",
+    "platform": "win32",
+    "architecture": "x64",
+    "runner": "windows-latest"
+  },
+  {
+    "id": "win32-arm64",
+    "platform": "win32",
+    "architecture": "arm64",
+    "runner": "windows-11-arm"
+  },
+  {
+    "id": "darwin-x64",
+    "platform": "darwin",
+    "architecture": "x64",
+    "runner": "macos-15-intel"
+  },
+  {
+    "id": "darwin-arm64",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "runner": "macos-15"
+  },
+  {
+    "id": "linux-x64",
+    "platform": "linux",
+    "architecture": "x64",
+    "runner": "ubuntu-latest"
+  },
+  {
+    "id": "linux-arm64",
+    "platform": "linux",
+    "architecture": "arm64",
+    "runner": "ubuntu-24.04-arm"
+  }
+]

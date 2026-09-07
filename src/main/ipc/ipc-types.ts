@@ -22,6 +22,7 @@ import type { AutomationRun } from '../../contracts/ipc/v1/automation.js';
 import type { RemoteControlService } from '../remote-control/remote-control-service.js';
 import type { DesktopUpdateService } from '../updates/desktop-update-service.js';
 import type { TaskTurnCoordinator } from '../tasks/task-turn-coordinator.js';
+import type { WhisperCppSpeechTranscriptionService } from '../speech/whisper-cpp-speech-transcription-service.js';
 
 export interface DesktopIpcServices {
   auth: DesktopAuthApi;
@@ -44,6 +45,7 @@ export interface DesktopIpcServices {
   remoteControl: RemoteControlService;
   updates: DesktopUpdateService;
   operations: DesktopOperations;
+  speech: WhisperCppSpeechTranscriptionService;
   runAutomation(id: string): Promise<AutomationRun>;
   retryAutomation(runId: string): Promise<AutomationRun>;
   setMenuContext(context: DesktopMenuContext): void;

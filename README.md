@@ -18,6 +18,39 @@ fork and does not modify `server/`, `sdk/`, `agent-sdk/`, or `cli/`.
 - The desktop uses normal password login at `/auth/login`; it does not
   implement OAuth or 2FA.
 
+Voice input uses the local whisper.cpp command-line runtime instead of
+Chromium's browser speech-recognition service. Audio is normalized to a
+16 kHz mono PCM WAV payload in the renderer, sent through the trusted Desktop
+IPC bridge, and transcribed by the packaged main-process native adapter. The
+native runtime is bundled; the multilingual model is downloaded lazily on
+first use, cached under the Electron user-data directory, and verified against
+the packaged manifest.
+
+Prepare the pinned whisper.cpp runtime and speech manifest before running the
+app or creating a package:
+
+```powershell
+npm run speech:prepare
+```
+
+The preparation step downloads the official whisper.cpp `v1.9.1` runtime and
+writes metadata for the `ggml-small-q5_1.bin` model into generated
+`resources/speech` assets. The model is not copied into the installer. The
+first transcription streams the model into the per-user cache, verifies its
+size and SHA-256, then commits it with an atomic rename. No Python, FFmpeg,
+browser speech service, or system `PATH` dependency is required. The runtime
+is intentionally not an npm dependency of the CLI, SDK, agent SDK, or Desktop
+package.
+Voice input uses whisper.cpp automatic language detection and does not depend
+on the Windows, Electron, or browser interface language.
+
+The official release provides Windows x64 and Linux x64/arm64 binaries. The
+Windows arm64 package uses the official x64 runtime through Windows emulation.
+For macOS, build a native whisper.cpp `whisper-cli` binary and set
+`LOTAGATE_WHISPER_CPP_EXECUTABLE` before running `npm run speech:prepare`.
+For a controlled model mirror, set `LOTAGATE_SPEECH_MODEL_URL` during the
+build; the published checksum and size remain mandatory.
+
 ## Development
 
 From the repository root:
@@ -141,6 +174,7 @@ npm run lint
 npm run check:file-size
 npm test
 npm run build
+npm run speech:prepare
 npm run package:smoke
 npm run make
 ```
@@ -181,6 +215,38 @@ stable upgrade code so later versions can upgrade the same installation.
 The ZIP maker uses a small in-repository compatibility override at
 `vendor/cross-zip` to replace the deprecated recursive `fs.rmdir` call with
 `fs.rm` while preserving the Electron Forge maker API.
+
+`npm run package`, `npm run make`, and `npm run make:installers` prepare the
+speech runtime automatically. Generated native binaries, model caches, and
+manifests remain excluded from source control; the packaging step is therefore
+reproducible from the pinned release URLs and checksums.
+
+## Native release matrix
+
+`npm run make:installers` is the single-target build worker. It validates the
+host, stages the target-specific `@lotagate/cli` native package, prepares the
+target whisper.cpp runtime, builds the Forge installers, and writes
+`out/make/release-manifest.json` with artifact sizes and SHA-256 values.
+
+The supported targets are maintained in `scripts/release-targets.json`. The
+matrix wrapper can list or build one native target:
+
+```powershell
+npm run release:target -- --list
+npm run release:target -- --target win32-x64
+```
+
+`.github/workflows/desktop-release.yml` resolves that same list, runs every
+target on its native GitHub Actions runner, and uploads the results to a
+workflow artifact. After all targets succeed, the upload job authenticates to
+Google Drive through GitHub OIDC and creates the immutable tree
+`desktop-releases/vX.Y.Z/<windows|macos|linux>/<x64|arm64>`. Configure the
+repository secrets `LOTAGATE_GCP_WORKLOAD_IDENTITY_PROVIDER` and
+`LOTAGATE_GCP_SERVICE_ACCOUNT`, plus the repository variable
+`LOTAGATE_DRIVE_PARENT_FOLDER_ID`. The service account must have access to the
+configured Drive folder. `LOTAGATE_SPEECH_MODEL_URL` is an optional repository
+variable for a public HTTPS mirror containing the exact pinned model; when it
+is absent, the official whisper.cpp model URL is used.
 
 The Electron main/preload bundle uses the CommonJS output emitted by the
 current electron-vite integration; the renderer remains Vite-managed.

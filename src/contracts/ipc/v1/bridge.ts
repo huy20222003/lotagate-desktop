@@ -5,6 +5,7 @@ import type { DesktopWorkspaceApi, DesktopTaskApi, DesktopCheckpointApi, AgentEv
 import type { DesktopApprovalApi } from './approval.js';
 import type { DesktopRemoteControlApi } from '../../remote-control/v1/remote-control.js';
 import type { DesktopUpdatesApi } from './update.js';
+import type { DesktopSpeechApi } from './speech.js';
 
 export interface DesktopBridge {
   menu: {
@@ -62,6 +63,7 @@ export interface DesktopBridge {
   approvals: DesktopApprovalApi;
   remoteControl: DesktopRemoteControlApi;
   updates: DesktopUpdatesApi;
+  speech: DesktopSpeechApi;
   operations: {
     notify(title: string, body: string): Promise<void>;
     showWindow(): Promise<void>;

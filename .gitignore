@@ -26,3 +26,6 @@ credentials/
 *.sqlite
 *.sqlite3
 .lotagate/
+resources/speech/runtime/
+resources/speech/models/
+resources/speech/manifest.json

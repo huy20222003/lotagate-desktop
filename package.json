@@ -29,10 +29,15 @@
     "test:e2e": "npm run package && playwright test",
     "lint": "eslint .",
     "check:file-size": "node scripts/check-file-sizes.mjs",
+    "cli:prepare": "node scripts/prepare-cli-runtime.mjs",
+    "speech:prepare": "node scripts/prepare-speech-runtime.mjs",
+    "prepackage": "npm run speech:prepare",
     "package": "electron-forge package",
+    "premake": "npm run speech:prepare",
     "make": "electron-forge make",
     "make:installers": "node scripts/build-installers.mjs",
-    "package:smoke": "npm run build && npm run check:file-size && electron-forge package"
+    "release:target": "node scripts/build-release-matrix.mjs",
+    "package:smoke": "npm run build && npm run check:file-size && npm run package"
   },
   "dependencies": {
     "@lotagate/cli": "0.1.24",

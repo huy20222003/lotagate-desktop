@@ -6,4 +6,5 @@ export * from './extensions-schema.js';
 export * from './extensions.js';
 export * from './origin-allowlist.js';
 export * from './settings.js';
+export * from './speech.js';
 export * from './workspace.js';
