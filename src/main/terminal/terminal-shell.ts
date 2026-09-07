@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { win32 } from 'node:path';
 import type { TerminalShell } from '../../contracts/ipc/v1/settings.js';
 
 export interface TerminalShellLaunch { command: string; args: string[]; }
@@ -12,10 +12,11 @@ export function resolveTerminalShell(shell: TerminalShell, platform = process.pl
     ? { command: 'cmd.exe', args: ['/d', '/q'] }
     : { command: environment['SHELL'] ?? '/bin/sh', args: ['-i'] };
   if (platform !== 'win32') return { command: 'bash', args: ['--login', '-i'] };
+  const joinWindowsPath = win32.join;
   const candidates = [
-    environment['ProgramFiles'] === undefined ? undefined : join(environment['ProgramFiles'], 'Git', 'bin', 'bash.exe'),
-    environment['ProgramFiles(x86)'] === undefined ? undefined : join(environment['ProgramFiles(x86)'], 'Git', 'bin', 'bash.exe'),
-    environment['LOCALAPPDATA'] === undefined ? undefined : join(environment['LOCALAPPDATA'], 'Programs', 'Git', 'bin', 'bash.exe'),
+    environment['ProgramFiles'] === undefined ? undefined : joinWindowsPath(environment['ProgramFiles'], 'Git', 'bin', 'bash.exe'),
+    environment['ProgramFiles(x86)'] === undefined ? undefined : joinWindowsPath(environment['ProgramFiles(x86)'], 'Git', 'bin', 'bash.exe'),
+    environment['LOCALAPPDATA'] === undefined ? undefined : joinWindowsPath(environment['LOCALAPPDATA'], 'Programs', 'Git', 'bin', 'bash.exe'),
   ].filter((candidate): candidate is string => candidate !== undefined);
   const command = candidates.find(fileExists);
   if (command === undefined) throw new Error('Git Bash is not installed or could not be located.');

@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runGit } from './git-process.js';
@@ -13,7 +14,7 @@ describe('GitService', () => {
   });
 
   it('reads and mutates a repository through the service boundary', async () => {
-    const root = await mkdtemp(join(process.env['TEMP'] ?? '.', 'lotagate-git-service-'));
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-git-service-'));
     roots.push(root);
     await runGit(['init', '-b', 'main'], root);
     // Git for Windows may launch background maintenance after commits, which
@@ -38,7 +39,7 @@ describe('GitService', () => {
   });
 
   it('rejects worktree destinations outside the repository', async () => {
-    const root = await mkdtemp(join(process.env['TEMP'] ?? '.', 'lotagate-git-security-'));
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-git-security-'));
     roots.push(root);
     await runGit(['init', '-b', 'main'], root);
     await expect(service.worktreeAdd(root, resolve(root, '..', 'outside-worktree'), 'main')).rejects.toThrow('outside the workspace boundary');

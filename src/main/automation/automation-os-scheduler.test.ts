@@ -79,10 +79,11 @@ describe('AutomationOsScheduler', () => {
   it('writes and bootstraps a macOS launch agent for scheduled work', async () => {
     setPlatform('darwin');
     await new AutomationOsScheduler().sync([automation({ kind: 'daily', time: '09:00', timezone: 'UTC' })]);
+    const launchctlDomain = `gui/${process.getuid?.() ?? 0}`;
     expect(mocks.writeFile).toHaveBeenCalledWith(expect.stringContaining('com.lotagate.desktop.automation.plist'), expect.stringContaining('<key>StartInterval</key><integer>60</integer>'), 'utf8');
     expect(commandArgs(0)[0]).toBe('launchctl');
-    expect(commandArgs(0)[1]).toEqual(['bootout', 'gui/0', 'com.lotagate.desktop.automation']);
-    expect(commandArgs(1)[1]).toEqual(['bootstrap', 'gui/0', expect.stringContaining('com.lotagate.desktop.automation.plist')]);
+    expect(commandArgs(0)[1]).toEqual(['bootout', launchctlDomain, 'com.lotagate.desktop.automation']);
+    expect(commandArgs(1)[1]).toEqual(['bootstrap', launchctlDomain, expect.stringContaining('com.lotagate.desktop.automation.plist')]);
   });
 
   it('writes and enables a Linux systemd timer for scheduled work', async () => {

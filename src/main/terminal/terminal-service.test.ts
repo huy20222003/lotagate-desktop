@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { tmpdir } from 'node:os';
 import type { TaskStore } from '../tasks/task-store.js';
 import type { WorkspaceRegistry } from '../workspaces/workspace-registry.js';
 import { TerminalService, type TerminalEvidence } from './terminal-service.js';
@@ -30,7 +31,7 @@ describe('TerminalService', () => {
     await expect(service.execute({ cwd: process.cwd(), command: process.execPath, args: ['-e', ''], taskId: 'task-1', approved: true })).rejects.toThrow('trusted workspace');
 
     const trustedService = new TerminalService(workspaceRegistry, taskStore, createEvidenceStore());
-    await expect(trustedService.execute({ cwd: process.env['TEMP'] ?? process.cwd(), command: process.execPath, args: ['-e', ''], taskId: 'task-1', approved: true })).rejects.toThrow('outside the workspace boundary');
+    await expect(trustedService.execute({ cwd: tmpdir(), command: process.execPath, args: ['-e', ''], taskId: 'task-1', approved: true })).rejects.toThrow('outside the workspace boundary');
   });
 
   it('executes an explicitly approved command for a trusted workspace', async () => {

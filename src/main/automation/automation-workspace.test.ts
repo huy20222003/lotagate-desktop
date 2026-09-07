@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runGit } from '../git/git-process.js';
@@ -22,8 +23,8 @@ describe('prepareAutomationWorkspace', () => {
   afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 
   it('creates an isolated run branch from the configured base branch and cleans it after success', async () => {
-    const root = await mkdtemp(join(process.env['TEMP'] ?? '.', 'lotagate-automation-repo-'));
-    const managed = await mkdtemp(join(process.env['TEMP'] ?? '.', 'lotagate-automation-managed-'));
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-automation-repo-'));
+    const managed = await mkdtemp(join(tmpdir(), 'lotagate-automation-managed-'));
     roots.push(root, managed);
     await runGit(['init', '-b', 'main'], root);
     await runGit(['config', 'user.name', 'LotaGate Test'], root);
@@ -44,7 +45,7 @@ describe('prepareAutomationWorkspace', () => {
   }, 15_000);
 
   it('does not allow a branch setting to mutate the primary checkout', async () => {
-    const root = await mkdtemp(join(process.env['TEMP'] ?? '.', 'lotagate-automation-no-worktree-'));
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-automation-no-worktree-'));
     roots.push(root);
     const workspace = { id: 'workspace-1', name: 'test', rootPath: root, roots: [root], trusted: true, settings: {}, createdAt: new Date().toISOString(), lastOpenedAt: new Date().toISOString() } satisfies Workspace;
     await expect(prepareAutomationWorkspace(new GitService(), workspace, automation({ worktree: false, branch: 'main' }), 'run-1', root)).rejects.toThrow('requires worktree isolation');

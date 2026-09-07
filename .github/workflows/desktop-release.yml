@@ -39,7 +39,8 @@ jobs:
         shell: bash
         run: |
           echo "matrix=$(node scripts/build-release-matrix.mjs --github-matrix)" >> "$GITHUB_OUTPUT"
-          echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+          desktop_version="$(node -p 'require("./package.json").version')"
+          echo "version=$desktop_version" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build Desktop (${{ matrix.id }})

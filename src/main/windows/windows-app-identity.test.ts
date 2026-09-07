@@ -16,7 +16,7 @@ vi.mock('node:fs/promises', () => ({ mkdir: mocks.mkdir }));
 
 import { configureWindowsAppIdentity, configureWindowsTaskbar } from './windows-app-identity.js';
 
-describe('Windows app identity', () => {
+describe.skipIf(process.platform !== 'win32')('Windows app identity', () => {
   it('sets the branded app identity during development as well as packaging', () => {
     mocks.app.isPackaged = false;
 

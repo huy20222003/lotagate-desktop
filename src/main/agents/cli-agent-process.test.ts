@@ -30,7 +30,7 @@ describe('CliAgentProcess request lifecycle', () => {
 
       const pending = agent.request('model.list', {});
       const rejection = expect(pending).rejects.toThrow('timed out');
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(31_000);
 
       await rejection;
       expect(child['kill']).toHaveBeenCalled();
@@ -51,7 +51,7 @@ describe('CliAgentProcess request lifecycle', () => {
 
       const pending = agent.request('model.list', {});
       const rejection = expect(pending).rejects.toThrow('timed out');
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(31_000);
 
       await rejection;
       expect(child['kill']).toHaveBeenCalled();
