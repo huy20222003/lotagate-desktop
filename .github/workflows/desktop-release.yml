@@ -64,6 +64,27 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Prepare public Desktop runtime configuration
+        shell: bash
+        env:
+          LOTAGATE_API_BASE_URL: ${{ vars.LOTAGATE_API_BASE_URL }}
+          LOTAGATE_TRUSTED_ORIGIN: ${{ vars.LOTAGATE_TRUSTED_ORIGIN }}
+          LOTAGATE_REMOTE_SERVER_URL: ${{ vars.LOTAGATE_REMOTE_SERVER_URL }}
+          LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX: ${{ vars.LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${LOTAGATE_API_BASE_URL}" || -z "${LOTAGATE_TRUSTED_ORIGIN}" ]]; then
+            echo "::error::Configure LOTAGATE_API_BASE_URL and LOTAGATE_TRUSTED_ORIGIN as GitHub Repository Variables before running the Desktop release workflow."
+            exit 1
+          fi
+          remote_server_global_prefix="${LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX:-api/v1}"
+          {
+            printf 'LOTAGATE_API_BASE_URL=%s\n' "${LOTAGATE_API_BASE_URL}"
+            printf 'LOTAGATE_TRUSTED_ORIGIN=%s\n' "${LOTAGATE_TRUSTED_ORIGIN}"
+            printf 'LOTAGATE_REMOTE_SERVER_URL=%s\n' "${LOTAGATE_REMOTE_SERVER_URL}"
+            printf 'LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX=%s\n' "${remote_server_global_prefix}"
+          } > .env
+
       - name: Build native whisper.cpp runtime for macOS
         if: matrix.platform == 'darwin'
         shell: bash

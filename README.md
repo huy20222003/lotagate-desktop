@@ -249,7 +249,13 @@ repository secrets `LOTAGATE_GCP_WORKLOAD_IDENTITY_PROVIDER` and
 `LOTAGATE_DRIVE_PARENT_FOLDER_ID`. The service account must have access to the
 configured Drive folder. `LOTAGATE_SPEECH_MODEL_URL` is an optional repository
 variable for a public HTTPS mirror containing the exact pinned model; when it
-is absent, the official whisper.cpp model URL is used.
+is absent, the official whisper.cpp model URL is used. The release jobs also
+require the public repository variables `LOTAGATE_API_BASE_URL` and
+`LOTAGATE_TRUSTED_ORIGIN`; `LOTAGATE_REMOTE_SERVER_URL` and
+`LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX` are optional and default to an empty
+remote URL and `api/v1`. The workflow materializes these public values into a
+temporary `.env` file so Forge can generate the packaged `runtime.dat`; the
+file is never committed and no enrollment token is included in it.
 
 The Electron main/preload bundle uses the CommonJS output emitted by the
 current electron-vite integration; the renderer remains Vite-managed.
