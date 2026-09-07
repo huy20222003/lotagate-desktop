@@ -143,12 +143,14 @@ describe('CheckpointService', () => {
     const service = new CheckpointService();
     await service.observeEvent(root, event('turn.started', { taskId: 'task-symlink-parent', sessionId: 'session-symlink-parent', turnId: 'turn-symlink-parent' }));
     await execute(service, root, request('shell', 'shell.exec', {}, 'session-symlink-parent'), async () => {
+      await writeFile(join(root, 'inside.txt'), 'must be reverted');
       await writeFile(join(root, 'linked', 'outside.txt'), 'must remain');
       return response();
     });
     await service.observeEvent(root, event('turn.completed', { sessionId: 'session-symlink-parent', turnId: 'turn-symlink-parent' }));
 
-    await expect(service.undo(root, 'task-symlink-parent', 'turn-symlink-parent')).resolves.toMatchObject({ state: 'failed' });
+    await expect(service.undo(root, 'task-symlink-parent', 'turn-symlink-parent')).resolves.toMatchObject({ state: 'undone', conflicts: [] });
+    await expect(readFile(join(root, 'inside.txt'), 'utf8')).rejects.toThrow();
     await expect(readFile(join(outside, 'outside.txt'), 'utf8')).resolves.toBe('must remain');
   });
 
