@@ -1,5 +1,5 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
-import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, type Dirent } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { MakerDMG } from '@electron-forge/maker-dmg';
@@ -89,7 +89,14 @@ export default config;
 
 function removeSourceMaps(directory: string): void {
   if (!existsSync(directory)) return;
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+  let entries: Dirent<string>[];
+  try {
+    entries = readdirSync(directory, { withFileTypes: true });
+  } catch (error) {
+    if (isMissingPathError(error)) return;
+    throw error;
+  }
+  for (const entry of entries) {
     const entryPath = join(directory, entry.name);
     if (entry.isDirectory()) {
       removeSourceMaps(entryPath);
@@ -97,4 +104,8 @@ function removeSourceMaps(directory: string): void {
       rmSync(entryPath, { force: true });
     }
   }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }

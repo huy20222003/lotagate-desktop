@@ -1,9 +1,6 @@
 import { readdir } from 'node:fs/promises';
 import { relative, resolve, sep } from 'node:path';
-
-const MAX_RESULTS = 80;
-const MAX_DEPTH = 8;
-const IGNORED_DIRECTORY_NAMES = new Set(['.git', '.hg', '.svn', 'node_modules', 'out', 'dist', 'build', '.vite']);
+import { IGNORED_DIRECTORY_NAMES, MAX_DEPTH, MAX_RESULTS } from './workspace-constants.js';
 
 export interface WorkspaceFileSuggestion {
   path: string;

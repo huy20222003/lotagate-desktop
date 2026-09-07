@@ -4,3 +4,4 @@ export const CACHE_TTL_MS = {
   workspaces: 5 * 60 * 1_000,
   models: 10 * 60 * 1_000,
 } as const;
+export const DEFAULT_MAX_MEMORY_ENTRIES = 256;

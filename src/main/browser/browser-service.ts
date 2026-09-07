@@ -9,6 +9,7 @@ import { accessibilityTree, enableDialogEvents, handleDialog, resetViewport, set
 import { downloadBrowserResource, type BrowserDownloadState, type BrowserDownloadResult } from './browser-downloads.js';
 import { appendCapped, assertOriginAllowed, cloneEvidence, consoleLevel, defaultBrowserSettings, isAllowedOrigin, isHttpUrl, normalizeBounds, parseHttpUrl, pruneEvidenceFiles, redact, safeUrl, viewportForSettings } from './browser-service-support.js';
 import { dragBrowserTarget, executeBrowserTargetAction, extractBrowserTable, inspectBrowserElement, inspectBrowserPage, listBrowserFrames, waitForBrowserCondition } from './browser-page-operations.js';
+import { EMPTY_BOUNDS, MAX_CONSOLE_ENTRIES, MAX_ERROR_ENTRIES, MAX_NETWORK_ENTRIES, MAX_RECORDING_FRAMES, MAX_UPLOAD_BYTES, PERSISTENT_BROWSER_PARTITION } from './browser-constants.js';
 import type { BrowserConsoleEntry, BrowserElementInspection, BrowserFrameSnapshot, BrowserInteractionResult, BrowserPageState, BrowserPdfOptions, BrowserScreenshot, BrowserTableSnapshot, BrowserTarget, BrowserWaitCondition } from './browser-types.js';
 export type { BrowserConsoleEntry, BrowserElementInspection, BrowserFrameSnapshot, BrowserInteractionResult, BrowserPageState, BrowserPdfOptions, BrowserScreenshot, BrowserTableSnapshot, BrowserTarget, BrowserWaitCondition } from './browser-types.js';
 export interface BrowserConsoleSnapshot { tab: BrowserTabSnapshot; console: BrowserConsoleEntry[]; errors: string[]; }
@@ -18,14 +19,6 @@ type BrowserTabEntry = { view: WebContentsView; snapshot: BrowserTabSnapshot; vi
 type BrowserDownloadListener = (event: Electron.Event, item: Electron.DownloadItem) => void;
 type BrowserSessionEntry = { id: string; browserSession: Session; settings: BrowserSettings; tabs: Map<string, BrowserTabEntry>; activeTabId: string; evidence: BrowserEvidence; network: BrowserNetworkEntry[]; dialogs: Map<string, BrowserDialog>; downloadState: BrowserDownloadState; createdAt: string; recordingTimer: ReturnType<typeof setInterval> | undefined; retentionTimer: ReturnType<typeof setTimeout> | undefined; recordingCaptureInFlight: boolean; downloadListener?: BrowserDownloadListener };
 type BrowserStateListener = (snapshot: BrowserSessionSnapshot) => void;
-
-const MAX_CONSOLE_ENTRIES = 200;
-const MAX_ERROR_ENTRIES = 100;
-const MAX_NETWORK_ENTRIES = 300;
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-const MAX_RECORDING_FRAMES = 30;
-const EMPTY_BOUNDS: BrowserViewBounds = { x: 0, y: 0, width: 0, height: 0 };
-const PERSISTENT_BROWSER_PARTITION = 'persist:lotagate-browser-default';
 
 export class BrowserService {
   private readonly sessions = new Map<string, BrowserSessionEntry>();

@@ -7,10 +7,8 @@ import { desktopResourcePath } from '../app-assets.js';
 import { terminateDesktopProcess } from '../process/process-termination.js';
 import { SpeechModelManager } from './speech-model-manager.js';
 import type { SpeechTranscriptionResult } from '../../contracts/ipc/v1/speech.js';
-
-export const WHISPER_CPP_VERSION = 'v1.9.1';
-export const WHISPER_CPP_MODEL = 'ggml-small-q5_1.bin';
-export const WHISPER_CPP_TIMEOUT_MS = 120 * 1_000;
+import { WHISPER_CPP_MODEL, WHISPER_CPP_TIMEOUT_MS, WHISPER_CPP_VERSION } from './speech-constants.js';
+export { WHISPER_CPP_MODEL, WHISPER_CPP_TIMEOUT_MS, WHISPER_CPP_VERSION } from './speech-constants.js';
 
 interface WhisperCppJsonResult {
   result?: { language?: unknown };

@@ -8,10 +8,7 @@ import type { WorkspaceRegistry } from '../workspaces/workspace-registry.js';
 import { assertPathInside, requireDirectory } from '../security/path-policy.js';
 import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
-
-const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
-const MAX_EVIDENCE_RECORDS = 1_000;
-const MAX_EVIDENCE_BYTES = 64 * 1024 * 1024;
+import { MAX_EVIDENCE_BYTES, MAX_EVIDENCE_RECORDS, MAX_OUTPUT_BYTES } from './terminal-constants.js';
 
 export interface TerminalResult { command: string; args: string[]; cwd: string; stdout: string; stderr: string; exitCode: number | null; truncated: boolean; durationMs: number; }
 export interface TerminalEvidence extends TerminalResult { id: string; taskId?: string | undefined; createdAt: string; }

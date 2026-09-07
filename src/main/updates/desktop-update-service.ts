@@ -9,10 +9,7 @@ import { DESKTOP_APP_USER_MODEL_ID, DESKTOP_PRODUCT_NAME } from '../app-identity
 import type { DesktopLogger } from '../observability/desktop-logger.js';
 import { desktopReleaseSchema, type DesktopAppVersionInfo, type DesktopRelease, type DesktopReleaseArchitecture, type DesktopReleaseAsset, type DesktopReleaseFormat, type DesktopReleasePlatform, type DesktopUpdateSnapshot } from '../../contracts/ipc/v1/update.js';
 import { isDesktopVersionBelow, isDesktopVersionNewer, isValidDesktopVersion } from './desktop-update-version.js';
-
-const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024;
-const MAX_DOWNLOAD_ATTEMPTS = 2;
-const RETRY_DELAY_MS = 400;
+import { MAX_DOWNLOAD_ATTEMPTS, MAX_DOWNLOAD_BYTES, RETRY_DELAY_MS } from './update-constants.js';
 const require = createRequire(import.meta.url);
 
 export class DesktopUpdateService {

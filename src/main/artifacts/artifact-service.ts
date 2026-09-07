@@ -4,8 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { artifactSchema, type Artifact } from '../../contracts/ipc/v1/workspace.js';
 import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
-
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 
 export class ArtifactService {
   private readonly store = new JsonFileStore<Artifact[]>(desktopDataPath('artifacts.json'), [], value => artifactSchema.array().parse(value));
@@ -14,7 +13,7 @@ export class ArtifactService {
 
   async preview(taskId: string, artifactId: string): Promise<{ artifact: Artifact; content?: string; dataUrl?: string }> {
     const artifact = await this.requireActive(taskId, artifactId);
-    if (artifact.size > 2 * 1024 * 1024) return { artifact };
+    if (artifact.size > DESKTOP_RUNTIME_LIMITS.artifactPreviewBytes) return { artifact };
     const bytes = await readFile(artifact.path);
     if (['markdown', 'text', 'patch', 'json'].includes(artifact.kind)) return { artifact, content: bytes.toString('utf8') };
     if (artifact.kind === 'image') return { artifact, dataUrl: `data:${artifactMimeType(artifact)};base64,${bytes.toString('base64')}` };
@@ -24,7 +23,7 @@ export class ArtifactService {
   async readMedia(taskId: string, artifactId: string): Promise<{ artifact: Artifact; mimeType: string; bytes: Uint8Array }> {
     const artifact = await this.requireActive(taskId, artifactId);
     if (!['image', 'audio', 'video'].includes(artifact.kind)) throw new Error('The artifact is not a media file.');
-    if (artifact.size > MAX_ATTACHMENT_BYTES) throw new Error('The media artifact exceeds the supported preview size.');
+    if (artifact.size > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new Error('The media artifact exceeds the supported preview size.');
     const fileBytes = await readFile(artifact.path);
     return { artifact, mimeType: artifactMimeType(artifact), bytes: Uint8Array.from(fileBytes) };
   }
@@ -33,7 +32,7 @@ export class ArtifactService {
     const artifact = await this.requireActive(taskId, artifactId);
     if (!['image', 'audio', 'video'].includes(artifact.kind)) throw new Error('The artifact is not a media file.');
     if (!Number.isSafeInteger(offset) || offset < 0 || offset >= artifact.size) throw new Error('The media chunk offset is invalid.');
-    const boundedLength = Math.min(length, 48 * 1024, artifact.size - offset);
+    const boundedLength = Math.min(length, DESKTOP_RUNTIME_LIMITS.artifactMediaChunkBytes, artifact.size - offset);
     const handle = await open(artifact.path, 'r');
     try {
       const bytes = Buffer.alloc(boundedLength);
@@ -55,7 +54,7 @@ export class ArtifactService {
     return artifactIds.map(id => {
       const artifact = artifacts.find(item => item.id === id);
       if (artifact === undefined) throw new Error('Attachment artifact was not found.');
-      if (artifact.size <= 0 || artifact.size > MAX_ATTACHMENT_BYTES) throw new Error('The attachment exceeds the supported size limit.');
+      if (artifact.size <= 0 || artifact.size > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new Error('The attachment exceeds the supported size limit.');
       return { id: artifact.id, name: artifact.name, mimeType: artifactMimeType(artifact), sizeBytes: artifact.size, path: artifact.path };
     });
   }
@@ -63,7 +62,7 @@ export class ArtifactService {
   async importFile(taskId: string, sourcePath: string, kind: Artifact['kind']): Promise<Artifact> {
     const details = await stat(sourcePath);
     if (!details.isFile()) throw new Error('The selected artifact must be a file.');
-    if (details.size <= 0 || details.size > MAX_ATTACHMENT_BYTES) throw new Error('The selected artifact exceeds the supported size limit.');
+    if (details.size <= 0 || details.size > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new Error('The selected artifact exceeds the supported size limit.');
     const destinationDirectory = join(desktopDataPath('artifacts'), taskId);
     await mkdir(destinationDirectory, { recursive: true });
     const destination = join(destinationDirectory, `${randomUUID()}-${basename(sourcePath)}`);
@@ -90,17 +89,17 @@ export class ArtifactService {
   }
 
   async createImage(taskId: string, name: string, bytes: Uint8Array): Promise<Artifact> {
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('The image attachment exceeds the supported size limit.');
+    if (bytes.byteLength === 0 || bytes.byteLength > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new Error('The image attachment exceeds the supported size limit.');
     return this.createBytes(taskId, name, bytes, 'image');
   }
 
   async createMedia(taskId: string, name: string, bytes: Uint8Array, kind: Extract<Artifact['kind'], 'audio' | 'video'>): Promise<Artifact> {
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('The media attachment exceeds the supported size limit.');
+    if (bytes.byteLength === 0 || bytes.byteLength > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new Error('The media attachment exceeds the supported size limit.');
     return this.createBytes(taskId, name, bytes, kind);
   }
 
   async createBinary(taskId: string, name: string, bytes: Uint8Array): Promise<Artifact> {
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('The file attachment exceeds the supported size limit.');
+    if (bytes.byteLength === 0 || bytes.byteLength > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new Error('The file attachment exceeds the supported size limit.');
     return this.createBytes(taskId, name, bytes, 'binary');
   }
 

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
+import { PACKAGED_RUNTIME_KEYS, RUNTIME_CONFIG_FILE, RUNTIME_CONFIG_SEED } from './runtime-config-constants.js';
 
 export interface DesktopRuntimeConfig {
   apiBaseUrl: string;
@@ -25,9 +26,6 @@ interface RuntimeConfigPayload {
   version: 1;
   values: Record<string, string>;
 }
-
-const RUNTIME_CONFIG_SEED = 'lotagate-desktop-runtime-config-v1';
-const RUNTIME_CONFIG_FILE = 'runtime.dat';
 
 export function loadRuntimeEnvironment(): void {
   const candidates = app.isPackaged
@@ -63,14 +61,6 @@ function applyRuntimeValues(values: Record<string, string>): void {
     if (process.env[key] === undefined) process.env[key] = value;
   }
 }
-
-const PACKAGED_RUNTIME_KEYS = new Set([
-  'LOTAGATE_API_BASE_URL',
-  'LOTAGATE_TRUSTED_ORIGIN',
-  'LOTAGATE_REMOTE_SERVER_URL',
-  'LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX',
-  'LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN',
-]);
 
 function decryptRuntimeConfig(raw: string): Record<string, string> {
   const artifact = parseRuntimeConfigArtifact(raw);

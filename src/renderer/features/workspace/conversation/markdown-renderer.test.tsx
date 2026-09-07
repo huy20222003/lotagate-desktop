@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentMarkdown } from './markdown-renderer.js';
+
+vi.mock('mermaid', () => ({ default: { initialize: vi.fn(), render: vi.fn().mockResolvedValue({ svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>diagram</text></svg>' }) } }));
 
 describe('agent markdown renderer', () => {
   afterEach(() => cleanup());
@@ -13,6 +15,17 @@ describe('agent markdown renderer', () => {
     expect(screen.getByText('typescript')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy code' })).toBeInTheDocument();
     expect(screen.getByText('const value = 1;')).toBeInTheDocument();
+  });
+
+  it('renders Mermaid fences as clickable diagrams with a source copy action', async () => {
+    render(<AgentMarkdown content={'```mermaid\nflowchart TD\n  A[Start] --> B[Done]\n```'} />);
+
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Mermaid diagram' })).toBeInTheDocument());
+    expect(document.querySelector('.markdown-mermaid-scrollbar .scrollbar-viewport')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Open mermaid diagram' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Copy mermaid source' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('img', { name: 'Mermaid diagram' }).closest('button')!);
+    expect(screen.getByRole('button', { name: 'Close media preview' })).toBeInTheDocument();
   });
 
   it('scopes markdown content so lists use the agent response typography', () => {

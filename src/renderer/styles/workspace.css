@@ -563,6 +563,21 @@ button.lightbox-navigation { width: 44px; height: 44px; border-color: var(--colo
 .markdown-code-scroll { width: 100%; min-width: 0; max-width: 100%; max-height: 420px; overflow: hidden; }
 .markdown-code-scroll .scrollbar-viewport { width: 100%; height: auto; min-width: 0; max-width: 100%; max-height: inherit; overflow-x: hidden; overflow-y: auto; }
 .markdown-code-scroll pre { min-width: 0; max-width: 100%; margin: 0; border: 0; border-radius: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.markdown-mermaid { width: 100%; min-width: 0; max-width: 100%; margin-top: 10px; overflow: hidden; border: 1px solid var(--color-border-subtle); border-radius: 8px; background: var(--color-surface); }
+.markdown-mermaid > header { display: flex; align-items: center; justify-content: space-between; min-height: 34px; border-bottom: 1px solid var(--color-border-subtle); padding: 0 8px 0 11px; color: var(--color-text-tertiary); font-size: 11px; }
+.markdown-mermaid-actions { display: flex; align-items: center; gap: 2px; }
+.markdown-mermaid-actions .agent-copy-button { margin: 0; }
+.markdown-mermaid-open { width: 24px; height: 24px; border: 0; border-radius: 5px; padding: 0; background: transparent; color: var(--color-text-tertiary); }
+.markdown-mermaid-open:hover { background: var(--color-surface-hover); color: var(--color-text); }
+.markdown-mermaid-scrollbar { width: 100%; max-height: 420px; overflow: hidden; }
+.markdown-mermaid-scrollbar .scrollbar-viewport { width: 100%; height: auto; max-height: inherit; overflow-x: hidden; overflow-y: auto; }
+.markdown-mermaid-preview { display: flex; width: 100%; align-items: flex-start; justify-content: center; border: 0; padding: 16px; background: transparent; cursor: pointer; }
+.markdown-mermaid-preview img { display: block; width: auto; max-width: min(100%, 640px); height: auto; object-fit: contain; }
+.markdown-mermaid-status { padding: 24px 16px; color: var(--color-text-tertiary); text-align: center; }
+.markdown-mermaid-fallback { padding: 12px; color: var(--color-text-secondary); }
+.markdown-mermaid-fallback p { margin: 0; color: var(--color-danger); font-size: 12px; }
+.markdown-mermaid-fallback small { display: block; margin-top: 4px; color: var(--color-text-tertiary); overflow-wrap: anywhere; }
+.markdown-mermaid-fallback pre { margin: 10px 0 0; white-space: pre-wrap; }
 .agent-copy-button { display: grid; width: 24px; height: 24px; place-items: center; margin-top: 9px; border: 0; border-radius: 5px; padding: 0; background: transparent; color: var(--color-text-tertiary); }
 .agent-copy-button:hover { color: var(--color-text); }
 .agent-message-meta { display: flex; align-items: center; gap: 6px; margin-top: 5px !important; color: var(--color-text-tertiary) !important; font-size: 11px !important; line-height: 1 !important; }

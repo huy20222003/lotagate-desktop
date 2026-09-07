@@ -2,8 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, unlink, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { desktopDataDirectory, DESKTOP_DATA_DIRECTORIES } from '../persistence/app-data-paths.js';
-
-const DEFAULT_MAX_MEMORY_ENTRIES = 256;
+import { DEFAULT_MAX_MEMORY_ENTRIES } from './cache-policy.js';
 
 interface CacheEntry<T> {
   version: 1;

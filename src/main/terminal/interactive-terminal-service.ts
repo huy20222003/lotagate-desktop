@@ -6,6 +6,7 @@ import { terminalSessionOpenSchema, terminalSessionIdSchema, terminalSessionResi
 import type { WorkspaceRegistry } from '../workspaces/workspace-registry.js';
 import { SettingsService } from '../settings/settings-service.js';
 import { resolveTerminalShell } from './terminal-shell.js';
+import { MAX_INPUT_BYTES } from './terminal-constants.js';
 // The interactive terminal is an explicit user action. Agent-run commands
 // continue to use TerminalService's trusted-workspace and approval gates.
 
@@ -13,8 +14,6 @@ type NodePtyModule = typeof import('node-pty');
 type IPty = import('node-pty').IPty;
 
 const nodePty = loadNodePty();
-
-const MAX_INPUT_BYTES = 128 * 1024;
 
 interface InteractiveSession {
   ownerId: number;

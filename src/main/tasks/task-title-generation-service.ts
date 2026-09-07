@@ -4,10 +4,7 @@ import type { DesktopLogger } from '../observability/desktop-logger.js';
 import type { AgentManager } from '../agents/agent-manager.js';
 import type { TaskStore } from './task-store.js';
 import type { Task } from '../../contracts/ipc/v1/workspace.js';
-
-const SUMMARY_INPUT_WORD_LIMIT = 100;
-const SUMMARY_TITLE_WORD_LIMIT = 10;
-const SUMMARY_TITLE_CHARACTER_LIMIT = 120;
+import { SUMMARY_INPUT_WORD_LIMIT, SUMMARY_TITLE_CHARACTER_LIMIT, SUMMARY_TITLE_WORD_LIMIT } from './task-constants.js';
 
 export class TaskTitleGenerationService {
   private readonly inFlight = new Set<string>();

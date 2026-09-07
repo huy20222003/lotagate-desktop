@@ -3,7 +3,7 @@ import type { FileChangeSummary, WorkPlanSnapshot } from '../../../../contracts/
 import { useState } from 'react';
 import { Icon } from '../../../components/ui.js';
 import { Scrollbar } from '../../../components/Scrollbar.js';
-import { fileName } from './file-change-view.js';
+import { fileName, hasFileDiff } from './file-change-view.js';
 
 export function ChangeSummaryChip({ summary, plan, onPlanClick, onFilesClick }: { summary: FileChangeSummary; plan?: WorkPlanSnapshot; onPlanClick?: () => void; onFilesClick?: (path?: string) => void }) {
   const [popover, setPopover] = useState<'plan' | 'files' | undefined>();
@@ -22,8 +22,7 @@ export function ChangeSummaryChip({ summary, plan, onPlanClick, onFilesClick }: 
     {hasFiles ? <div className="change-summary-segment" onMouseEnter={() => setPopover('files')} onFocus={() => setPopover('files')}>
       <button type="button" className="change-summary-button change-summary-files" onClick={() => onFilesClick?.()} aria-label={`Open ${summary.files.length} changed ${summary.files.length === 1 ? 'file' : 'files'}`}>
         <span>{summary.files.length} {summary.files.length === 1 ? 'file' : 'files'} changed</span>
-        <span className="change-additions">+{summary.additions}</span>
-        <span className="change-deletions">-{summary.deletions}</span>
+        {hasFileDiff(summary) ? <><span className="change-additions">+{summary.additions}</span><span className="change-deletions">-{summary.deletions}</span></> : null}
       </button>
       {popover === 'files' ? <FileChangesPopover summary={summary} onOpenFile={path => onFilesClick?.(path)} /> : null}
     </div> : null}
@@ -42,7 +41,7 @@ function PlanPopover({ plan }: { plan: WorkPlanSnapshot }) {
 }
 
 function FileChangesPopover({ summary, onOpenFile }: { summary: FileChangeSummary; onOpenFile: (path: string) => void }) {
-  return <div className="change-summary-popover change-summary-files-popover" role="tooltip"><Scrollbar className="change-summary-files-scrollbar"><div className="change-summary-files-list">{summary.files.map(file => <button type="button" className="change-summary-file" key={file.path} onClick={() => onOpenFile(file.path)} aria-label={`Open ${fileName(file.path)} in changed files`}><span>{fileName(file.path)}</span><span className="file-change-counts"><span className="change-additions">+{file.additions}</span><span className="change-deletions">-{file.deletions}</span></span></button>)}</div></Scrollbar></div>;
+  return <div className="change-summary-popover change-summary-files-popover" role="tooltip"><Scrollbar className="change-summary-files-scrollbar"><div className="change-summary-files-list">{summary.files.map(file => <button type="button" className="change-summary-file" key={file.path} onClick={() => onOpenFile(file.path)} aria-label={`Open ${fileName(file.path)} in changed files`}><span>{fileName(file.path)}</span>{hasFileDiff(file) ? <span className="file-change-counts"><span className="change-additions">+{file.additions}</span><span className="change-deletions">-{file.deletions}</span></span> : null}</button>)}</div></Scrollbar></div>;
 }
 
 export function planStepNumber(plan: WorkPlanSnapshot): number {

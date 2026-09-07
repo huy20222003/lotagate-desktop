@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { desktopApprovalInputSchema, desktopApprovalRequestSchema, type DesktopApprovalInput, type DesktopApprovalRequest, type DesktopApprovalResolution } from '../../contracts/ipc/v1/approval.js';
+import { DEFAULT_TIMEOUT_MS } from './approval-constants.js';
 
 type PendingApproval = {
   request: DesktopApprovalRequest;
@@ -9,8 +10,6 @@ type PendingApproval = {
   isAvailable?: () => boolean;
   timer: ReturnType<typeof setTimeout>;
 };
-
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1_000;
 
 export class ApprovalCoordinator {
   private readonly pending = new Map<string, PendingApproval>();

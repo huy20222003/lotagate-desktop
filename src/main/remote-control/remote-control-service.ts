@@ -17,21 +17,12 @@ import type { ArtifactService } from '../artifacts/artifact-service.js';
 import { artifactKind } from '../artifacts/artifact-kind.js';
 import type { WorkspaceFileSuggestions } from '../workspaces/workspace-file-suggestions.js';
 import { normalizeRemoteServerGlobalPrefix, remoteServerRoute } from './remote-server-paths.js';
+import { MAX_ACTIVITY_ITEMS, MAX_PENDING_TRUST_REQUESTS, MAX_RECONNECT_DELAY_MS, MAX_TASKS_PER_WORKSPACE, MAX_TIMER_DELAY_MS, RECONNECT_STABLE_MS, REMOTE_REQUEST_TIMEOUT_MS, REMOTE_UPLOAD_CLEANUP_INTERVAL_MS, REMOTE_UPLOAD_TTL_MS } from './remote-control-constants.js';
 
 interface RemoteServerSessionResponse { sessionId: string; hostToken: string; pairingToken: string; expiresAt: string; connectUrl: string }
 interface RemoteRuntimeSession { publicState: RemoteControlSession; hostToken: string; socket: WebSocket | undefined; keyPair: RemoteKeyPair; cipher: RemoteCipher | undefined; sendChain: Promise<void>; nextSequence: number; lastReceivedSequence: number; reconnectAttempt: number; stopping: boolean; reconnectTimer: ReturnType<typeof setTimeout> | undefined; reconnectStableTimer: ReturnType<typeof setTimeout> | undefined; expiryTimer: ReturnType<typeof setTimeout> | undefined; uploadCleanupTimer: ReturnType<typeof setTimeout> | undefined; uploadStartReservations: number; uploads: Map<string, RemoteUpload>; requestLedger: Map<string, Promise<RemoteResponse>> }
 interface RemoteResponse { type: 'command.result' | 'command.error'; payload: Record<string, unknown> }
 interface RemoteUpload { uploadId: string; taskId: string; name: string; mimeType: string; sizeBytes: number; chunkCount: number; chunks: Map<number, Buffer>; receivedBytes: number; expiresAt: number; completion?: Promise<unknown> }
-
-const MAX_RECONNECT_DELAY_MS = 15_000;
-const RECONNECT_STABLE_MS = 30_000;
-const MAX_TASKS_PER_WORKSPACE = 100;
-const MAX_ACTIVITY_ITEMS = 100;
-const MAX_PENDING_TRUST_REQUESTS = 100;
-const REMOTE_REQUEST_TIMEOUT_MS = 10_000;
-const REMOTE_UPLOAD_TTL_MS = 5 * 60_000;
-const REMOTE_UPLOAD_CLEANUP_INTERVAL_MS = 60_000;
-const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export class RemoteControlService {
   private runtime: RemoteRuntimeSession | undefined;

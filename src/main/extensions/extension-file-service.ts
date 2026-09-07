@@ -6,8 +6,7 @@ import type { ExtensionDetail, ExtensionDetailInput, ExtensionDetailWriteInput, 
 import { requireDirectory } from '../security/path-policy.js';
 import { ensureProjectConfig, resolveProjectConfigPaths } from '../workspaces/project-config-layout.js';
 import type { ExtensionProtocol } from './extension-protocol.js';
-
-const MAX_DETAIL_BYTES = 2 * 1024 * 1024;
+import { MAX_DETAIL_BYTES } from './extension-constants.js';
 
 export class ExtensionFileService {
   constructor(private readonly workspaceTrust?: WorkspaceTrust, private readonly publicPluginRoot?: string, private readonly extensionProtocol?: ExtensionProtocol) {}

@@ -1,6 +1,5 @@
 import { session, type WebContents } from 'electron';
-
-const LOCAL_RENDERER_ORIGIN = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/|$)/u;
+import { LOCAL_RENDERER_ORIGIN } from './windows-constants.js';
 
 function isOwnedRenderer(webContents: WebContents, requestingOrigin: string): boolean {
   const currentUrl = webContents.getURL();

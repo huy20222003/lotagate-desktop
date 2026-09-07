@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-
-const MAX_MODEL_BYTES = 512 * 1024 * 1024;
+import { MAX_MODEL_BYTES } from './speech-constants.js';
 
 interface SpeechModelManifestFile {
   version: number;

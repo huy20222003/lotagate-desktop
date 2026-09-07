@@ -3,9 +3,7 @@ import { API_AUTH_COOKIES, API_CRYPTO, API_PATHS, isDesktopApiPathAllowed } from
 import { bootstrapCryptoSession, decryptJson, encryptJson, isEnvelope, nextContext, shouldRotate, type ApiCryptoSession, type EcPublicJwk } from './api-crypto.js';
 import type { DesktopLogger } from '../observability/desktop-logger.js';
 import type { PersistentCache } from '../cache/persistent-cache.js';
-
-const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
-const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+import { DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_REQUEST_TIMEOUT_MS } from './api-constants.js';
 
 export interface ApiTransportConfig {
   baseUrl: string;

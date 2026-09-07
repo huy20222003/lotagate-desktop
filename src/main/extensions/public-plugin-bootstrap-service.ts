@@ -2,8 +2,7 @@ import { z } from 'zod';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 import { JsonFileStore } from '../persistence/json-file-store.js';
 import type { DesktopLogger } from '../observability/desktop-logger.js';
-
-const BOOTSTRAP_PLUGINS = ['computer-use', 'browser-use', 'pdf', 'pptx', 'excel', 'docs'] as const;
+import { BOOTSTRAP_PLUGINS } from './extension-constants.js';
 
 const bootstrapStateSchema = z.object({
   completed: z.boolean().default(false),

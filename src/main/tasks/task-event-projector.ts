@@ -3,9 +3,7 @@ import type { DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js'
 import { formatToolDisplayName } from '../../shared/tool-display.js';
 import { formatTurnFailure } from '../../shared/turn-failure.js';
 import type { TaskStore } from './task-store.js';
-
-const ASSISTANT_DELTA_BATCH_WINDOW_MS = 32;
-const ASSISTANT_DELTA_BATCH_SIZE = 32;
+import { ASSISTANT_DELTA_BATCH_SIZE, ASSISTANT_DELTA_BATCH_WINDOW_MS } from './task-constants.js';
 
 interface PendingAssistantDeltaBatch {
   cwd: string;

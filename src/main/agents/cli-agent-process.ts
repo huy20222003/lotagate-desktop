@@ -4,11 +4,8 @@ import { createReadStream } from 'node:fs';
 import { desktopHostCancelSchema, desktopRequestSchema, parseDesktopEvent, parseDesktopHostRequest, parseDesktopResponse, type DesktopAgentResult, type DesktopEvent, type DesktopHostCancel, type DesktopHostRequest, type DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
 import { cliRequestTimeout, CLI_DEFAULT_REQUEST_TIMEOUT_MS } from './cli-agent-timeouts.js';
 import { terminateDesktopProcess } from '../process/process-termination.js';
-
-const MAX_JSONL_LINE_BYTES = 4 * 1024 * 1024;
-const DESKTOP_ATTACHMENT_CHUNK_BYTES = 512 * 1024;
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-const REQUIRED_DESKTOP_CAPABILITIES = ['execution-context', 'tool-allowlist', 'approval-reviews', 'lifecycle-controls', 'browser-host', 'execution-broker', 'intent-runtime', 'host-evidence', 'conversational-progress', 'local-memory-commands', 'extensions'] as const;
+import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
+import { REQUIRED_DESKTOP_CAPABILITIES } from './agent-constants.js';
 
 export interface CliAgentProcessOptions {
   cwd: string;
@@ -115,11 +112,11 @@ export class CliAgentProcess {
   }
 
   async uploadAttachment(input: { id: string; name: string; mimeType: string; sizeBytes: number; path: string }): Promise<void> {
-    if (input.sizeBytes <= 0 || input.sizeBytes > MAX_ATTACHMENT_BYTES) throw new CliAgentProcessError('The attachment exceeds the supported size limit.');
+    if (input.sizeBytes <= 0 || input.sizeBytes > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new CliAgentProcessError('The attachment exceeds the supported size limit.');
     await this.request('attachment.begin', { attachmentId: input.id, name: input.name, mimeType: input.mimeType, sizeBytes: input.sizeBytes });
     let index = 0;
     try {
-      for await (const chunk of createReadStream(input.path, { highWaterMark: DESKTOP_ATTACHMENT_CHUNK_BYTES })) {
+      for await (const chunk of createReadStream(input.path, { highWaterMark: DESKTOP_RUNTIME_LIMITS.cliAttachmentChunkBytes })) {
         await this.request('attachment.chunk', { attachmentId: input.id, index, dataBase64: Buffer.from(chunk).toString('base64') });
         index += 1;
       }
@@ -188,7 +185,7 @@ export class CliAgentProcess {
   private consumeOutput(child: ChildProcessWithoutNullStreams, generation: number, chunk: Buffer): void {
     if (this.child !== child || this.generation !== generation) return;
     this.lineBuffer = Buffer.concat([this.lineBuffer, chunk]);
-    if (this.lineBuffer.byteLength > MAX_JSONL_LINE_BYTES && !this.lineBuffer.includes(0x0a)) {
+    if (this.lineBuffer.byteLength > DESKTOP_RUNTIME_LIMITS.cliJsonlLineBytes && !this.lineBuffer.includes(0x0a)) {
       this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: 'CLI JSONL line exceeded the desktop limit.' });
       this.failProcess(new CliAgentProcessError('The CLI returned an oversized JSONL line.'), child, generation);
       return;
@@ -197,7 +194,7 @@ export class CliAgentProcess {
     while (newline >= 0) {
       const line = this.lineBuffer.subarray(0, newline);
       this.lineBuffer = this.lineBuffer.subarray(newline + 1);
-      if (line.byteLength > MAX_JSONL_LINE_BYTES) {
+      if (line.byteLength > DESKTOP_RUNTIME_LIMITS.cliJsonlLineBytes) {
         this.failProcess(new CliAgentProcessError('The CLI returned an oversized JSONL line.'), child, generation);
         return;
       }

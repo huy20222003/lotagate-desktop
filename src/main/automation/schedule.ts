@@ -1,10 +1,9 @@
 import type { AutomationSchedule } from '../../contracts/ipc/v1/automation.js';
+import { CRON_SEARCH_DAYS } from './automation-constants.js';
 
 type CalendarParts = { year: number; month: number; day: number; hour: number; minute: number; second: number };
 type CronField = Set<number>;
 type CronExpression = { minute: CronField; hour: CronField; dayOfMonth: CronField; month: CronField; dayOfWeek: CronField; dayOfMonthWildcard: boolean; dayOfWeekWildcard: boolean };
-const CRON_SEARCH_DAYS = 28 * 366;
-
 export function nextRunAt(schedule: AutomationSchedule, from = new Date()): string | null {
   if (schedule.kind === 'manual') return null;
   if (schedule.kind === 'once') return Date.parse(schedule.at) > from.getTime() ? new Date(schedule.at).toISOString() : null;

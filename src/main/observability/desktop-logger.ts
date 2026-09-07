@@ -1,12 +1,7 @@
 import { appendFile, mkdir, readdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { desktopDataDirectory, DESKTOP_DATA_DIRECTORIES } from '../persistence/app-data-paths.js';
-
-const LOG_RETENTION_DAYS = 30;
-const MAX_STRING_LENGTH = 1_024;
-const REDACTED = '[REDACTED]';
-const SENSITIVE_KEY = /(authorization|cookie|credential|password|passphrase|secret|token|api[-_]?key|private[-_]?key|file[-_]?data|prompt|content|base64)/iu;
-const LOG_FILE_PATTERN = /^desktop-(\d{4}-\d{2}-\d{2})\.log$/u;
+import { LOG_FILE_PATTERN, LOG_RETENTION_DAYS, MAX_STRING_LENGTH, REDACTED, SENSITIVE_KEY } from './observability-constants.js';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 

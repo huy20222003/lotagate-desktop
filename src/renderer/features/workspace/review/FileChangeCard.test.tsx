@@ -21,6 +21,12 @@ const multiFileSummary = {
   ],
 };
 
+const emptyDiffSummary = {
+  additions: 0,
+  deletions: 0,
+  files: [{ path: 'test.md', additions: 0, deletions: 0, truncated: false, lines: [] }],
+};
+
 describe('FileChangeCard', () => {
   afterEach(() => cleanup());
 
@@ -50,6 +56,16 @@ describe('FileChangeCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review' }));
 
     expect(onOpenFileChanges).toHaveBeenCalledOnce();
+  });
+
+  it('hides zero diff counts while keeping the file review available', () => {
+    const onOpenFileChanges = vi.fn();
+    render(<FileChangeCard summary={emptyDiffSummary} onOpenFileChanges={onOpenFileChanges} />);
+
+    const card = screen.getByRole('region', { name: 'Edited files' });
+    expect(card.querySelector('.file-change-card-counts')).not.toBeInTheDocument();
+    expect(card).toHaveTextContent('Edited test.md');
+    expect(screen.getByRole('button', { name: 'Review' })).toBeInTheDocument();
   });
 
   it('shows three changed files and expands the remaining file list on demand', () => {

@@ -8,6 +8,7 @@ import type { PersistentCache } from '../cache/persistent-cache.js';
 import { buildInteractiveDesktopExecutionPolicy } from './desktop-execution-policy.js';
 import type { ExtensionProtocol, PluginIconInput } from '../extensions/extension-protocol.js';
 import type { ExtensionDetailInput, PublicPluginContributionInput } from '../../contracts/ipc/v1/extensions.js';
+import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 
 export interface AgentManagerHandler {
   onEvent(projectRoot: string, event: DesktopEvent): void;
@@ -22,9 +23,6 @@ interface ProcessBinding { key: string; projectRoot: string; sessionId?: string;
 interface CommandEventBuffer { events: DesktopEvent[]; bytes: number; resolve: (events: DesktopEvent[]) => void; operation: Promise<DesktopEvent[]>; timer: ReturnType<typeof setTimeout> }
 
 export interface AgentManagerOptions { idleTimeoutMs?: number; computerHost?: boolean; documentHost?: boolean; }
-const DEFAULT_AGENT_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
-const COMMAND_EVENT_BUFFER_TTL_MS = 30_000;
-const MAX_COMMAND_EVENT_BUFFER_BYTES = 256 * 1024;
 
 /** Owns one CLI process per Desktop session; project-level calls use a separate control process. */
 export class AgentManager {
@@ -42,7 +40,7 @@ export class AgentManager {
   private readonly idleTimeoutMs: number;
 
   constructor(private readonly handler: AgentManagerHandler, private readonly cache?: PersistentCache, private readonly getInteractiveExecutionPolicy: () => Promise<DesktopExecutionPolicy> = async () => buildInteractiveDesktopExecutionPolicy(), private readonly options: AgentManagerOptions = {}) {
-    this.idleTimeoutMs = Number.isFinite(this.options.idleTimeoutMs) ? Math.max(1_000, Math.floor(this.options.idleTimeoutMs!)) : DEFAULT_AGENT_IDLE_TIMEOUT_MS;
+    this.idleTimeoutMs = Number.isFinite(this.options.idleTimeoutMs) ? Math.max(1_000, Math.floor(this.options.idleTimeoutMs!)) : DESKTOP_RUNTIME_LIMITS.agentIdleTimeoutMs;
   }
 
   async initialize(cwd: string): Promise<DesktopAgentResult> { return (await this.initializedProcess(await requireDirectory(cwd), undefined)).initialize(); }
@@ -106,7 +104,7 @@ export class AgentManager {
     const buffer = this.commandEventBuffers.get(commandId) ?? this.createCommandEventBuffer(commandId);
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      const events = await Promise.race([buffer.operation, new Promise<DesktopEvent[]>((_, reject) => { timeout = setTimeout(() => reject(new Error('The CLI command did not complete.')), COMMAND_EVENT_BUFFER_TTL_MS); })]);
+      const events = await Promise.race([buffer.operation, new Promise<DesktopEvent[]>((_, reject) => { timeout = setTimeout(() => reject(new Error('The CLI command did not complete.')), DESKTOP_RUNTIME_LIMITS.commandEventBufferTtlMs); })]);
       return this.readCommandExecutionResult(commandId, buffer, events);
     } finally {
       if (timeout !== undefined) clearTimeout(timeout);
@@ -210,7 +208,7 @@ export class AgentManager {
     if (commandId === undefined) return;
     const buffer = this.commandEventBuffers.get(commandId) ?? this.createCommandEventBuffer(commandId);
     const eventBytes = Buffer.byteLength(JSON.stringify(event));
-    if (buffer.bytes + eventBytes <= MAX_COMMAND_EVENT_BUFFER_BYTES || event.event === 'command.completed' || event.event === 'command.failed' || event.event === 'command.cancelled') {
+    if (buffer.bytes + eventBytes <= DESKTOP_RUNTIME_LIMITS.commandEventBufferBytes || event.event === 'command.completed' || event.event === 'command.failed' || event.event === 'command.cancelled') {
       buffer.events.push(event);
       buffer.bytes += eventBytes;
     }
@@ -219,7 +217,7 @@ export class AgentManager {
   private createCommandEventBuffer(commandId: string): CommandEventBuffer {
     let resolve!: (events: DesktopEvent[]) => void;
     const operation = new Promise<DesktopEvent[]>(nextResolve => { resolve = nextResolve; });
-    const timer = setTimeout(() => this.disposeCommandEventBuffer(commandId, this.commandEventBuffers.get(commandId)), COMMAND_EVENT_BUFFER_TTL_MS);
+    const timer = setTimeout(() => this.disposeCommandEventBuffer(commandId, this.commandEventBuffers.get(commandId)), DESKTOP_RUNTIME_LIMITS.commandEventBufferTtlMs);
     timer.unref?.();
     const buffer: CommandEventBuffer = { events: [], bytes: 0, resolve, operation, timer };
     this.commandEventBuffers.set(commandId, buffer);

@@ -3,10 +3,7 @@ import { mkdir, open, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 import { activitySchema, type Activity, type ActivityPage } from '../../contracts/ipc/v1/workspace.js';
-
-const ACTIVITY_LOG_VERSION = 1;
-const DEFAULT_COMPACTION_BYTES = 1_024 * 1_024;
-const DEFAULT_COMPACTION_OPERATIONS = 4_096;
+import { ACTIVITY_LOG_VERSION, DEFAULT_COMPACTION_BYTES, DEFAULT_COMPACTION_OPERATIONS } from './persistence-constants.js';
 
 const activityAppendRecordSchema = z.object({
   version: z.literal(ACTIVITY_LOG_VERSION),

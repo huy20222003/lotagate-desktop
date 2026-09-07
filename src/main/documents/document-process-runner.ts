@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process';
 import { terminateDesktopProcess } from '../process/process-termination.js';
+import { DOCUMENT_BACKEND_MAX_OUTPUT_BYTES, DOCUMENT_BACKEND_TIMEOUT_MS } from './document-constants.js';
+export { DOCUMENT_BACKEND_MAX_OUTPUT_BYTES, DOCUMENT_BACKEND_TIMEOUT_MS } from './document-constants.js';
 
 // Document extraction and Office conversions can legitimately produce larger
 // JSON responses and take longer than the generic command execution path.
 // Keep both limits bounded while allowing realistic workbooks and documents.
-export const DOCUMENT_BACKEND_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
-export const DOCUMENT_BACKEND_TIMEOUT_MS = 10 * 60 * 1_000;
 
 export async function runDocumentBackend(scriptPath: string, cwd: string, input: { action: string; path: string; params: Record<string, unknown> }, signal?: AbortSignal): Promise<unknown> {
   if (process.platform !== 'win32') throw new Error('The document host currently requires the Windows document backend.');

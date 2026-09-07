@@ -2,14 +2,8 @@ name: Desktop Release Build and Google Drive Upload
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Optional version assertion; must match package.json, for example 0.1.0'
-        required: false
-        type: string
+    tags:
+      - 'desktop-v*'
 
 permissions:
   contents: read
@@ -42,16 +36,15 @@ jobs:
           desktop_version="$(node -p 'require("./package.json").version')"
           echo "version=$desktop_version" >> "$GITHUB_OUTPUT"
 
-      - name: Validate requested version against package.json
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.version != '' }}
+      - name: Validate release tag
         shell: bash
         env:
-          REQUESTED_VERSION: ${{ inputs.version }}
           PACKAGE_VERSION: ${{ steps.targets.outputs.version }}
         run: |
           set -euo pipefail
-          if [[ "${REQUESTED_VERSION}" != "${PACKAGE_VERSION}" ]]; then
-            echo "::error::Requested Desktop version '${REQUESTED_VERSION}' does not match package.json version '${PACKAGE_VERSION}'."
+          expected_tag="desktop-v${PACKAGE_VERSION}"
+          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+            echo "::error::Expected tag ${expected_tag}, received ${GITHUB_REF_NAME}."
             exit 1
           fi
 
@@ -80,15 +73,15 @@ jobs:
       - name: Prepare public Desktop runtime configuration
         shell: bash
         env:
-          LOTAGATE_API_BASE_URL: ${{ secrets.LOTAGATE_API_BASE_URL }}
-          LOTAGATE_TRUSTED_ORIGIN: ${{ secrets.LOTAGATE_TRUSTED_ORIGIN }}
-          LOTAGATE_REMOTE_SERVER_URL: ${{ secrets.LOTAGATE_REMOTE_SERVER_URL }}
-          LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX: ${{ secrets.LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX }}
+          LOTAGATE_API_BASE_URL: ${{ vars.LOTAGATE_API_BASE_URL }}
+          LOTAGATE_TRUSTED_ORIGIN: ${{ vars.LOTAGATE_TRUSTED_ORIGIN }}
+          LOTAGATE_REMOTE_SERVER_URL: ${{ vars.LOTAGATE_REMOTE_SERVER_URL }}
+          LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX: ${{ vars.LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX }}
           LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN: ${{ secrets.LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN }}
         run: |
           set -euo pipefail
           if [[ -z "${LOTAGATE_API_BASE_URL}" || -z "${LOTAGATE_TRUSTED_ORIGIN}" ]]; then
-            echo "::error::Configure LOTAGATE_API_BASE_URL and LOTAGATE_TRUSTED_ORIGIN as GitHub Repository Secrets before running the Desktop release workflow."
+            echo "::error::Configure LOTAGATE_API_BASE_URL and LOTAGATE_TRUSTED_ORIGIN as GitHub Repository Variables before running the Desktop release workflow."
             exit 1
           fi
           if [[ -n "${LOTAGATE_REMOTE_SERVER_URL}" && -z "${LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN}" ]]; then
@@ -133,7 +126,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-      actions: write
     env:
       RELEASE_VERSION: ${{ needs.plan.outputs.version }}
     steps:
@@ -162,8 +154,15 @@ jobs:
           LOTAGATE_DRIVE_PARENT_FOLDER_ID: ${{ secrets.LOTAGATE_DRIVE_PARENT_FOLDER_ID }}
         run: node scripts/upload-google-drive.mjs --root release-artifacts --version "$RELEASE_VERSION"
 
+  cleanup:
+    name: Delete temporary Desktop release artifacts
+    needs: [build, upload]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
       - name: Delete temporary Desktop release artifacts
-        if: ${{ success() }}
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}

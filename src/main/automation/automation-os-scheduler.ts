@@ -5,12 +5,9 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { app } from 'electron';
 import type { Automation } from '../../contracts/ipc/v1/automation.js';
+import { LINUX_UNIT_PREFIX, MAC_LABEL, TASK_NAME } from './automation-constants.js';
 
 const execFileAsync = promisify(execFile);
-const TASK_NAME = 'LotaGate Desktop Automation Dispatcher';
-const MAC_LABEL = 'com.lotagate.desktop.automation';
-const LINUX_UNIT_PREFIX = 'lotagate-desktop-automation';
-
 export class AutomationOsScheduler {
   private syncChain: Promise<void> = Promise.resolve();
 

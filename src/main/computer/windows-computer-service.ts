@@ -2,9 +2,9 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { isComputerApplicationAllowed, normalizeComputerApplicationAllowlist } from '../../contracts/ipc/v1/computer-application-allowlist.js';
 import { terminateDesktopProcess } from '../process/process-termination.js';
+import { COMPUTER_ACTION_TIMEOUT_MS, MAX_RESPONSE_BYTES } from './computer-constants.js';
 
-const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
-export const COMPUTER_ACTION_TIMEOUT_MS = 120_000;
+export { COMPUTER_ACTION_TIMEOUT_MS } from './computer-constants.js';
 
 /** Executes the fixed, allowlisted Windows Computer Use contract through the bundled PowerShell adapter. */
 export class WindowsComputerService {

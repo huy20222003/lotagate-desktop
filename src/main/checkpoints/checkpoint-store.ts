@@ -1,13 +1,9 @@
 import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { CHECKPOINT_RETENTION_DAYS } from '../../contracts/ipc/v1/workspace.js';
 import { checkpointWorkspaceDirectory } from './checkpoint-paths.js';
 import { CheckpointObjectStore } from './checkpoint-object-store.js';
 import type { CheckpointRecord } from './checkpoint-types.js';
-
-const MAX_CHECKPOINTS = 100;
-const MAX_CHECKPOINT_AGE_MS = CHECKPOINT_RETENTION_DAYS * 24 * 60 * 60 * 1_000;
-const MAX_OBJECT_BYTES = 512 * 1024 * 1024;
+import { MAX_CHECKPOINT_AGE_MS, MAX_CHECKPOINTS, MAX_OBJECT_BYTES } from './checkpoint-constants.js';
 
 export class CheckpointStore {
   readonly directory: string;

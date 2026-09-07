@@ -1,7 +1,6 @@
 import { Notification } from 'electron';
 import { formatTextClamp } from '../../shared/text.js';
-
-const MAX_NOTIFICATION_BODY_CHARACTERS = 240;
+import { MAX_NOTIFICATION_BODY_CHARACTERS } from './notification-constants.js';
 
 export interface DesktopNotificationInput {
   title: string;

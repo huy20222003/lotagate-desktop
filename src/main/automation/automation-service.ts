@@ -3,11 +3,9 @@ import { automationApprovalSchema, automationCreateInputSchema, automationRunSch
 import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 import { nextRunAt, validateSchedule } from './schedule.js';
+import { AUTOMATION_TEARDOWN_TIMEOUT_MS, MAX_CONCURRENT_RUNS } from './automation-constants.js';
 
 export type { Automation } from '../../contracts/ipc/v1/automation.js';
-
-const MAX_CONCURRENT_RUNS = 2;
-const AUTOMATION_TEARDOWN_TIMEOUT_MS = 10_000;
 
 export type AutomationExecutionResult = { taskId?: string; sessionId?: string; summary?: string; changedFiles?: string[]; artifactIds?: string[]; executionCwd?: string; branch?: string; worktreePath?: string; reviewRequired?: boolean };
 export type AutomationRunner = (automation: Automation, run: AutomationRun, signal: AbortSignal) => Promise<AutomationExecutionResult>;

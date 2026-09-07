@@ -1,8 +1,5 @@
 import { BrowserWindow, screen } from 'electron';
-
-const OVERLAY_WIDTH = 300;
-const OVERLAY_HEIGHT = 38;
-const OVERLAY_MARGIN = 18;
+import { OVERLAY_HEIGHT, OVERLAY_MARGIN, OVERLAY_WIDTH } from './computer-constants.js';
 
 /** Small, click-through status indicator for native Computer Use activity. */
 export class ComputerOverlay {

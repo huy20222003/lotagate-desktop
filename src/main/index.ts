@@ -49,6 +49,7 @@ import { ComputerOverlay } from './computer/computer-overlay.js';
 import { COMPUTER_ACTION_TIMEOUT_MS, WindowsComputerService } from './computer/windows-computer-service.js';
 import { PublicPluginBootstrapService } from './extensions/public-plugin-bootstrap-service.js';
 import { WhisperCppSpeechTranscriptionService } from './speech/whisper-cpp-speech-transcription-service.js';
+import { AgentEventCoordinator } from './agents/agent-event-coordinator.js';
 
 loadRuntimeEnvironment();
 const runtimeConfig = readRuntimeConfig();
@@ -137,12 +138,22 @@ app.whenReady().then(async () => {
     computerBroker = new ComputerHostToolBroker(new WindowsComputerService(desktopResourcePath('computer-use', 'windows-computer.ps1'), COMPUTER_ACTION_TIMEOUT_MS, async () => (await settings.get()).computer.applicationAllowlist), new ComputerOverlay());
     documentBroker = new DocumentHostToolBroker(desktopResourcePath('document-use', 'windows-document.ps1'));
   }
+  const eventCoordinator = new AgentEventCoordinator({
+    taskTurns,
+    checkpoints,
+    taskProjector: taskProjector,
+    getTitleGenerationService: () => titleGenerationService,
+    getRemoteControlService: () => remoteControlService,
+    logEvent: fields => logger.debug('agent.event', fields),
+    onPersistenceError: fields => logger.error('task.event.persist.failed', fields),
+    onTaskUpdated: updated => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('task.updated', updated); },
+    onAgentEvent: (projectRoot, event) => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd: projectRoot, event }); },
+  });
   const agents = new AgentManager({
     onEvent: (projectRoot, event) => {
-      const executionCwd = typeof event.data['executionCwd'] === 'string' ? event.data['executionCwd'] : undefined;
-      logger.debug('agent.event', { projectRoot, executionCwd, event: event.event, ...agentEventLogFields(event.data) });
-      taskTurns.observe(typeof event.data['taskId'] === 'string' ? event.data['taskId'] : undefined, event);
-      checkpoints.observeEvent(projectRoot, event);
+      const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
+      const isAutomationEvent = sessionId !== undefined && automationSessions.has(sessionId);
+      eventCoordinator.observe(projectRoot, event, isAutomationEvent);
       if (event.event === 'approval.requested') {
         const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
         const binding = sessionId === undefined ? undefined : automationSessions.get(sessionId);
@@ -163,12 +174,6 @@ app.whenReady().then(async () => {
           const source = toolName.startsWith('computer.') ? 'computer' : 'agent';
           void approvals.request({ ...commonInput, source, surface: 'composer' }, approved => agents.approvalRespond(projectRoot, { approvalId, approved }), { isAvailable: () => agents.isApprovalProcessAvailable(projectRoot, approvalId) }).catch(error => logger.warn('approval.registration.failed', { cwd: projectRoot, approvalId, message: error instanceof Error ? error.message : 'Unable to register approval.' }));
         }
-      }
-      void taskProjector?.apply(projectRoot, event).then(() => titleGenerationService?.observeTurnCompleted(projectRoot, event)).then(updated => { if (updated === undefined) return; for (const window of BrowserWindow.getAllWindows()) window.webContents.send('task.updated', updated); }).catch(error => logger.error('task.event.persist.failed', { cwd: projectRoot, event: event.event, message: error instanceof Error ? error.message : 'Unable to persist agent event.' })).finally(() => { remoteControlService?.publishAgentEvent(projectRoot, event); remoteControlService?.observeAgentEvent(event); });
-      const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
-      const isAutomationEvent = sessionId !== undefined && automationSessions.has(sessionId);
-      if (event.event !== 'approval.requested' && !isAutomationEvent) {
-        for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd: projectRoot, event });
       }
     },
     onDiagnostic: (projectRoot, diagnostic) => { logger[diagnostic.severity === 'error' ? 'error' : 'warn']('agent.diagnostic', { projectRoot, kind: diagnostic.kind, message: diagnostic.message, ...(diagnostic.sessionId === undefined ? {} : { sessionId: diagnostic.sessionId }), ...(diagnostic.turnId === undefined ? {} : { turnId: diagnostic.turnId }) }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic }); },
@@ -280,17 +285,3 @@ app.on('before-quit', (event) => {
     await browserService?.closeAll();
   })().catch(error => logger.error('app.shutdown.failed', { message: error instanceof Error ? error.message : 'Desktop shutdown failed.' })).finally(async () => { await logger.close().catch(() => undefined); app.quit(); });
 });
-
-function agentEventLogFields(data: Readonly<Record<string, unknown>>): Record<string, string | number | boolean> {
-  const fields: Record<string, string | number | boolean> = {};
-  for (const key of ['sessionId', 'turnId', 'intentId', 'commandId', 'actionId'] as const) {
-    if (typeof data[key] === 'string') fields[key] = data[key];
-  }
-  for (const key of ['exitCode'] as const) {
-    if (typeof data[key] === 'number') fields[key] = data[key];
-  }
-  for (const key of ['success', 'isError'] as const) {
-    if (typeof data[key] === 'boolean') fields[key] = data[key];
-  }
-  return fields;
-}

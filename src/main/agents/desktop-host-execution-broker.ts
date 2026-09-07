@@ -7,11 +7,7 @@ import { SandboxUnavailableError } from './sandbox-execution-provider.js';
 import type { FileChangeDiff, FileDiffLine } from '../../contracts/ipc/v1/workspace.js';
 import { requireWorkspaceWritePath } from '../security/path-policy.js';
 import { terminateDesktopProcess } from '../process/process-termination.js';
-
-const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_SCRIPT_BYTES = 512 * 1024;
-const DEFAULT_TIMEOUT_MS = 30_000;
+import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 
 export interface DesktopHostExecutionBrokerOptions {
   sandbox?: SandboxExecutionProvider;
@@ -74,8 +70,8 @@ export class DesktopHostExecutionBroker {
     const target = action === 'filesystem.write' ? await requireWorkspaceWritePath(pathValue, root) : await this.resolveExistingPath(root, pathValue);
     if (action === 'filesystem.read') {
       const info = await stat(target);
-      if (!info.isFile() || info.size > MAX_FILE_BYTES) throw new Error('The requested path is not a supported text file.');
-      return (await readFile(target, 'utf8')).slice(0, MAX_FILE_BYTES);
+      if (!info.isFile() || info.size > DESKTOP_RUNTIME_LIMITS.hostFileBytes) throw new Error('The requested path is not a supported text file.');
+      return (await readFile(target, 'utf8')).slice(0, DESKTOP_RUNTIME_LIMITS.hostFileBytes);
     }
     if (action === 'filesystem.list') {
       const info = await stat(target);
@@ -84,7 +80,7 @@ export class DesktopHostExecutionBroker {
       const directory = await opendir(target);
       for await (const entry of directory) {
         entries.push({ name: entry.name, kind: entry.isDirectory() ? 'directory' : 'file' });
-        if (entries.length >= 2_000) break;
+        if (entries.length >= DESKTOP_RUNTIME_LIMITS.sandboxMaxDirectoryEntries) break;
       }
       return entries;
     }
@@ -92,7 +88,7 @@ export class DesktopHostExecutionBroker {
     if (action === 'filesystem.write') {
       const content = params['content'];
       if (typeof content !== 'string') throw new Error('filesystem.write requires string content.');
-      if (Buffer.byteLength(content, 'utf8') > MAX_FILE_BYTES) throw new Error('The requested file is too large.');
+      if (Buffer.byteLength(content, 'utf8') > DESKTOP_RUNTIME_LIMITS.hostFileBytes) throw new Error('The requested file is too large.');
       const existed = await this.exists(target);
       const previous = existed ? await readFile(target, 'utf8').catch(() => '') : '';
       await mkdir(dirname(target), { recursive: true });
@@ -107,15 +103,15 @@ export class DesktopHostExecutionBroker {
   private async shell(root: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
     let command = requiredString(params, 'command');
     let args = params['args'] === undefined ? [] : params['args'];
-    if (!Array.isArray(args) || args.some(item => typeof item !== 'string') || args.length > 256) throw new Error('shell.exec args must be an array of strings.');
+    if (!Array.isArray(args) || args.some(item => typeof item !== 'string') || args.length > DESKTOP_RUNTIME_LIMITS.hostMaxShellArgs) throw new Error('shell.exec args must be an array of strings.');
     const script = params['script'];
     if (script !== undefined) {
-      if (typeof script !== 'string' || script.trim().length === 0 || Buffer.byteLength(script, 'utf8') > MAX_SCRIPT_BYTES) throw new Error('shell.exec script is invalid or exceeds the configured limit.');
+      if (typeof script !== 'string' || script.trim().length === 0 || Buffer.byteLength(script, 'utf8') > DESKTOP_RUNTIME_LIMITS.hostScriptBytes) throw new Error('shell.exec script is invalid or exceeds the configured limit.');
       if (!isPowerShellExecutable(command) || args.length > 0) throw new Error('shell.exec script requires powershell.exe or pwsh.exe and cannot be combined with args.');
       args = createPowerShellScriptArguments(script);
     }
     const cwd = await this.resolveExistingPath(root, typeof params['cwd'] === 'string' ? params['cwd'] : '.');
-    const timeoutMs = typeof params['timeoutMs'] === 'number' && Number.isSafeInteger(params['timeoutMs']) ? Math.min(Math.max(params['timeoutMs'], 100), 120_000) : DEFAULT_TIMEOUT_MS;
+    const timeoutMs = typeof params['timeoutMs'] === 'number' && Number.isSafeInteger(params['timeoutMs']) ? Math.min(Math.max(params['timeoutMs'], DESKTOP_RUNTIME_LIMITS.minExecutionTimeoutMs), DESKTOP_RUNTIME_LIMITS.maxExecutionTimeoutMs) : DESKTOP_RUNTIME_LIMITS.defaultExecutionTimeoutMs;
     return runProcess(command, args as string[], cwd, timeoutMs, signal);
   }
 
@@ -159,7 +155,7 @@ function runProcess(command: string, args: string[], cwd: string, timeoutMs: num
     const append = (chunk: Buffer, target: 'stdout' | 'stderr') => {
       if (truncated) return;
       const text = chunk.toString('utf8');
-      const remaining = MAX_OUTPUT_BYTES - bytes;
+      const remaining = DESKTOP_RUNTIME_LIMITS.hostOutputBytes - bytes;
       if (remaining <= 0) { truncated = true; stop({ stdout: redact(stdout), stderr: redact(stderr), exitCode: null, truncated: true }); return; }
       const accepted = Buffer.byteLength(text, 'utf8') <= remaining ? text : text.slice(0, remaining);
       bytes += Buffer.byteLength(accepted, 'utf8');
@@ -176,8 +172,8 @@ function runProcess(command: string, args: string[], cwd: string, timeoutMs: num
   });
 }
 
-function requiredString(params: Record<string, unknown>, key: string): string { const value = params[key]; if (typeof value !== 'string' || value.trim().length === 0 || value.length > 4_096) throw new Error(`Host execution parameter "${key}" is invalid.`); return value; }
-function optionalWorkspacePath(value: unknown): string { return typeof value === 'string' && value.trim().length > 0 && value.length <= 4_096 ? value : '.'; }
+function requiredString(params: Record<string, unknown>, key: string): string { const value = params[key]; if (typeof value !== 'string' || value.trim().length === 0 || value.length > DESKTOP_RUNTIME_LIMITS.maxPathCharacters) throw new Error(`Host execution parameter "${key}" is invalid.`); return value; }
+function optionalWorkspacePath(value: unknown): string { return typeof value === 'string' && value.trim().length > 0 && value.length <= DESKTOP_RUNTIME_LIMITS.maxPathCharacters ? value : '.'; }
 function isFilesystemOutcome(value: unknown): value is { result: unknown; fileChange: FileChangeDiff } { return typeof value === 'object' && value !== null && 'result' in value && 'fileChange' in value; }
 function createBoundedFileChange(filePath: string, before: string, after: string, kind: 'created' | 'modified'): FileChangeDiff {
   const oldLines = before.length === 0 ? [] : before.split(/\r?\n/u);
@@ -188,10 +184,10 @@ function createBoundedFileChange(filePath: string, before: string, after: string
   while (suffix < oldLines.length - prefix && suffix < newLines.length - prefix && oldLines[oldLines.length - 1 - suffix] === newLines[newLines.length - 1 - suffix]) suffix += 1;
   const lines: FileDiffLine[] = [];
   for (let index = 0; index < prefix; index += 1) lines.push({ kind: 'context', text: oldLines[index] as string, oldLine: index + 1, newLine: index + 1 });
-  for (let index = prefix; index < oldLines.length - suffix && lines.length < 512; index += 1) lines.push({ kind: 'deletion', text: oldLines[index] as string, oldLine: index + 1 });
-  for (let index = prefix; index < newLines.length - suffix && lines.length < 512; index += 1) lines.push({ kind: 'addition', text: newLines[index] as string, newLine: index + 1 });
-  for (let index = Math.max(prefix, oldLines.length - suffix); index < oldLines.length && lines.length < 512; index += 1) lines.push({ kind: 'context', text: oldLines[index] as string, oldLine: index + 1, newLine: newLines.length - oldLines.length + index + 1 });
-  return { path: filePath || '.', lines, additions: Math.max(0, newLines.length - prefix - suffix), deletions: Math.max(0, oldLines.length - prefix - suffix), truncated: lines.length >= 512 || kind === 'created' && newLines.length > 512 };
+  for (let index = prefix; index < oldLines.length - suffix && lines.length < DESKTOP_RUNTIME_LIMITS.maxFileDiffLines; index += 1) lines.push({ kind: 'deletion', text: oldLines[index] as string, oldLine: index + 1 });
+  for (let index = prefix; index < newLines.length - suffix && lines.length < DESKTOP_RUNTIME_LIMITS.maxFileDiffLines; index += 1) lines.push({ kind: 'addition', text: newLines[index] as string, newLine: index + 1 });
+  for (let index = Math.max(prefix, oldLines.length - suffix); index < oldLines.length && lines.length < DESKTOP_RUNTIME_LIMITS.maxFileDiffLines; index += 1) lines.push({ kind: 'context', text: oldLines[index] as string, oldLine: index + 1, newLine: newLines.length - oldLines.length + index + 1 });
+  return { path: filePath || '.', lines, additions: Math.max(0, newLines.length - prefix - suffix), deletions: Math.max(0, oldLines.length - prefix - suffix), truncated: lines.length >= DESKTOP_RUNTIME_LIMITS.maxFileDiffLines || kind === 'created' && newLines.length > DESKTOP_RUNTIME_LIMITS.maxFileDiffLines };
 }
 function assertInside(candidate: string, root: string): void { const relativePath = relative(root, candidate); if (isAbsolute(relativePath) || relativePath === '..' || relativePath.startsWith(`..${sep}`)) throw new Error('Host execution path is outside the workspace boundary.'); }
 function safeEnvironment(): NodeJS.ProcessEnv { const allowed = ['PATH', 'Path', 'PATHEXT', 'SystemRoot', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'LANG', 'LC_ALL']; return Object.fromEntries(allowed.flatMap(key => process.env[key] === undefined ? [] : [[key, process.env[key] as string]])); }

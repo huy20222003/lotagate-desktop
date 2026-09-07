@@ -4,11 +4,9 @@ import { dirname, extname, relative } from 'node:path';
 import type { DesktopHostRequest, DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
 import { requireWorkspaceMutationPath, requireExistingPath } from '../security/path-policy.js';
 import { runDocumentBackend } from './document-process-runner.js';
+import { FORMAT_EXTENSIONS, type DocumentFormat } from './document-constants.js';
 
-type DocumentFormat = 'pdf' | 'pptx' | 'excel' | 'docs';
 interface DocumentHandle { id: string; sessionKey: string; cwd: string; path: string; format: DocumentFormat; openedAt: string; }
-
-const FORMAT_EXTENSIONS: Record<DocumentFormat, readonly string[]> = { pdf: ['.pdf'], pptx: ['.pptx'], excel: ['.xlsx', '.xls', '.csv'], docs: ['.docx', '.doc', '.txt', '.rtf'] };
 
 /** Owns document handles and delegates format-specific work to a bounded native backend. */
 export class DocumentHostToolBroker {

@@ -1,7 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-
-const TERMINATION_GRACE_MS = 1_000;
-const TERMINATION_TIMEOUT_MS = 5_000;
+import { TERMINATION_GRACE_MS, TERMINATION_TIMEOUT_MS } from './process-constants.js';
 const pendingTerminations = new WeakMap<ChildProcess, Promise<void>>();
 
 /** Terminates a Desktop-owned process and its descendants within a bounded deadline. */

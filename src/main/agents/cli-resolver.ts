@@ -1,10 +1,7 @@
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, join, sep } from 'node:path';
-
-const CLI_PACKAGE_JSON = '@lotagate/cli/package.json';
-const CLI_EXECUTABLE = join('bin', 'lotagate.exe');
-const CLI_NODE_LAUNCHER = join('bin', 'lotagate.mjs');
+import { CLI_EXECUTABLE, CLI_NODE_LAUNCHER, CLI_PACKAGE_JSON } from './agent-constants.js';
 
 export interface CliInvocation {
   executable: string;

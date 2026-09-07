@@ -1,0 +1,2 @@
+export const TERMINATION_GRACE_MS = 1_000;
+export const TERMINATION_TIMEOUT_MS = 5_000;

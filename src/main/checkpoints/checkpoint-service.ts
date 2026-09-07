@@ -8,6 +8,7 @@ import { CheckpointStore } from './checkpoint-store.js';
 import { scanWorkspace } from './checkpoint-scanner.js';
 import { hashObject } from './checkpoint-object-store.js';
 import type { CheckpointEntry, CheckpointMutation, CheckpointRecord, WorkspaceEntry } from './checkpoint-types.js';
+import { DOCUMENT_READ_ACTIONS } from './checkpoint-constants.js';
 
 interface ActiveTurn { taskId: string; sessionId: string; turnId: string; record: CheckpointRecord; }
 interface CheckpointServiceOptions { onError?: (error: unknown, cwd: string) => void; }
@@ -144,7 +145,6 @@ function isMutationRequest(request: DesktopHostRequest): boolean {
   if (request.tool !== 'document') return false;
   return !DOCUMENT_READ_ACTIONS.has(request.action.split('.', 2)[1] ?? '');
 }
-const DOCUMENT_READ_ACTIONS = new Set(['open', 'inspect', 'validate', 'readText', 'extractTables', 'readForm', 'readSlide', 'readRange', 'readContent']);
 async function buildMutations(before: Map<string, WorkspaceEntry>, after: Map<string, WorkspaceEntry>, store: CheckpointStore, sequenceStart: number): Promise<CheckpointMutation[]> {
   const removed = [...before.keys()].filter(path => !after.has(path));
   const added = [...after.keys()].filter(path => !before.has(path));
