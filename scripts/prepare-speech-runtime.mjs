@@ -28,7 +28,9 @@ const customExecutable = process.env['LOTAGATE_WHISPER_CPP_EXECUTABLE']?.trim();
 if (asset === undefined && (options.platform !== 'darwin' || customExecutable === undefined || customExecutable.length === 0)) fail(`whisper.cpp ${releaseVersion} does not publish a packaged CLI for ${targetKey}. Build a native whisper-cli binary and set LOTAGATE_WHISPER_CPP_EXECUTABLE before preparing this target.`);
 
 const runtimeRoot = resolve(resourceRoot, 'runtime', targetKey);
-const temporaryRoot = await mkdtemp(join(desktopRoot, '.tools', 'speech-'));
+const temporaryDirectory = resolve(desktopRoot, '.tools');
+await mkdir(temporaryDirectory, { recursive: true });
+const temporaryRoot = await mkdtemp(join(temporaryDirectory, 'speech-'));
 try {
   if (asset === undefined) await prepareCustomRuntime(runtimeRoot, customExecutable, targetKey);
   else await prepareRuntime(runtimeRoot, asset, temporaryRoot, targetKey);
