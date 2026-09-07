@@ -46,7 +46,10 @@ on the Windows, Electron, or browser interface language.
 
 The official release provides Windows x64 and Linux x64/arm64 binaries. The
 Windows arm64 package uses the official x64 runtime through Windows emulation.
-For macOS, build a native whisper.cpp `whisper-cli` binary and set
+For macOS, `desktop-release.yml` builds the pinned whisper.cpp source on each
+native macOS runner and passes the resulting `whisper-cli` to the preparation
+step. Local macOS builds can use
+`node scripts/build-whisper-cpp.mjs --output <path>` followed by setting
 `LOTAGATE_WHISPER_CPP_EXECUTABLE` before running `npm run speech:prepare`.
 For a controlled model mirror, set `LOTAGATE_SPEECH_MODEL_URL` during the
 build; the published checksum and size remain mandatory.

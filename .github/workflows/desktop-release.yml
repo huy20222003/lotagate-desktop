@@ -64,6 +64,14 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Build native whisper.cpp runtime for macOS
+        if: matrix.platform == 'darwin'
+        shell: bash
+        run: |
+          whisper_output="${RUNNER_TEMP}/lotagate-whisper/whisper-cli"
+          node scripts/build-whisper-cpp.mjs --output "$whisper_output"
+          echo "LOTAGATE_WHISPER_CPP_EXECUTABLE=$whisper_output" >> "$GITHUB_ENV"
+
       - name: Build validated native release target
         env:
           LOTAGATE_SPEECH_MODEL_URL: ${{ vars.LOTAGATE_SPEECH_MODEL_URL }}

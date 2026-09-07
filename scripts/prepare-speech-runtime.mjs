@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { access, copyFile, mkdir, mkdtemp, readdir, readFile, readlink, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, copyFile, mkdir, mkdtemp, readdir, readFile, readlink, rm, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -77,7 +77,9 @@ async function prepareRuntime(destination, asset, temporaryRoot, targetKey) {
     if (entry.isDirectory()) continue;
     const source = join(sourceDirectory, entry.name);
     if (entry.name !== executableName(targetKey) && !isRuntimeLibrary(entry.name, targetKey)) continue;
-    await copyEntry(source, join(destination, entry.name), entry);
+    const destinationPath = join(destination, entry.name);
+    await copyEntry(source, destinationPath, entry);
+    if (entry.name === executableName(targetKey)) await chmod(destinationPath, 0o755);
   }
   await writeFile(join(destination, 'runtime-manifest.json'), JSON.stringify({ release: releaseVersion, target: targetKey, executable: executableName(targetKey), archive: asset.file, archiveSha256: asset.sha256 ?? null, ...(asset.compatibility === undefined ? {} : { compatibility: asset.compatibility }) }, null, 2).concat('\n'), 'utf8');
 }
@@ -87,7 +89,9 @@ async function prepareCustomRuntime(destination, executable, targetKey) {
   if (!(await fileExists(source))) fail(`LOTAGATE_WHISPER_CPP_EXECUTABLE was not found: ${source}.`);
   await rm(destination, { recursive: true, force: true });
   await mkdir(destination, { recursive: true });
-  await copyFile(source, join(destination, executableName(targetKey)));
+  const destinationPath = join(destination, executableName(targetKey));
+  await copyFile(source, destinationPath);
+  await chmod(destinationPath, 0o755);
   await writeFile(join(destination, 'runtime-manifest.json'), JSON.stringify({ release: 'custom', target: targetKey, executable: executableName(targetKey), source: executableName(targetKey) }, null, 2).concat('\n'), 'utf8');
 }
 
