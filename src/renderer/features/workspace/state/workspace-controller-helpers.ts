@@ -2,6 +2,8 @@ import type { Activity, Artifact, QueuedPrompt } from '../../../../contracts/ipc
 import type { AttachmentPreview } from '../../../services/attachment-types.js';
 import type { QueuedMessage } from './message-queue-service.js';
 import { replaceAssistantResponse, type AssistantReplacementInput, type PendingAssistantStream } from '../conversation/streaming-activity.js';
+import { contextCompactionActivityId } from '../conversation/context-compaction-activity.js';
+import { DESKTOP_CONTEXT_COMPACTION_ID_METADATA_KEY } from '../../../../contracts/ipc/v1/workspace.js';
 
 export async function loadAttachmentPreviews(taskId: string, attachmentIds: readonly string[] = [], availableArtifacts?: Artifact[]): Promise<AttachmentPreview[]> {
   const artifacts = (availableArtifacts ?? await window.lotagate.tasks.artifacts(taskId)).filter(artifact => attachmentIds.includes(artifact.id));
@@ -62,7 +64,11 @@ export function readMediaPaths(value: unknown, fallbackText = ''): string[] {
 }
 export function mergeActivities(current: readonly Activity[], incoming: readonly Activity[]): Activity[] {
   const byId = new Map(current.map(activity => [activity.id, activity]));
-  for (const activity of incoming) byId.set(activity.id, activity);
+  for (const activity of incoming) {
+    const compactionTurnId = activity.metadata[DESKTOP_CONTEXT_COMPACTION_ID_METADATA_KEY];
+    if (typeof compactionTurnId === 'string' && compactionTurnId.length > 0) byId.delete(contextCompactionActivityId(activity.taskId, compactionTurnId));
+    byId.set(activity.id, activity);
+  }
   const persistedAssistantKeys = new Set(incoming.filter(activity => activity.kind === 'assistant').map(activity => assistantActivityKey(activity)));
   for (const [id, activity] of byId) if (isLiveStreamingActivity(activity) && persistedAssistantKeys.has(assistantActivityKey(activity))) byId.delete(id);
   return [...byId.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));

@@ -1,4 +1,4 @@
-import { DESKTOP_TURN_TIMING_METADATA_KEY, type DesktopTurnTimingMarker } from '../../contracts/ipc/v1/workspace.js';
+import { DESKTOP_CONTEXT_COMPACTION_ID_METADATA_KEY, DESKTOP_CONTEXT_COMPACTION_PHASE_METADATA_KEY, DESKTOP_TURN_TIMING_METADATA_KEY, type DesktopTurnTimingMarker } from '../../contracts/ipc/v1/workspace.js';
 import type { DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js';
 import { formatToolDisplayName } from '../../shared/tool-display.js';
 import { formatTurnFailure } from '../../shared/turn-failure.js';
@@ -97,7 +97,9 @@ export class TaskEventProjector {
     }
     const text = event.event === 'assistant.replaced' ? undefined : eventText(event.event, data);
     if (text !== undefined) {
-      const metadata = event.event === 'assistant.delta' ? { ...redactMetadata(data), assistantPhase: 'progress' } : { ...redactMetadata(data), ...(event.event.startsWith('work.') ? { orchestrationEvent: event.event } : {}) };
+      const metadata = event.event === 'assistant.delta'
+        ? { ...redactMetadata(data), assistantPhase: 'progress' }
+        : { ...redactMetadata(data), ...(event.event.startsWith('work.') ? { orchestrationEvent: event.event } : {}), ...(event.event === 'context.compacted' && typeof data['turnId'] === 'string' ? { [DESKTOP_CONTEXT_COMPACTION_ID_METADATA_KEY]: data['turnId'], [DESKTOP_CONTEXT_COMPACTION_PHASE_METADATA_KEY]: 'compacted' } : {}) };
       if (event.event === 'assistant.delta') await this.tasks.appendAssistantDelta(task.id, text, metadata);
       else await this.tasks.appendEvent(task.id, activityKind(event.event), text, metadata);
     }
@@ -168,7 +170,8 @@ function eventText(event: string, data: Record<string, unknown>): string | undef
   // here leaves stale command text in the activity log and can replay it on
   // the next application start.
   if (event.startsWith('command.')) return undefined;
-  if (event === 'context.compacted') return 'Agent context was compacted.';
+  if (event === 'context.compacted') return 'Context automatically compacted.';
+  if (event === 'context.compacting') return undefined;
   if (event === 'usage.updated') return 'Usage updated.';
   if (event === 'turn.failed') return failedTurnText(data);
   return undefined;

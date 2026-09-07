@@ -127,6 +127,24 @@ describe('WorkedForDetails', () => {
     ]);
   });
 
+  it('renders context compaction in Worked For using command-status styling', () => {
+    const { container, rerender } = render(<WorkedForDetails activities={[{
+      id: 'context-compaction:task-1:turn-1', taskId: 'task-1', kind: 'context', text: 'Context automatically compacting.',
+      metadata: { turnId: 'turn-1', desktopContextCompactionId: 'turn-1', desktopContextCompactionPhase: 'compacting' }, createdAt: '2026-08-29T00:00:00.000Z',
+    }]} />);
+
+    expect(container.querySelector('.worked-tool-running')).toHaveTextContent('Context automatically compacting');
+    expect(container.querySelector('.context-compaction-status')).not.toBeInTheDocument();
+
+    rerender(<WorkedForDetails activities={[{
+      id: 'context-compaction:task-1:turn-1', taskId: 'task-1', kind: 'context', text: 'Context automatically compacted.',
+      metadata: { turnId: 'turn-1', desktopContextCompactionId: 'turn-1', desktopContextCompactionPhase: 'compacted' }, createdAt: '2026-08-29T00:00:00.000Z',
+    }]} />);
+
+    expect(container.querySelector('.worked-tool-completed')).toHaveTextContent('Context automatically compacted');
+    expect(container.querySelector('.worked-tool-completed')).not.toHaveClass('context-compaction-compacted');
+  });
+
   it('collapses consecutive tools while showing the running tool in the summary', () => {
     const { container } = render(<WorkedForDetails activities={[
       toolActivity('read-complete', 'filesystem.list completed.', { actionId: 'read', toolName: 'filesystem.list', displayName: 'filesystem.list', status: 'completed' }),

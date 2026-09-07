@@ -54,7 +54,7 @@ describe('TaskEventProjector turn lifecycle', () => {
   it('persists the compacted marker emitted by the CLI context manager', async () => {
     const { projector, tasks } = createProjector(createTask());
     await projector.apply('C:\\workspace', { version: 1, type: 'event', scope: 'session', event: 'context.compacted', data: { sessionId: 'session-1', turnId: 'turn-1' } });
-    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Agent context was compacted.', expect.objectContaining({ sessionId: 'session-1', turnId: 'turn-1' }));
+    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Context automatically compacted.', expect.objectContaining({ sessionId: 'session-1', turnId: 'turn-1', desktopContextCompactionId: 'turn-1', desktopContextCompactionPhase: 'compacted' }));
   });
 
   it('persists tool progress outside the conversation transcript', async () => {

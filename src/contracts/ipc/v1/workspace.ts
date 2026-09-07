@@ -29,6 +29,8 @@ export const queuedPromptSchema = z.object({
 });
 export const DESKTOP_TURN_TIMING_METADATA_KEY = 'desktopTurnTiming' as const;
 export const DESKTOP_COMMAND_TIMING_METADATA_KEY = 'desktopCommandTiming' as const;
+export const DESKTOP_CONTEXT_COMPACTION_ID_METADATA_KEY = 'desktopContextCompactionId' as const;
+export const DESKTOP_CONTEXT_COMPACTION_PHASE_METADATA_KEY = 'desktopContextCompactionPhase' as const;
 export type DesktopTurnTimingPhase = 'started' | 'completed' | 'failed' | 'cancelled';
 export interface DesktopTurnTimingMarker { phase: DesktopTurnTimingPhase; timestampMs: number }
 export const taskSchema = z.object({

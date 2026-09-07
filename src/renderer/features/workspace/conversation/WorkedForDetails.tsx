@@ -7,6 +7,7 @@ import { AgentMarkdown } from './markdown-renderer.js';
 import { isAssistantProgressActivity } from './conversation-activities.js';
 import { useSmoothStreamingText } from './use-smooth-streaming-text.js';
 import { formatTextClamp } from '../../../utils/text.js';
+import { contextCompactionPhase, isContextCompactionActivity } from './context-compaction-activity.js';
 
 const TOOL_COMMAND_PREVIEW_LENGTH = 160;
 
@@ -29,10 +30,12 @@ export interface WorkedForDetailsProps {
 
 type WorkedItem =
   | { kind: 'progress'; activity: Activity }
+  | { kind: 'context'; activity: Activity }
   | { kind: 'tool'; step: ToolStep };
 
 type RenderedWorkedItem =
   | { kind: 'progress'; activity: Activity }
+  | { kind: 'context'; activity: Activity }
   | { kind: 'tools'; steps: ToolStep[] };
 
 export function hasWorkedForDetails({ statusText, activities, subagents = [] }: WorkedForDetailsProps): boolean {
@@ -53,10 +56,19 @@ export function WorkedForDetails({ active = false, statusText, activities, subag
     {statusText ? <WorkedText className="worked-status" content={statusText} active={active} /> : null}
     {renderedItems.map((item, index) => item.kind === 'progress'
       ? <WorkedProgress key={item.activity.id} content={item.activity.text} active={active} />
+      : item.kind === 'context'
+        ? <WorkedCompaction key={item.activity.id} activity={item.activity} />
       : item.steps.length === 1
         ? <WorkedTool key={item.steps[0]!.actionId} step={item.steps[0]!} />
         : <WorkedToolGroup key={`tool-group:${item.steps[0]?.actionId ?? index}`} steps={item.steps} />)}
   </div>;
+}
+
+function WorkedCompaction({ activity }: { activity: Activity }) {
+  const phase = contextCompactionPhase(activity);
+  if (phase === undefined) return null;
+  const compacting = phase === 'compacting';
+  return <div className={`worked-tool worked-tool-${compacting ? 'running' : 'completed'}`} aria-live="polite"><WorkedToolIcon /><span className={compacting ? 'typing-label' : undefined}>{compacting ? 'Context automatically compacting' : 'Context automatically compacted'}</span></div>;
 }
 
 function WorkedTool({ step }: { step: ToolStep }) {
@@ -92,6 +104,10 @@ function buildWorkedItems(activities: readonly Activity[]): WorkedItem[] {
   const items: WorkedItem[] = [];
   const toolItemIndexes = new Map<string, number>();
   for (const activity of activities) {
+    if (isContextCompactionActivity(activity)) {
+      items.push({ kind: 'context', activity });
+      continue;
+    }
     if (isAssistantProgressActivity(activity)) {
       items.push({ kind: 'progress', activity });
       continue;
@@ -116,6 +132,10 @@ function groupToolItems(items: readonly WorkedItem[]): RenderedWorkedItem[] {
   const grouped: RenderedWorkedItem[] = [];
   for (const item of items) {
     if (item.kind === 'progress') {
+      grouped.push(item);
+      continue;
+    }
+    if (item.kind === 'context') {
       grouped.push(item);
       continue;
     }
