@@ -15,6 +15,7 @@ const eulaPath = installerResource('eula.rtf');
 const wixUiTemplate = readFileSync(installerResource('wix-ui.xml'), 'utf8');
 const macInstallerIdentity = process.env['LOTAGATE_MAC_INSTALLER_IDENTITY']?.trim();
 const packagedCliExecutable = process.env['LOTAGATE_PACKAGED_CLI_PATH']?.trim() || resolve(process.cwd(), 'node_modules', '@lotagate', 'cli', 'bin', 'lotagate.exe');
+const packagedExecutableName = 'lotagate-desktop';
 const runtimeConfigArtifact = generateRuntimeConfigArtifact(process.cwd());
 const removePackagedSourceMaps = (buildPath: string, _electronVersion: string, _platform: string, _arch: string, callback: (error?: Error | null) => void): void => {
   try {
@@ -27,8 +28,8 @@ const removePackagedSourceMaps = (buildPath: string, _electronVersion: string, _
 
 const config: ForgeConfig = {
   packagerConfig: {
-    name: 'lotagate-desktop',
-    executableName: 'lotagate-desktop',
+    name: packagedExecutableName,
+    executableName: packagedExecutableName,
     win32metadata: {
       CompanyName: 'LotaGate',
       FileDescription: 'LotaGate Desktop',
@@ -70,8 +71,8 @@ const config: ForgeConfig = {
       ? [new MakerPKG({ identity: macInstallerIdentity, install: '/Applications' }, ['darwin'])]
       : []),
     new MakerZIP({}, ['darwin', 'win32']),
-    new MakerDeb({}),
-    new MakerRpm({}),
+    new MakerDeb({ options: { bin: packagedExecutableName } }),
+    new MakerRpm({ options: { bin: packagedExecutableName } }),
   ],
   plugins: [
     new VitePlugin({
