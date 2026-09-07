@@ -4,28 +4,27 @@ import { constants } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { WHISPER_CPP_MODEL, WHISPER_CPP_VERSION } from './speech-runtime-constants.mjs';
 
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const resourceRoot = resolve(desktopRoot, 'resources', 'speech');
-const releaseVersion = 'v1.9.1';
-const modelName = 'ggml-small-q5_1.bin';
-const defaultModelUrl = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${modelName}?download=true`;
+const defaultModelUrl = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${WHISPER_CPP_MODEL}?download=true`;
 const modelSha256 = 'ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb';
 const modelSizeBytes = 190_085_487;
 const modelUrl = process.env['LOTAGATE_SPEECH_MODEL_URL']?.trim() || defaultModelUrl;
 
 const runtimeAssets = {
-  'win32-x64': { archive: 'zip', file: 'whisper-bin-x64.zip', url: `https://github.com/ggml-org/whisper.cpp/releases/download/${releaseVersion}/whisper-bin-x64.zip`, sha256: '7d8be46ecd31828e1eb7a2ecdd0d6b314feafd82163038ab6092594b0a063539' },
-  'win32-arm64': { archive: 'zip', file: 'whisper-bin-x64.zip', url: `https://github.com/ggml-org/whisper.cpp/releases/download/${releaseVersion}/whisper-bin-x64.zip`, sha256: '7d8be46ecd31828e1eb7a2ecdd0d6b314feafd82163038ab6092594b0a063539', compatibility: 'The x64 runtime runs through Windows ARM64 emulation.' },
-  'linux-x64': { archive: 'tar.gz', file: 'whisper-bin-ubuntu-x64.tar.gz', url: `https://github.com/ggml-org/whisper.cpp/releases/download/${releaseVersion}/whisper-bin-ubuntu-x64.tar.gz`, sha256: undefined },
-  'linux-arm64': { archive: 'tar.gz', file: 'whisper-bin-ubuntu-arm64.tar.gz', url: `https://github.com/ggml-org/whisper.cpp/releases/download/${releaseVersion}/whisper-bin-ubuntu-arm64.tar.gz`, sha256: 'e0b66cd551ff6f2a28fabe3c6e89691eea037bb76833493abb9a71ca788994b3' },
+  'win32-x64': { archive: 'zip', file: 'whisper-bin-x64.zip', url: `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_VERSION}/whisper-bin-x64.zip`, sha256: '7d8be46ecd31828e1eb7a2ecdd0d6b314feafd82163038ab6092594b0a063539' },
+  'win32-arm64': { archive: 'zip', file: 'whisper-bin-x64.zip', url: `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_VERSION}/whisper-bin-x64.zip`, sha256: '7d8be46ecd31828e1eb7a2ecdd0d6b314feafd82163038ab6092594b0a063539', compatibility: 'The x64 runtime runs through Windows ARM64 emulation.' },
+  'linux-x64': { archive: 'tar.gz', file: 'whisper-bin-ubuntu-x64.tar.gz', url: `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_VERSION}/whisper-bin-ubuntu-x64.tar.gz`, sha256: undefined },
+  'linux-arm64': { archive: 'tar.gz', file: 'whisper-bin-ubuntu-arm64.tar.gz', url: `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_VERSION}/whisper-bin-ubuntu-arm64.tar.gz`, sha256: 'e0b66cd551ff6f2a28fabe3c6e89691eea037bb76833493abb9a71ca788994b3' },
 };
 
 const options = parseOptions(process.argv.slice(2));
 const targetKey = `${options.platform}-${options.arch}`;
 const asset = runtimeAssets[targetKey];
 const customExecutable = process.env['LOTAGATE_WHISPER_CPP_EXECUTABLE']?.trim();
-if (asset === undefined && (options.platform !== 'darwin' || customExecutable === undefined || customExecutable.length === 0)) fail(`whisper.cpp ${releaseVersion} does not publish a packaged CLI for ${targetKey}. Build a native whisper-cli binary and set LOTAGATE_WHISPER_CPP_EXECUTABLE before preparing this target.`);
+if (asset === undefined && (options.platform !== 'darwin' || customExecutable === undefined || customExecutable.length === 0)) fail(`whisper.cpp ${WHISPER_CPP_VERSION} does not publish a packaged CLI for ${targetKey}. Build a native whisper-cli binary and set LOTAGATE_WHISPER_CPP_EXECUTABLE before preparing this target.`);
 
 const runtimeRoot = resolve(resourceRoot, 'runtime', targetKey);
 const temporaryDirectory = resolve(desktopRoot, '.tools');
@@ -35,7 +34,7 @@ try {
   if (asset === undefined) await prepareCustomRuntime(runtimeRoot, customExecutable, targetKey);
   else await prepareRuntime(runtimeRoot, asset, temporaryRoot, targetKey);
   await writeManifest(targetKey, asset);
-  console.log(`Prepared whisper.cpp ${releaseVersion} for ${targetKey}.`);
+  console.log(`Prepared whisper.cpp ${WHISPER_CPP_VERSION} for ${targetKey}.`);
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });
 }
@@ -64,8 +63,8 @@ async function prepareRuntime(destination, asset, temporaryRoot, targetKey) {
   const executable = join(destination, executableName(targetKey));
   if (await fileExists(executable) && await fileExists(join(destination, 'runtime-manifest.json'))) return;
   const archivePath = join(temporaryRoot, asset.file);
-  await download(asset.url, archivePath, `whisper.cpp ${releaseVersion} runtime for ${targetKey}`);
-  if (asset.sha256 === undefined) console.warn(`No upstream SHA-256 manifest is published for ${asset.file}; the build is pinned to the exact ${releaseVersion} HTTPS asset.`);
+  await download(asset.url, archivePath, `whisper.cpp ${WHISPER_CPP_VERSION} runtime for ${targetKey}`);
+  if (asset.sha256 === undefined) console.warn(`No upstream SHA-256 manifest is published for ${asset.file}; the build is pinned to the exact ${WHISPER_CPP_VERSION} HTTPS asset.`);
   else await assertHash(archivePath, asset.sha256, `whisper.cpp ${asset.file}`);
   const extracted = join(temporaryRoot, 'extracted');
   await extractArchive(archivePath, asset.archive, extracted);
@@ -83,7 +82,7 @@ async function prepareRuntime(destination, asset, temporaryRoot, targetKey) {
     await copyEntry(source, destinationPath, entry);
     if (entry.name === executableName(targetKey)) await chmod(destinationPath, 0o755);
   }
-  await writeFile(join(destination, 'runtime-manifest.json'), JSON.stringify({ release: releaseVersion, target: targetKey, executable: executableName(targetKey), archive: asset.file, archiveSha256: asset.sha256 ?? null, ...(asset.compatibility === undefined ? {} : { compatibility: asset.compatibility }) }, null, 2).concat('\n'), 'utf8');
+  await writeFile(join(destination, 'runtime-manifest.json'), JSON.stringify({ release: WHISPER_CPP_VERSION, target: targetKey, executable: executableName(targetKey), archive: asset.file, archiveSha256: asset.sha256 ?? null, ...(asset.compatibility === undefined ? {} : { compatibility: asset.compatibility }) }, null, 2).concat('\n'), 'utf8');
 }
 
 async function prepareCustomRuntime(destination, executable, targetKey) {
@@ -141,8 +140,8 @@ async function writeManifest(targetKey, asset) {
   const manifestPath = resolve(resourceRoot, 'manifest.json');
   const current = await readJson(manifestPath);
   const runtimes = typeof current?.runtimes === 'object' && current.runtimes !== null ? current.runtimes : {};
-  runtimes[targetKey] = asset === undefined ? { release: 'custom', executable: executableName(targetKey) } : { release: releaseVersion, executable: executableName(targetKey), archive: asset.file, archiveSha256: asset.sha256 ?? null, ...(asset.compatibility === undefined ? {} : { compatibility: asset.compatibility }) };
-  await writeFile(manifestPath, JSON.stringify({ version: 1, model: { file: modelName, url: modelUrl, sha256: modelSha256, sizeBytes: modelSizeBytes }, runtimes }, null, 2).concat('\n'), 'utf8');
+  runtimes[targetKey] = asset === undefined ? { release: 'custom', executable: executableName(targetKey) } : { release: WHISPER_CPP_VERSION, executable: executableName(targetKey), archive: asset.file, archiveSha256: asset.sha256 ?? null, ...(asset.compatibility === undefined ? {} : { compatibility: asset.compatibility }) };
+  await writeFile(manifestPath, JSON.stringify({ version: 1, model: { file: WHISPER_CPP_MODEL, url: modelUrl, sha256: modelSha256, sizeBytes: modelSizeBytes }, runtimes }, null, 2).concat('\n'), 'utf8');
 }
 
 async function readJson(path) { try { return JSON.parse(await readFile(path, 'utf8')); } catch { return undefined; } }

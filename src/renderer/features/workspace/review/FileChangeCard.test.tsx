@@ -90,6 +90,24 @@ describe('FileChangeCard', () => {
     expect(onOpenFileChanges).toHaveBeenLastCalledWith(multiFileSummary);
   });
 
+  it('renders Windows paths with slash separators while preserving the raw path for opening', () => {
+    const onOpenFileChanges = vi.fn();
+    const windowsPathSummary = {
+      additions: 4,
+      deletions: 1,
+      files: [
+        { path: 'todo\\style.css', additions: 3, deletions: 1, truncated: false, lines: [] },
+        { path: 'todo\\index.html', additions: 1, deletions: 0, truncated: false, lines: [] },
+      ],
+    };
+    render(<FileChangeCard summary={windowsPathSummary} onOpenFileChanges={onOpenFileChanges} />);
+
+    expect(screen.getByText('todo/style.css')).toBeInTheDocument();
+    expect(screen.queryByText('todo\\style.css')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    expect(onOpenFileChanges).toHaveBeenCalledWith(windowsPathSummary);
+  });
+
   it('runs Undo only when a ready checkpoint is supplied', async () => {
     const onUndo = vi.fn(async () => undefined);
     render(<FileChangeCard summary={summary} undoState="ready" onUndo={onUndo} onOpenFileChanges={() => undefined} />);

@@ -4,9 +4,9 @@ import { promisify } from 'node:util';
 import { execFile as execFileCallback, spawn } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { WHISPER_CPP_VERSION } from './speech-runtime-constants.mjs';
 
 const execFile = promisify(execFileCallback);
-const whisperVersion = 'v1.9.1';
 const whisperReleaseCommitPrefix = 'f049fff';
 const whisperRepository = 'https://github.com/ggml-org/whisper.cpp.git';
 const options = parseOptions(process.argv.slice(2));
@@ -19,9 +19,9 @@ const sourceRoot = join(temporaryRoot, 'source');
 const buildRoot = join(temporaryRoot, 'build');
 
 try {
-  await run('git', ['clone', '--depth', '1', '--branch', whisperVersion, whisperRepository, sourceRoot], 'Cloning whisper.cpp');
+  await run('git', ['clone', '--depth', '1', '--branch', WHISPER_CPP_VERSION, whisperRepository, sourceRoot], 'Cloning whisper.cpp');
   const commit = (await execFile('git', ['-C', sourceRoot, 'rev-parse', 'HEAD'])).stdout.trim();
-  if (!commit.startsWith(whisperReleaseCommitPrefix)) fail(`whisper.cpp ${whisperVersion} resolved to unexpected commit '${commit}'.`);
+  if (!commit.startsWith(whisperReleaseCommitPrefix)) fail(`whisper.cpp ${WHISPER_CPP_VERSION} resolved to unexpected commit '${commit}'.`);
 
   await run('cmake', ['-S', sourceRoot, '-B', buildRoot, '-DCMAKE_BUILD_TYPE=Release', '-DBUILD_SHARED_LIBS=OFF'], 'Configuring whisper.cpp');
   await run('cmake', ['--build', buildRoot, '--config', 'Release', '--target', 'whisper-cli', '--parallel'], 'Building whisper-cli');
@@ -31,7 +31,7 @@ try {
   await mkdir(dirname(output), { recursive: true });
   await copyFile(executable, output);
   await chmod(output, 0o755);
-  console.log(`Built whisper.cpp ${whisperVersion} (${commit}) at ${output}.`);
+  console.log(`Built whisper.cpp ${WHISPER_CPP_VERSION} (${commit}) at ${output}.`);
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });
 }

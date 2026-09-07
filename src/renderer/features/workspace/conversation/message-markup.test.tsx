@@ -7,7 +7,7 @@ import { MessageMarkup } from './message-markup.js';
 describe('message markup', () => {
   afterEach(() => cleanup());
 
-  it('shows a referenced file name and keeps the full path in the tooltip', async () => {
+  it('shows a referenced file name and normalizes the full path in the tooltip', async () => {
     const path = 'D:\\workspace\\reports\\result.json';
     render(<MessageMarkup content={`Saved ${path}`} fileReferences={[{ path, name: 'result.json', kind: 'json' }]} />);
 
@@ -15,7 +15,7 @@ describe('message markup', () => {
     expect(link).toHaveClass('message-file-reference');
     expect(link.querySelector('.file-icon-data')).toBeInTheDocument();
     fireEvent.pointerMove(link, { pointerType: 'mouse' });
-    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(path));
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('D:/workspace/reports/result.json'));
   });
 
   it('renders external links as a website label without fetching remote favicons', () => {
@@ -47,7 +47,7 @@ describe('message markup', () => {
     const link = screen.getByRole('link', { name: 'index.ts' });
     expect(link.querySelector('.file-icon-typescript')).toBeInTheDocument();
     fireEvent.pointerMove(link, { pointerType: 'mouse' });
-    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(path));
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('D:/workspace/src/index.ts'));
   });
 
   it('renders an explicit @file tag as an interactive file reference', async () => {
@@ -59,7 +59,7 @@ describe('message markup', () => {
     const link = screen.getByRole('link', { name: 'test.md' });
     expect(link).toHaveClass('message-file-reference');
     fireEvent.pointerMove(link, { pointerType: 'mouse' });
-    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(path));
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('D:/workspace/test.md'));
     fireEvent.click(link);
     expect(revealPath).toHaveBeenCalledWith(path);
   });
@@ -68,12 +68,11 @@ describe('message markup', () => {
     const projectRoot = 'D:\\project';
     const executionCwd = 'D:\\session-worktree';
     const worktreePath = `${executionCwd}\\src\\index.ts`;
-    const projectPath = `${projectRoot}\\src\\index.ts`;
     render(<MessageMarkup content={`Open ${worktreePath} now.`} workspaceCwd={projectRoot} executionCwd={executionCwd} />);
 
     const link = screen.getByRole('link', { name: 'index.ts' });
     fireEvent.pointerMove(link, { pointerType: 'mouse' });
-    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(projectPath));
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('D:/project/src/index.ts'));
   });
 
   it('reveals the project-root path when a worktree reference is clicked', () => {

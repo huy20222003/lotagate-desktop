@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
+import { WHISPER_CPP_VERSION } from './speech-runtime-constants.mjs';
 
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outputRoot = resolve(desktopRoot, 'out', 'make');
@@ -315,7 +316,7 @@ function printPlan(plan, selectedOptions) {
   console.log(`Host: ${plan.name} (${process.arch})`);
   console.log(`Architecture: ${selectedOptions.arch}`);
   console.log(`Artifacts: ${plan.artifacts.join(', ')}`);
-  console.log('Speech runtime: whisper.cpp v1.9.1; model is downloaded lazily on first use');
+  console.log(`Speech runtime: whisper.cpp ${WHISPER_CPP_VERSION}; model is downloaded lazily on first use`);
   if (process.platform === 'darwin' && process.env['LOTAGATE_MAC_INSTALLER_IDENTITY']?.trim()) {
     console.log('macOS PKG: enabled by LOTAGATE_MAC_INSTALLER_IDENTITY');
   } else if (process.platform === 'darwin') {

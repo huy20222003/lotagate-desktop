@@ -105,7 +105,8 @@ describe('Composer overlays', () => {
   });
 
   it('loads file suggestions from the selected workspace root', async () => {
-    const fileSuggestions = vi.fn().mockResolvedValue([{ path: 'test.md', kind: 'file' as const }]);
+    const fileSuggestions = vi.fn().mockResolvedValue([{ path: 'test-md/test.md', kind: 'file' as const }]);
+    const onSend = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(window, 'lotagate', { configurable: true, value: {
       agent: { commandList: vi.fn().mockRejectedValue(new Error('not available')), commandExecute: vi.fn().mockRejectedValue(new Error('not available')) },
       extensions: { listProjectHooks: vi.fn().mockRejectedValue(new Error('not available')) },
@@ -124,7 +125,7 @@ describe('Composer overlays', () => {
       onModel={vi.fn()}
       onEffort={vi.fn()}
       busy={false}
-      onSend={vi.fn().mockResolvedValue(undefined)}
+      onSend={onSend}
       onRunCommand={vi.fn().mockResolvedValue(false)}
       onCancel={vi.fn().mockResolvedValue(undefined)}
       onDraft={vi.fn().mockResolvedValue(undefined)}
@@ -142,8 +143,12 @@ describe('Composer overlays', () => {
     const input = screen.getByRole('textbox', { name: 'Prompt' });
     fireEvent.change(input, { target: { value: '@', selectionStart: 1 } });
     fireEvent.click(input);
-    await screen.findByRole('option', { name: 'test.md' });
+    const option = await screen.findByRole('option', { name: 'test-md/test.md' });
     expect(fileSuggestions).toHaveBeenCalledWith('C:\\project', '');
+    fireEvent.click(option);
+    expect(input).toHaveValue('test.md ');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(onSend).toHaveBeenCalledWith('@test-md/test.md', undefined);
   });
 
   it('clears the submitted prompt before the send lifecycle finishes', () => {

@@ -35,7 +35,7 @@ export function MessageExternalLink({ href, children }: { href: string; children
 function MessageFileLink({ reference }: { reference: MessageFileReference }) {
   const name = fileName(reference.path);
   const FileIcon = fileIconFor({ name, kind: reference.kind });
-  return <Tooltip label={reference.path}><a className="message-file-reference" href="#reveal-file" onClick={event => { event.preventDefault(); void window.lotagate.operations.revealPath(reference.path).catch(() => undefined); }}><Icon icon={FileIcon} size={14} /><span>{name}</span></a></Tooltip>;
+  return <Tooltip label={displayPath(reference.path)}><a className="message-file-reference" href="#reveal-file" onClick={event => { event.preventDefault(); void window.lotagate.operations.revealPath(reference.path).catch(() => undefined); }}><Icon icon={FileIcon} size={14} /><span>{name}</span></a></Tooltip>;
 }
 
 function tokenizeMessage(content: string, references: readonly MessageFileReference[], highlightPromptTokens: boolean): MessageToken[] {
@@ -110,6 +110,7 @@ function isFileBoundary(content: string, start: number, length: number): boolean
 }
 
 function fileName(path: string): string { return path.split(/[\\/]/u).pop() ?? path; }
+function displayPath(path: string): string { return path.replace(/\\/gu, '/'); }
 function isAbsolutePath(path: string): boolean { return /^(?:[A-Za-z]:[\\/]|\\\\|\/(?!\/))/u.test(path); }
 function isAbsoluteFilePath(path: string): boolean {
   if (!isAbsolutePath(path)) return false;

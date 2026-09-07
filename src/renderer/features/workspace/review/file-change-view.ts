@@ -14,6 +14,7 @@ export function clamp(value: number, minimum: number, maximum: number): number {
 export function fileTabValue(path: string): string { return `file:${path}`; }
 export function filePathFromTab(value: string): string | undefined { return value.startsWith('file:') ? value.slice(5) : undefined; }
 export function fileName(path: string): string { return path.split(/[\\/]/u).pop() || path; }
+export function displayFilePath(path: string): string { return path.replaceAll('\\', '/'); }
 export function hasFileDiff(change: Pick<FileChangeDiff, 'additions' | 'deletions'>): boolean { return change.additions > 0 || change.deletions > 0; }
 export function relativeWorkspacePath(cwd: string, path: string): string {
   const normalizedCwd = cwd.replaceAll('\\', '/').replace(/\/+$/u, '');

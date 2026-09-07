@@ -7,19 +7,27 @@ import type { DesktopSettingsSnapshot } from '../../../../contracts/ipc/v1/setti
 import type { TerminalSession } from '../../../../contracts/ipc/v1/workspace.js';
 import { IconButton, Tabs } from '../../../components/ui.js';
 import { createComposerApprovalInput } from './approval-request.js';
+import { useResizableBottomPanel, useResizableSidePanel } from '../state/use-resizable-panel.js';
 
 type TerminalPreferences = Pick<DesktopSettingsSnapshot, 'terminalFontSize' | 'terminalScrollback' | 'terminalCursorBlink'>;
 interface TerminalTab extends TerminalSession { label: string; preferences: TerminalPreferences; }
 
 const defaultTerminalPreferences: TerminalPreferences = { terminalFontSize: 13, terminalScrollback: 10_000, terminalCursorBlink: true };
 
-export function TerminalPanel({ cwd, onClose, placement = 'bottom' }: { cwd: string; onClose: () => void; placement?: 'bottom' | 'right' }) {
+export function TerminalPanel({ cwd, onClose, placement = 'bottom', open = true }: { cwd: string; onClose: () => void; placement?: 'bottom' | 'right'; open?: boolean }) {
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeId, setActiveId] = useState('');
   const [error, setError] = useState<string>();
   const tabsRef = useRef<TerminalTab[]>([]);
+  const currentCwdRef = useRef(cwd);
+  currentCwdRef.current = cwd;
+  const mountedCwdRef = useRef(cwd);
+  const openingRef = useRef(false);
   const terminalsRef = useRef(new Map<string, XTerm>());
   const pendingOutputRef = useRef(new Map<string, string>());
+  const { panelWidth, resizing: resizingWidth, startResize: startWidthResize, handleResizeKeyDown: handleWidthResizeKeyDown } = useResizableSidePanel();
+  const { panelHeight, resizing: resizingHeight, startResize: startHeightResize, handleResizeKeyDown: handleHeightResizeKeyDown } = useResizableBottomPanel();
+  const resizing = placement === 'right' ? resizingWidth : resizingHeight;
 
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
   useEffect(() => window.lotagate.terminal.onOutput(output => {
@@ -37,6 +45,7 @@ export function TerminalPanel({ cwd, onClose, placement = 'bottom' }: { cwd: str
   const handleError = useCallback((message: string) => setError(message), []);
   const openTab = useCallback(async () => {
     setError(undefined);
+    const requestedCwd = cwd;
     try {
       let preferences = defaultTerminalPreferences;
       try {
@@ -45,24 +54,56 @@ export function TerminalPanel({ cwd, onClose, placement = 'bottom' }: { cwd: str
       } catch {
         // Terminal settings are optional for opening an interactive session.
       }
-      const session = await window.lotagate.terminal.open({ cwd });
-      const folder = cwd.split(/[\\/]/u).filter(Boolean).at(-1) ?? 'PowerShell';
+      const session = await window.lotagate.terminal.open({ cwd: requestedCwd });
+      if (currentCwdRef.current !== requestedCwd) {
+        await window.lotagate.terminal.close(session.id).catch(() => undefined);
+        return;
+      }
+      const folder = requestedCwd.split(/[\\/]/u).filter(Boolean).at(-1) ?? 'PowerShell';
       const existingCount = tabsRef.current.filter(tab => tab.label.startsWith(folder)).length;
       const label = existingCount === 0 ? folder : `${folder} (${existingCount + 1})`;
-      setTabs(current => [...current, { ...session, label, preferences }]);
+      setTabs(current => {
+        const next = [...current, { ...session, label, preferences }];
+        tabsRef.current = next;
+        return next;
+      });
       setActiveId(session.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to open terminal.');
     }
   }, [cwd]);
-  const requestOpenTab = useCallback(() => {
-    void window.lotagate.approvals.request(createComposerApprovalInput({ source: 'terminal', toolName: 'terminal.open', displayName: 'Open terminal', kind: 'terminal', summary: `Open an interactive terminal in ${cwd}`, workspaceCwd: cwd })).then(resolution => { if (resolution.approved) return openTab(); return undefined; }).catch(reason => setError(reason instanceof Error ? reason.message : 'Terminal approval failed.'));
+  const requestOpenTab = useCallback(async () => {
+    try {
+      const resolution = await window.lotagate.approvals.request(createComposerApprovalInput({ source: 'terminal', toolName: 'terminal.open', displayName: 'Open terminal', kind: 'terminal', summary: `Open an interactive terminal in ${cwd}`, workspaceCwd: cwd }));
+      if (resolution.approved) await openTab();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Terminal approval failed.');
+    }
   }, [cwd, openTab]);
 
   useEffect(() => {
-    requestOpenTab();
-    return () => { for (const tab of tabsRef.current) void window.lotagate.terminal.close(tab.id).catch(() => undefined); };
-  }, [cwd, requestOpenTab]);
+    if (mountedCwdRef.current === cwd) return;
+    mountedCwdRef.current = cwd;
+    openingRef.current = false;
+    pendingOutputRef.current.clear();
+    const previousTabs = tabsRef.current;
+    tabsRef.current = [];
+    setTabs([]);
+    setActiveId('');
+    for (const tab of previousTabs) void window.lotagate.terminal.close(tab.id).catch(() => undefined);
+  }, [cwd]);
+
+  useEffect(() => {
+    if (!open || tabsRef.current.length > 0 || openingRef.current) return;
+    openingRef.current = true;
+    void requestOpenTab().finally(() => { openingRef.current = false; });
+  }, [open, requestOpenTab]);
+
+  useEffect(() => () => {
+    for (const tab of tabsRef.current) void window.lotagate.terminal.close(tab.id).catch(() => undefined);
+    tabsRef.current = [];
+    pendingOutputRef.current.clear();
+  }, []);
 
   const closeTab = useCallback((id: string) => {
     void window.lotagate.terminal.close(id).catch(() => undefined);
@@ -75,7 +116,11 @@ export function TerminalPanel({ cwd, onClose, placement = 'bottom' }: { cwd: str
     });
   }, [activeId]);
 
-  return <section className={`terminal-panel${placement === 'right' ? ' terminal-panel-right' : ''}`} aria-label="Terminal"><header className="terminal-panel-header"><div className="terminal-tab-strip">{tabs.length > 0 ? <Tabs value={activeId} items={tabs.map(tab => ({ value: tab.id, label: tab.label }))} onChange={setActiveId} onClose={closeTab} ariaLabel="Terminal tabs" /> : null}</div><div className="terminal-panel-actions"><IconButton icon={Plus} iconSize={15} label="New terminal" onClick={requestOpenTab} /><IconButton icon={X} iconSize={15} label="Close terminal" onClick={onClose} /></div></header>{error ? <p className="terminal-error">{error}</p> : null}<div className="terminal-output">{tabs.map(tab => <TerminalSessionView key={tab.id} sessionId={tab.id} active={tab.id === activeId} preferences={tab.preferences} onReady={registerTerminal} onDispose={unregisterTerminal} onError={handleError} />)}</div></section>;
+  const panelStyle = placement === 'right' ? { width: `${panelWidth}px` } : { height: `${panelHeight}px` };
+  const resizeHandle = placement === 'right'
+    ? <div className="terminal-panel-resize-handle terminal-panel-resize-handle-side" role="separator" aria-label="Resize terminal width" aria-orientation="vertical" tabIndex={0} onPointerDown={startWidthResize} onKeyDown={handleWidthResizeKeyDown} />
+    : <div className="terminal-panel-resize-handle terminal-panel-resize-handle-bottom" role="separator" aria-label="Resize terminal height" aria-orientation="horizontal" tabIndex={0} onPointerDown={startHeightResize} onKeyDown={handleHeightResizeKeyDown} />;
+  return <section className={`terminal-panel${placement === 'right' ? ' terminal-panel-right' : ''}${resizing ? ' is-resizing' : ''}`} style={panelStyle} aria-label="Terminal" hidden={!open}>{resizeHandle}<header className="terminal-panel-header"><div className="terminal-tab-strip">{tabs.length > 0 ? <Tabs value={activeId} items={tabs.map(tab => ({ value: tab.id, label: tab.label }))} onChange={setActiveId} onClose={closeTab} ariaLabel="Terminal tabs" /> : null}</div><div className="terminal-panel-actions"><IconButton icon={Plus} iconSize={15} label="New terminal" onClick={() => void requestOpenTab()} /><IconButton icon={X} iconSize={15} label="Close terminal" onClick={onClose} /></div></header>{error ? <p className="terminal-error">{error}</p> : null}<div className="terminal-output">{tabs.map(tab => <TerminalSessionView key={tab.id} sessionId={tab.id} active={tab.id === activeId} preferences={tab.preferences} onReady={registerTerminal} onDispose={unregisterTerminal} onError={handleError} />)}</div></section>;
 }
 
 function TerminalSessionView({ sessionId, active, preferences, onReady, onDispose, onError }: { sessionId: string; active: boolean; preferences: TerminalPreferences; onReady: (sessionId: string, terminal: XTerm) => void; onDispose: (sessionId: string) => void; onError: (message: string) => void }) {

@@ -6,5 +6,6 @@ import { useDiffHighlighting } from './use-diff-highlighting.js';
 
 export function FileChangeSplitDiff({ change }: { change: FileChangeDiff }) {
   const highlightedLines = useDiffHighlighting(change);
-  return <Scrollbar axis="both" className="diff-split-scroll"><div className="diff-split">{splitDiffLines(change.lines).map((row, index) => <div className="diff-split-row" key={`${change.path}:split:${index}`}><DiffSide line={row.left} kind="deletion" tokens={row.left ? highlightedLines?.[change.lines.indexOf(row.left)] : undefined} /><DiffSide line={row.right} kind="addition" tokens={row.right ? highlightedLines?.[change.lines.indexOf(row.right)] : undefined} /></div>)}{change.truncated ? <div className="diff-truncated">… diff truncated …</div> : null}</div></Scrollbar>;
+  const rows = splitDiffLines(change.lines);
+  return <Scrollbar axis="both" className="diff-split-scroll"><div className="diff-split">{rows.map((row, index) => <div className="diff-split-row" key={`${change.path}:split:${index}`}><DiffSide line={row.left} kind="deletion" placeholderText={row.right?.text} tokens={row.left ? highlightedLines?.[change.lines.indexOf(row.left)] : undefined} /><DiffSide line={row.right} kind="addition" placeholderText={row.left?.text} tokens={row.right ? highlightedLines?.[change.lines.indexOf(row.right)] : undefined} /></div>)}{change.truncated ? <div className="diff-truncated">… diff truncated …</div> : null}</div></Scrollbar>;
 }

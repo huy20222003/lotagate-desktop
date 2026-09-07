@@ -153,6 +153,54 @@ describe('FileChangesDrawer', () => {
     expect(headers[0]).toHaveAttribute('aria-expanded', 'false');
     expect(headers[1]).toHaveAttribute('aria-expanded', 'true');
   });
+
+  it('keeps split diff sides aligned and colors the full side cell', () => {
+    const changes = {
+      additions: 1,
+      deletions: 1,
+      files: [{
+        path: 'src/example.ts',
+        additions: 1,
+        deletions: 1,
+        truncated: false,
+        lines: [
+          { kind: 'deletion' as const, text: 'const before = true;', oldLine: 1 },
+          { kind: 'addition' as const, text: 'const after = false;', newLine: 1 },
+        ],
+      }],
+    };
+    render(<FileChangesDrawer cwd="/workspace" summary={changes} onClose={() => undefined} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Side-by-side diff' }));
+
+    const split = document.querySelector('.diff-split');
+    expect(split).toBeInTheDocument();
+    expect(split).toHaveClass('diff-split');
+    expect(document.querySelector('.diff-side.diff-deletion')).toBeInTheDocument();
+    expect(document.querySelector('.diff-side.diff-addition')).toBeInTheDocument();
+    expect(document.querySelector('.diff-side-empty')).not.toBeInTheDocument();
+  });
+
+  it('gives an empty split side the width of its paired line', () => {
+    const changes = {
+      additions: 1,
+      deletions: 0,
+      files: [{
+        path: 'src/example.ts',
+        additions: 1,
+        deletions: 0,
+        truncated: false,
+        lines: [{ kind: 'addition' as const, text: 'const newlyAddedValue = true;', newLine: 1 }],
+      }],
+    };
+    render(<FileChangesDrawer cwd="/workspace" summary={changes} onClose={() => undefined} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Side-by-side diff' }));
+
+    const emptyText = document.querySelector('.diff-side-empty .diff-side-text');
+    expect(emptyText).toHaveTextContent('const newlyAddedValue = true;');
+    expect(emptyText).toHaveAttribute('aria-hidden', 'true');
+  });
 });
 
 describe('SourcesDrawer', () => {

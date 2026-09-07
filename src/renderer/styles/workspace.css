@@ -299,8 +299,17 @@
 @keyframes orchestration-spin { to { transform: rotate(360deg); } }
 @keyframes orchestration-pulse { 50% { opacity: .35; transform: scale(.7); } }
 .composer-dock { position: relative; z-index: 1; width: min(860px, calc(100% - 96px)); flex: 0 0 auto; margin: 0 auto 16px; }
-.terminal-panel { display: flex; height: min(320px, 40vh); min-height: 180px; flex: 0 0 auto; flex-direction: column; border-top: 1px solid var(--color-border); background: var(--color-canvas); }
-.terminal-panel-right { position: absolute; top: 0; right: 0; bottom: 0; z-index: 4; width: min(620px, 72%); height: auto; min-height: 0; border-top: 0; border-left: 1px solid var(--color-border); box-shadow: -20px 0 45px var(--shadow-soft); }
+.terminal-panel { position: relative; display: flex; min-height: 180px; flex: 0 0 auto; flex-direction: column; border-top: 1px solid var(--color-border); background: var(--color-canvas); }
+.terminal-panel[hidden] { display: none; }
+.terminal-panel-right { position: relative; min-width: 360px; max-width: 75vw; height: auto; min-height: 0; border-top: 0; border-left: 1px solid var(--color-border); box-shadow: -20px 0 45px var(--shadow-soft); }
+.terminal-panel.is-resizing { user-select: none; }
+.terminal-panel-resize-handle { position: absolute; z-index: 3; outline: none; }
+.terminal-panel-resize-handle-side { top: 0; bottom: 0; left: -5px; width: 10px; cursor: col-resize; touch-action: none; }
+.terminal-panel-resize-handle-side::after { position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: transparent; content: ''; transition: background .15s ease; }
+.terminal-panel-resize-handle-side:hover::after, .terminal-panel-resize-handle-side:focus-visible::after, .terminal-panel.is-resizing .terminal-panel-resize-handle-side::after { background: var(--color-accent); }
+.terminal-panel-resize-handle-bottom { top: -5px; right: 0; left: 0; height: 10px; cursor: row-resize; touch-action: none; }
+.terminal-panel-resize-handle-bottom::after { position: absolute; top: 4px; right: 0; left: 0; height: 2px; background: transparent; content: ''; transition: background .15s ease; }
+.terminal-panel-resize-handle-bottom:hover::after, .terminal-panel-resize-handle-bottom:focus-visible::after, .terminal-panel.is-resizing .terminal-panel-resize-handle-bottom::after { background: var(--color-accent); }
 .terminal-panel-header { display: flex; min-height: 42px; align-items: flex-end; gap: 4px; border-bottom: 1px solid var(--color-border); padding: 0 10px; }
 .terminal-tab-strip { min-width: 0; flex: 1; overflow: hidden; }
 .terminal-tab-strip .tabs { min-width: max-content; }

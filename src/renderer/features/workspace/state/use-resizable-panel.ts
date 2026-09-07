@@ -48,3 +48,48 @@ export function useResizableSidePanel({ side = 'right', initialWidth = FILE_PANE
 
   return { panelWidth, resizing, startResize, handleResizeKeyDown };
 }
+
+interface ResizableBottomPanelOptions { initialHeight?: number; minHeight?: number; maxHeight?: number }
+
+export function useResizableBottomPanel({ initialHeight = 320, minHeight = 180, maxHeight = 720 }: ResizableBottomPanelOptions = {}) {
+  const [panelHeight, setPanelHeight] = useState(initialHeight);
+  const [resizing, setResizing] = useState(false);
+  const resizeStart = useRef<{ clientY: number; height: number } | undefined>();
+
+  const resizePanel = useCallback((clientY: number) => {
+    const start = resizeStart.current;
+    if (!start) return;
+    const availableHeight = Math.max(minHeight, Math.floor(window.innerHeight * 0.75));
+    const delta = clientY - start.clientY;
+    setPanelHeight(clamp(start.height - delta, minHeight, Math.min(maxHeight, availableHeight)));
+  }, [maxHeight, minHeight]);
+
+  useEffect(() => {
+    if (!resizing) return;
+    const move = (event: PointerEvent) => resizePanel(event.clientY);
+    const stop = () => {
+      resizeStart.current = undefined;
+      setResizing(false);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop, { once: true });
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+    };
+  }, [resizePanel, resizing]);
+
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    resizeStart.current = { clientY: event.clientY, height: panelHeight };
+    setResizing(true);
+  };
+
+  const handleResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    setPanelHeight(current => clamp(current + (event.key === 'ArrowUp' ? 16 : -16), minHeight, maxHeight));
+  };
+
+  return { panelHeight, resizing, startResize, handleResizeKeyDown };
+}
