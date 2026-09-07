@@ -6,11 +6,12 @@ import { parseEnv } from 'node:util';
 const ARTIFACT_VERSION = 1;
 const RUNTIME_CONFIG_SEED = 'lotagate-desktop-runtime-config-v1';
 const RUNTIME_CONFIG_FILE = 'runtime.dat';
-const PUBLIC_RUNTIME_KEYS = new Set([
+const PACKAGED_RUNTIME_KEYS = new Set([
   'LOTAGATE_API_BASE_URL',
   'LOTAGATE_TRUSTED_ORIGIN',
   'LOTAGATE_REMOTE_SERVER_URL',
   'LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX',
+  'LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN',
 ]);
 
 export function generateRuntimeConfigArtifact(projectRoot) {
@@ -19,7 +20,7 @@ export function generateRuntimeConfigArtifact(projectRoot) {
   if (!fs.existsSync(sourcePath)) throw new Error('Desktop packaging requires a .env runtime configuration file.');
 
   const source = fs.readFileSync(sourcePath, 'utf8');
-  const values = Object.fromEntries(Object.entries(parseEnv(source)).filter(([key]) => PUBLIC_RUNTIME_KEYS.has(key)));
+  const values = Object.fromEntries(Object.entries(parseEnv(source)).filter(([key]) => PACKAGED_RUNTIME_KEYS.has(key)));
   const plaintext = Buffer.from(JSON.stringify({ version: ARTIFACT_VERSION, values }), 'utf8');
   const salt = crypto.randomBytes(16);
   const iv = crypto.randomBytes(12);

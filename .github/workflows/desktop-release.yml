@@ -71,10 +71,15 @@ jobs:
           LOTAGATE_TRUSTED_ORIGIN: ${{ vars.LOTAGATE_TRUSTED_ORIGIN }}
           LOTAGATE_REMOTE_SERVER_URL: ${{ vars.LOTAGATE_REMOTE_SERVER_URL }}
           LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX: ${{ vars.LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX }}
+          LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN: ${{ secrets.LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN }}
         run: |
           set -euo pipefail
           if [[ -z "${LOTAGATE_API_BASE_URL}" || -z "${LOTAGATE_TRUSTED_ORIGIN}" ]]; then
             echo "::error::Configure LOTAGATE_API_BASE_URL and LOTAGATE_TRUSTED_ORIGIN as GitHub Repository Variables before running the Desktop release workflow."
+            exit 1
+          fi
+          if [[ -n "${LOTAGATE_REMOTE_SERVER_URL}" && -z "${LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN}" ]]; then
+            echo "::error::Configure LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN as a GitHub Repository Secret when LOTAGATE_REMOTE_SERVER_URL is configured."
             exit 1
           fi
           remote_server_global_prefix="${LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX:-api/v1}"
@@ -83,6 +88,7 @@ jobs:
             printf 'LOTAGATE_TRUSTED_ORIGIN=%s\n' "${LOTAGATE_TRUSTED_ORIGIN}"
             printf 'LOTAGATE_REMOTE_SERVER_URL=%s\n' "${LOTAGATE_REMOTE_SERVER_URL}"
             printf 'LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX=%s\n' "${remote_server_global_prefix}"
+            printf 'LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN=%s\n' "${LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN}"
           } > .env
 
       - name: Build native whisper.cpp runtime for macOS

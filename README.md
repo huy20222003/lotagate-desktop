@@ -11,10 +11,10 @@ fork and does not modify `server/`, `sdk/`, `agent-sdk/`, or `cli/`.
   its packaged executable and does not depend on a system `PATH` entry. During
   CLI development, use the local link workflow below.
 - The local `.env` runtime configuration for the LotaGate production API. The
-  packaging step converts the allowlisted public values to an encrypted
-  `runtime.dat` artifact. The artifact never contains passwords, tokens, or
-  private keys. Remote enrollment credentials must be provisioned separately
-  through the deployment environment and are not embedded in installers.
+  packaging step converts the configured runtime values to an encrypted
+  `runtime.dat` artifact. The shared Remote Server enrollment token is
+  intentionally included because this Desktop distribution uses one common
+  client token; it must not be treated as a user-specific secret.
 - The desktop uses normal password login at `/auth/login`; it does not
   implement OAuth or 2FA.
 
@@ -70,14 +70,13 @@ prompt. The composer owns approval decisions; CLI trust remains the authority.
 ### Remote Control development
 
 Remote Control is an optional Desktop host connection to the standalone
-`lotagate-remote-server` relay. Configure its public or local base URL in the
-Desktop runtime `.env` without adding credentials:
+`lotagate-remote-server` relay. Configure its base URL and shared client token
+in the Desktop runtime `.env`:
 
 ```dotenv
 LOTAGATE_REMOTE_SERVER_URL=http://127.0.0.1:8787
 LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX=api/v1
-# Provision this credential outside the packaged runtime artifact.
-# LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN=<deployment-provided-value>
+LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN=<shared-client-token>
 ```
 
 The Desktop creates a short-lived session, displays the relay URL as a QR code,
@@ -253,9 +252,12 @@ is absent, the official whisper.cpp model URL is used. The release jobs also
 require the public repository variables `LOTAGATE_API_BASE_URL` and
 `LOTAGATE_TRUSTED_ORIGIN`; `LOTAGATE_REMOTE_SERVER_URL` and
 `LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX` are optional and default to an empty
-remote URL and `api/v1`. The workflow materializes these public values into a
-temporary `.env` file so Forge can generate the packaged `runtime.dat`; the
-file is never committed and no enrollment token is included in it.
+remote URL and `api/v1`. If the remote URL is configured, also configure the
+shared `LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN` as a GitHub Repository Secret.
+The workflow materializes these values into a temporary `.env` file so Forge
+can generate the packaged `runtime.dat`; the file is never committed. The
+shared token is deliberately packaged and must be protected by the Remote
+Server's authorization, pairing, rate-limit, quota, and session controls.
 
 The Electron main/preload bundle uses the CommonJS output emitted by the
 current electron-vite integration; the renderer remains Vite-managed.

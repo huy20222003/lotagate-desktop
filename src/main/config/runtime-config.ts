@@ -39,7 +39,7 @@ export function loadRuntimeEnvironment(): void {
     applyRuntimeValues(decryptRuntimeConfig(readFileSync(environmentFile, 'utf8')));
     return;
   }
-  for (const key of PUBLIC_RUNTIME_KEYS) {
+  for (const key of PACKAGED_RUNTIME_KEYS) {
     if (process.env[key]?.trim().length === 0) delete process.env[key];
   }
   process.loadEnvFile(environmentFile);
@@ -58,17 +58,18 @@ export function readRuntimeConfig(): DesktopRuntimeConfig {
 
 function applyRuntimeValues(values: Record<string, string>): void {
   for (const [key, value] of Object.entries(values)) {
-    if (!PUBLIC_RUNTIME_KEYS.has(key)) continue;
+    if (!PACKAGED_RUNTIME_KEYS.has(key)) continue;
     if (process.env[key]?.trim().length === 0) delete process.env[key];
     if (process.env[key] === undefined) process.env[key] = value;
   }
 }
 
-const PUBLIC_RUNTIME_KEYS = new Set([
+const PACKAGED_RUNTIME_KEYS = new Set([
   'LOTAGATE_API_BASE_URL',
   'LOTAGATE_TRUSTED_ORIGIN',
   'LOTAGATE_REMOTE_SERVER_URL',
   'LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX',
+  'LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN',
 ]);
 
 function decryptRuntimeConfig(raw: string): Record<string, string> {
