@@ -53,6 +53,15 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(update).toHaveBeenCalledWith({ computer: { applicationAllowlist: ['notepad.exe', 'wordpad.exe'] } }));
   });
 
+  it('saves the context window usage preference through the shared settings bridge', async () => {
+    const update = installBridge();
+    render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="general" /></ToastProvider>);
+    fireEvent.click(await screen.findByRole('switch', { name: 'Show context window usage' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ showContextWindowUsage: true }));
+    expect(window.lotagate.settings.get).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
   it('navigates to the Settings parent from the breadcrumb', async () => {
     installBridge();
     render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="skill" /></ToastProvider>);
@@ -86,4 +95,4 @@ function installBridge() {
   return update;
 }
 
-function baseSettings() { return { appearance: 'system', language: 'en', reducedMotion: false, contrast: 60, uiFont: 'inter', codeFont: 'system', browser, computer, sandbox, keyboardShortcuts: {}, terminalShell: 'powershell', terminalPlacement: 'bottom', terminalFontSize: 13, terminalScrollback: 10_000, terminalCursorBlink: true }; }
+function baseSettings() { return { appearance: 'system', language: 'en', reducedMotion: false, contrast: 60, uiFont: 'inter', codeFont: 'system', browser, computer, sandbox, keyboardShortcuts: {}, terminalShell: 'powershell', terminalPlacement: 'bottom', terminalFontSize: 13, terminalScrollback: 10_000, terminalCursorBlink: true, defaultFileOpenDestination: 'file-explorer', showContextWindowUsage: false }; }

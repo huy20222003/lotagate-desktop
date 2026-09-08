@@ -1,4 +1,4 @@
-import { dialog, shell } from 'electron';
+import { dialog } from 'electron';
 import { z } from 'zod';
 import type { TaskUpdate } from '../tasks/task-store.js';
 import { assertTrustedRenderer } from './sender-policy.js';
@@ -6,7 +6,7 @@ import { artifactKind } from '../artifacts/artifact-kind.js';
 import type { IpcRegistrationContext } from './ipc-registration-context.js';
 
 export function registerTaskIpcHandlers(context: IpcRegistrationContext): void {
-  const { handle, tasks, workspaces, artifacts, idSchema, objectSchema, taskUpdateSchema, taskTitleSourceInputSchema, activityPageOptionsSchema, cwdSchema } = context;
+  const { handle, tasks, workspaces, artifacts, operations, idSchema, objectSchema, taskUpdateSchema, taskTitleSourceInputSchema, activityPageOptionsSchema, cwdSchema } = context;
 handle('task.list', async (event, workspaceId?: unknown) => { assertTrustedRenderer(event); return tasks.list(workspaceId === undefined ? undefined : idSchema.parse(workspaceId)); });
 handle('task.create', async (event, input: unknown) => {
     assertTrustedRenderer(event);
@@ -52,5 +52,5 @@ handle('task.downloadArtifact', async (event, taskId: unknown, artifactId: unkno
     await artifacts.download(selected.taskId, selected.id, destination.filePath);
     return destination.filePath;
   });
-handle('task.openArtifact', async (event, taskId: unknown, artifactId: unknown) => { assertTrustedRenderer(event); const path = await artifacts.path(idSchema.parse(taskId), idSchema.parse(artifactId)); return shell.openPath(path); });
+handle('task.openArtifact', async (event, taskId: unknown, artifactId: unknown) => { assertTrustedRenderer(event); const path = await artifacts.path(idSchema.parse(taskId), idSchema.parse(artifactId)); await operations.openFile(path); return ''; });
 }

@@ -221,12 +221,17 @@ function redactValue(value: unknown, depth: number): unknown {
   if (Array.isArray(value)) return value.slice(0, 128).map(item => redactValue(item, depth + 1));
   if (typeof value !== 'object' || value === null) return value;
   const result: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) result[key] = isSensitiveKey(key) ? '[REDACTED]' : redactValue(item, depth + 1);
+  for (const [key, item] of Object.entries(value)) result[key] = isSensitiveKey(key, item) ? '[REDACTED]' : redactValue(item, depth + 1);
   return result;
 }
 
 function redactString(value: string): string { return value.replace(/Bearer\s+[^\s]+/giu, 'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]{8,}/gu, '[REDACTED]').slice(0, 4_096); }
-function isSensitiveKey(key: string): boolean { return /(?:token|secret|password|authorization|credential|cookie|api[-_]?key)/iu.test(key); }
+function isSensitiveKey(key: string, value: unknown): boolean {
+  if (typeof value === 'number' && Number.isFinite(value) && USAGE_COUNTER_KEYS.has(key)) return false;
+  return /(?:token|secret|password|authorization|credential|cookie|api[-_]?key)/iu.test(key);
+}
+
+const USAGE_COUNTER_KEYS = new Set(['promptTokens', 'completionTokens', 'totalTokens', 'cachedPromptTokens', 'reasoningTokens', 'inputTokens', 'outputTokens', 'otherTokens', 'usedTokens']);
 function toolActivityDisplayName(data: Record<string, unknown>): string { return formatToolDisplayName(data['toolName'], data['command'] ?? data['displayName']); }
 function hasDetailedToolActivity(data: Record<string, unknown>): boolean {
   const toolName = data['toolName'];

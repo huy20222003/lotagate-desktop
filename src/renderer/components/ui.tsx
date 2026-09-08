@@ -5,6 +5,7 @@ export { Label, type FormControlLabelProps } from './ui/Label.js';
 export { TextInput, type TextInputProps } from './ui/TextInput.js';
 export { TextArea, type TextAreaProps } from './ui/TextArea.js';
 export { Checkbox } from './ui/Checkbox.js';
+export { ToggleSwitch } from './ui/ToggleSwitch.js';
 export { Radio } from './ui/Radio.js';
 export { Badge } from './ui/Badge.js';
 export { Card } from './ui/Card.js';

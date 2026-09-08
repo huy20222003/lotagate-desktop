@@ -127,7 +127,7 @@ app.whenReady().then(async () => {
     }),
     onFileChanged: (cwd, change) => logger.debug('agent.host.file.changed', { cwd, path: change.path, kind: change.kind }),
   });
-  const operations = new DesktopOperations();
+  const operations = new DesktopOperations(undefined, async () => ({ defaultFileOpenDestination: (await settings.get()).defaultFileOpenDestination }));
   const speech = new WhisperCppSpeechTranscriptionService();
   const updates = new DesktopUpdateService(transport, logger);
   if (!automationDispatchRequested) { operations.initializeDeepLinks(); operations.initializeTray(); }

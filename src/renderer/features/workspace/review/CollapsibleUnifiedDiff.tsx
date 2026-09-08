@@ -5,7 +5,7 @@ import { Scrollbar } from '../../../components/Scrollbar.js';
 import { DiffSyntaxText } from './DiffSyntaxText.js';
 import { useDiffHighlighting } from './use-diff-highlighting.js';
 
-export function CollapsibleUnifiedDiff({ change }: { change: FileChangeDiff }) {
+export function CollapsibleUnifiedDiff({ change, wrapLines = true }: { change: FileChangeDiff; wrapLines?: boolean }) {
   const [expandedBlocks, setExpandedBlocks] = useState<Set<number>>(new Set());
   const highlightedLines = useDiffHighlighting(change);
   const output: ReactNode[] = [];
@@ -25,7 +25,7 @@ export function CollapsibleUnifiedDiff({ change }: { change: FileChangeDiff }) {
       if (collapsible && offset === CONTEXT_PREVIEW_LINES - 1) output.push(renderContextToggle(change.path, start, count, setExpandedBlocks));
     });
   }
-  return <Scrollbar axis="both" className="unified-diff-scroll"><pre>{output}{change.truncated ? <code className="diff-truncated">… diff truncated …</code> : null}</pre></Scrollbar>;
+  return <Scrollbar axis="both" className={`unified-diff-scroll${wrapLines ? '' : ' is-no-wrap'}`}><pre>{output}{change.truncated ? <code className="diff-truncated">… diff truncated …</code> : null}</pre></Scrollbar>;
 }
 
 function renderContextToggle(path: string, start: number, count: number, setExpandedBlocks: Dispatch<SetStateAction<Set<number>>>) {

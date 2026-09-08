@@ -52,8 +52,8 @@ describe('message markup', () => {
 
   it('renders an explicit @file tag as an interactive file reference', async () => {
     const path = 'D:\\workspace\\test.md';
-    const revealPath = vi.fn().mockResolvedValue(undefined);
-    window.lotagate = { operations: { revealPath } } as unknown as typeof window.lotagate;
+    const openFile = vi.fn().mockResolvedValue(undefined);
+    window.lotagate = { operations: { openFile } } as unknown as typeof window.lotagate;
     render(<MessageMarkup content="Thêm dòng vào @test.md" workspaceCwd={'D:\\workspace'} highlightPromptTokens />);
 
     const link = screen.getByRole('link', { name: 'test.md' });
@@ -61,7 +61,7 @@ describe('message markup', () => {
     fireEvent.pointerMove(link, { pointerType: 'mouse' });
     await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('D:/workspace/test.md'));
     fireEvent.click(link);
-    expect(revealPath).toHaveBeenCalledWith(path);
+    expect(openFile).toHaveBeenCalledWith(path);
   });
 
   it('maps an execution-worktree path to the project-root path for the UI', async () => {
@@ -76,8 +76,8 @@ describe('message markup', () => {
   });
 
   it('reveals the project-root path when a worktree reference is clicked', () => {
-    const revealPath = vi.fn().mockResolvedValue(undefined);
-    window.lotagate = { operations: { revealPath } } as unknown as typeof window.lotagate;
+    const openFile = vi.fn().mockResolvedValue(undefined);
+    window.lotagate = { operations: { openFile } } as unknown as typeof window.lotagate;
     const projectRoot = 'D:\\project';
     const executionCwd = 'D:\\session-worktree';
     const worktreePath = `${executionCwd}\\src\\index.ts`;
@@ -85,7 +85,7 @@ describe('message markup', () => {
     render(<MessageMarkup content={`Open ${worktreePath} now.`} workspaceCwd={projectRoot} executionCwd={executionCwd} />);
 
     fireEvent.click(screen.getByRole('link', { name: 'index.ts' }));
-    expect(revealPath).toHaveBeenCalledWith(projectPath);
+    expect(openFile).toHaveBeenCalledWith(projectPath);
   });
 
   it('does not treat numeric amounts as file references', () => {

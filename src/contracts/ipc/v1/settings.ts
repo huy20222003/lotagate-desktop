@@ -1,6 +1,11 @@
+import { z } from 'zod';
+
 export type ApprovalMode = 'auto' | 'ask';
 export type TerminalShell = 'powershell' | 'cmd' | 'git-bash';
 export type TerminalPlacement = 'bottom' | 'right';
+export const fileOpenDestinationSchema = z.enum(['vscode', 'file-explorer']);
+export type FileOpenDestination = z.infer<typeof fileOpenDestinationSchema>;
+export const DEFAULT_FILE_OPEN_DESTINATION: FileOpenDestination = 'file-explorer';
 
 export type BrowserViewportProfile = 'desktop' | 'laptop' | 'tablet' | 'mobile' | 'custom';
 export type BrowserSessionRetention = 'session' | 'persistent' | 'ttl';
@@ -70,4 +75,6 @@ export interface DesktopSettingsSnapshot {
   terminalFontSize: number;
   terminalScrollback: number;
   terminalCursorBlink: boolean;
+  defaultFileOpenDestination: FileOpenDestination;
+  showContextWindowUsage: boolean;
 }

@@ -57,6 +57,12 @@ describe('TaskEventProjector turn lifecycle', () => {
     expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Context automatically compacted.', expect.objectContaining({ sessionId: 'session-1', turnId: 'turn-1', desktopContextCompactionId: 'turn-1', desktopContextCompactionPhase: 'compacted' }));
   });
 
+  it('preserves numeric usage counters while redacting credential-shaped token fields', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 1, type: 'event', scope: 'session', event: 'usage.updated', data: { sessionId: 'session-1', model: 'model-1', contextWindow: 1_000_000, usage: { promptTokens: 12_345, totalTokens: 12_500, accessToken: 'secret-value' } } });
+    expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'usage', 'Usage updated.', expect.objectContaining({ contextWindow: 1_000_000, usage: { promptTokens: 12_345, totalTokens: 12_500, accessToken: '[REDACTED]' } }));
+  });
+
   it('persists tool progress outside the conversation transcript', async () => {
     const { projector, tasks } = createProjector(createTask());
     await projector.apply('C:\\workspace', { version: 1, type: 'event', scope: 'session', event: 'tool.completed', data: { sessionId: 'session-1', toolName: 'browser.newTab', displayName: 'browser.newTab', isError: true } });

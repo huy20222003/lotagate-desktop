@@ -261,7 +261,7 @@
 .appearance-setting-row strong { color: var(--color-text); font-size: 13px; }
 .appearance-setting-row > div > span { color: var(--color-text-tertiary); font-size: 12px; }
 .appearance-setting-row .check-control { flex: 0 0 auto; }
-.appearance-setting-row .check-control span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.appearance-setting-row .check-control > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .appearance-setting-note { margin: -6px 0 0; color: var(--color-text-tertiary); font-size: 11px; }
 .appearance-settings-card { gap: 0; border: 1px solid var(--color-border); border-radius: 10px; padding: 0 18px; background: var(--color-surface); }
 .appearance-settings-card .appearance-section-heading { margin: 0 -18px; padding: 16px 18px 12px; }

@@ -3,6 +3,7 @@ import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 import { normalizeOriginAllowlist } from '../../contracts/ipc/v1/origin-allowlist.js';
 import { DEFAULT_COMPUTER_APPLICATION_ALLOWLIST, normalizeComputerApplicationAllowlist } from '../../contracts/ipc/v1/computer-application-allowlist.js';
+import { DEFAULT_FILE_OPEN_DESTINATION, fileOpenDestinationSchema } from '../../contracts/ipc/v1/settings.js';
 
 const browserSettingsSchema = z.object({
   viewportProfile: z.enum(['desktop', 'laptop', 'tablet', 'mobile', 'custom']).default('desktop'),
@@ -56,6 +57,8 @@ export const settingsSchema = z.object({
   terminalFontSize: z.number().int().min(8).max(24).default(13),
   terminalScrollback: z.number().int().min(100).max(100_000).default(10_000),
   terminalCursorBlink: z.boolean().default(true),
+  defaultFileOpenDestination: fileOpenDestinationSchema.default(DEFAULT_FILE_OPEN_DESTINATION),
+  showContextWindowUsage: z.boolean().default(false),
 });
 export type DesktopSettings = z.infer<typeof settingsSchema>;
 const defaultSettings: DesktopSettings = settingsSchema.parse({});

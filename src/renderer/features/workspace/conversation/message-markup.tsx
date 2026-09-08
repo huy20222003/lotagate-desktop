@@ -35,7 +35,7 @@ export function MessageExternalLink({ href, children }: { href: string; children
 function MessageFileLink({ reference }: { reference: MessageFileReference }) {
   const name = fileName(reference.path);
   const FileIcon = fileIconFor({ name, kind: reference.kind });
-  return <Tooltip label={displayPath(reference.path)}><a className="message-file-reference" href="#reveal-file" onClick={event => { event.preventDefault(); void window.lotagate.operations.revealPath(reference.path).catch(() => undefined); }}><Icon icon={FileIcon} size={14} /><span>{name}</span></a></Tooltip>;
+  return <Tooltip label={displayPath(reference.path)}><a className="message-file-reference" href="#open-file" onClick={event => { event.preventDefault(); void window.lotagate.operations.openFile(reference.path).catch(() => undefined); }}><Icon icon={FileIcon} size={14} /><span>{name}</span></a></Tooltip>;
 }
 
 function tokenizeMessage(content: string, references: readonly MessageFileReference[], highlightPromptTokens: boolean): MessageToken[] {

@@ -4,6 +4,7 @@ export interface WorkspaceModelOption {
   id: string;
   label: string;
   category?: string;
+  contextWindow?: number;
 }
 
 export function extractWorkspaceModels(value: unknown): WorkspaceModelOption[] {
@@ -16,10 +17,18 @@ export function extractWorkspaceModels(value: unknown): WorkspaceModelOption[] {
     const record = item as Record<string, unknown>;
     const id = typeof record['id'] === 'string' ? record['id'] : typeof record['model'] === 'string' ? record['model'] : undefined;
     const category = typeof record['model_category'] === 'string' ? record['model_category'] : typeof record['modelCategory'] === 'string' ? record['modelCategory'] : undefined;
+    const contextWindow = positiveInteger(record['context_window']);
     if (id === undefined) return [];
     const label = typeof record['display_name'] === 'string' ? record['display_name'] : typeof record['displayName'] === 'string' ? record['displayName'] : typeof record['label'] === 'string' ? record['label'] : id;
-    return [{ id, label, ...(category === undefined ? {} : { category }) }];
+    return [{ id, label, ...(category === undefined ? {} : { category }), ...(contextWindow === undefined ? {} : { contextWindow }) }];
   });
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return value;
+  if (typeof value !== 'string' || !/^\d+$/u.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 export function modelCategoryForCommand(commandId: string): MediaModelCategory | undefined {

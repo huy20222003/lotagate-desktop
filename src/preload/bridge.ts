@@ -218,7 +218,7 @@ const bridge: DesktopBridge = {
     install: () => ipcRenderer.invoke('updates.install'),
     onState: listener => { const handler = (_event: Electron.IpcRendererEvent, value: Parameters<typeof listener>[0]) => listener(value); ipcRenderer.on('updates.state', handler); return () => ipcRenderer.removeListener('updates.state', handler); },
   },
-  operations: { notify: (title, body) => ipcRenderer.invoke('operations.notify', title, body), showWindow: () => ipcRenderer.invoke('operations.showWindow'), revealPath: path => ipcRenderer.invoke('operations.revealPath', path), exportDiagnostics: () => ipcRenderer.invoke('operations.exportDiagnostics'), onDeepLink: listener => { const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url); ipcRenderer.on('operations.deepLink', handler); return () => ipcRenderer.removeListener('operations.deepLink', handler); } },
+  operations: { notify: (title, body) => ipcRenderer.invoke('operations.notify', title, body), showWindow: () => ipcRenderer.invoke('operations.showWindow'), revealPath: path => ipcRenderer.invoke('operations.revealPath', path), openFile: (path, destination) => ipcRenderer.invoke('operations.openFile', path, destination), exportDiagnostics: () => ipcRenderer.invoke('operations.exportDiagnostics'), onDeepLink: listener => { const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url); ipcRenderer.on('operations.deepLink', handler); return () => ipcRenderer.removeListener('operations.deepLink', handler); } },
   speech: { transcribe: (audio, language) => ipcRenderer.invoke('speech.transcribe', audio, language) },
 };
 

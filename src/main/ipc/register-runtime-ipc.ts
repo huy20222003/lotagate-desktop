@@ -4,6 +4,7 @@ import { assertTrustedRenderer } from './sender-policy.js';
 import { automationCreateInputSchema, automationUpdateInputSchema } from '../../contracts/ipc/v1/automation.js';
 import { desktopApprovalInputSchema } from '../../contracts/ipc/v1/approval.js';
 import type { IpcRegistrationContext } from './ipc-registration-context.js';
+import { fileOpenDestinationSchema } from '../../contracts/ipc/v1/settings.js';
 
 export function registerRuntimeIpcHandlers(context: IpcRegistrationContext): void {
   const { handle, settings, browser, approvals, automations, operations, updates, runAutomation, retryAutomation, idSchema, browserBoundsSchema, objectSchema, logger, cwdSchema } = context;
@@ -49,6 +50,7 @@ handle('automation.runs', async (event, id: unknown, limit?: unknown) => { asser
 handle('operations.notify', async (event, title: unknown, body: unknown) => { assertTrustedRenderer(event); operations.notify(z.string().min(1).parse(title), z.string().max(2_000).parse(body)); });
 handle('operations.showWindow', async event => { assertTrustedRenderer(event); operations.showWindow(); });
 handle('operations.revealPath', async (event, path: unknown) => { assertTrustedRenderer(event); await operations.revealPath(cwdSchema.parse(path)); });
+handle('operations.openFile', async (event, path: unknown, destination?: unknown) => { assertTrustedRenderer(event); await operations.openFile(cwdSchema.parse(path), destination === undefined ? undefined : fileOpenDestinationSchema.parse(destination)); });
 handle('operations.exportDiagnostics', async event => { assertTrustedRenderer(event); return operations.exportDiagnostics({ version: updates.getInfo().version, settings: await settings.get() }); });
 handle('updates.getInfo', async event => { assertTrustedRenderer(event); return updates.getInfo(); });
 handle('updates.getState', async event => { assertTrustedRenderer(event); return updates.getState(); });

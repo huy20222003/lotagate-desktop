@@ -34,6 +34,7 @@ import { createRendererOperationOwner, isRendererOperationCurrent, resolveRender
 import { useTaskUpdates } from './use-task-updates.js';
 import { firstTaskForWorkspace } from '../task-order.js';
 import type { DesktopReasoningEffort } from '../../../../contracts/agent-protocol/v1/desktop.js';
+import { contextUsageFromValue, latestContextUsage, type ContextWindowUsage } from '../context-window-usage.js';
 export function useWorkspaceController() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspace, setWorkspace] = useState<Workspace | undefined>();
@@ -60,6 +61,7 @@ export function useWorkspaceController() {
   const [finalResponseReceived, setFinalResponseReceived] = useState(false);
   const [thinkingStartedAt, setThinkingStartedAt] = useState<number | undefined>();
   const [agentStatus, setAgentStatus] = useState<string | undefined>();
+  const [contextUsage, setContextUsage] = useState<ContextWindowUsage | undefined>();
   const [turnTimings, setTurnTimings] = useState<Record<string, { startedAt: number; endedAt?: number }>>({});
   const [error, setError] = useState<string | undefined>();
   const draftTaskRef = useRef<Task | undefined>();
@@ -87,6 +89,8 @@ export function useWorkspaceController() {
   useTaskUpdates(draftTaskRef, setTasks, setTask);
   const { runningTaskIds, unreadTaskIds, markTurnStarted, markTurnFinished } = useTaskSidebarStatus(task?.id);
   const { models, selectedModel, setSelectedModel: setSelectedModelValue, selectedEffort, setSelectedEffort: setSelectedEffortValue } = useWorkspaceModelCatalog(workspace, task);
+  const selectedModelContextWindow = models.find(model => model.id === selectedModel)?.contextWindow;
+  useEffect(() => { setContextUsage(latestContextUsage(activities, selectedModelContextWindow, selectedModel || undefined) ?? (selectedModelContextWindow === undefined ? undefined : { usedTokens: 0, contextWindow: selectedModelContextWindow })); }, [activities, selectedModel, selectedModelContextWindow]);
   const reportControllerError = useCallback((reason: unknown) => setError(toMessage(reason)), []);
   useEffect(() => { void window.lotagate.settings.get().then(settings => { setApprovalMode(settings.approvalMode); }).catch(() => undefined); }, []);
   useEffect(() => {
@@ -304,13 +308,17 @@ export function useWorkspaceController() {
         activitiesRef.current = nextActivities;
         publishActivities(nextActivities);
       }
+      if (currentTurn && envelope.event.event === 'usage.updated') {
+        const usage = contextUsageFromValue(data, selectedModelContextWindow, selectedModel || undefined);
+        if (usage !== undefined) setContextUsage(usage);
+      }
       if (currentTurn && envelope.event.event.startsWith('subagent.')) setSubagents(current => applySubagentEvent(current, envelope.event.event, data));
       if (currentTurn && (envelope.event.event === 'turn.failed' || envelope.event.event === 'turn.cancelled')) { setPlan(undefined); setSubagents([]); }
       else if (currentTurn && envelope.event.event.startsWith('work.')) setPlan(current => applyWorkPlanEvent(current, envelope.event.event, data));
     }
     if (eventTask !== undefined && isCurrentTask && envelope.event.event !== 'assistant.delta') scheduleActivityRefresh(eventTask.id);
     if (eventTask !== undefined && (!isCurrentTask || currentTurn) && (terminal || envelope.event.event === 'turn.started')) scheduleTaskReload(currentWorkspace.id);
-  }), [markTurnFinished, markTurnStarted, publishActivities, refreshCheckpointStatuses, scheduleActivityRefresh, scheduleTaskReload]);
+  }), [markTurnFinished, markTurnStarted, publishActivities, refreshCheckpointStatuses, scheduleActivityRefresh, scheduleTaskReload, selectedModel, selectedModelContextWindow]);
   useEffect(() => window.lotagate.agent.onDiagnostic(envelope => {
     const currentWorkspace = workspaceRef.current;
     const currentTask = draftTaskRef.current;
@@ -597,5 +605,5 @@ export function useWorkspaceController() {
     setTasks(current => current.map(item => item.id === updated.id ? updated : item));
     setTask(current => current?.id === updated.id ? updated : current);
   }, []);
-  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, activeTurnId, checkpointStatuses, undoingTurns, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode: updateApprovalMode, trust, models, selectedModel, setSelectedModel: selectModel, selectedEffort, setSelectedEffort: selectEffort, loading, busy, thinking, finalResponseReceived, thinkingStartedAt, agentStatus, turnTimings, runningTaskIds, unreadTaskIds, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, undoFileChanges, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, activeTurnId, checkpointStatuses, approvalMode, trust, models, selectedModel, selectModel, selectedEffort, selectEffort, loading, busy, thinking, finalResponseReceived, thinkingStartedAt, agentStatus, turnTimings, runningTaskIds, unreadTaskIds, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, undoFileChanges, retryTask, archiveTask, pinTask, pinTaskById, updateApprovalMode]);
+  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, activeTurnId, checkpointStatuses, undoingTurns, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode: updateApprovalMode, trust, models, selectedModel, contextUsage, setSelectedModel: selectModel, selectedEffort, setSelectedEffort: selectEffort, loading, busy, thinking, finalResponseReceived, thinkingStartedAt, agentStatus, turnTimings, runningTaskIds, unreadTaskIds, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, undoFileChanges, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, activeTurnId, checkpointStatuses, approvalMode, trust, models, selectedModel, contextUsage, selectModel, selectedEffort, selectEffort, loading, busy, thinking, finalResponseReceived, thinkingStartedAt, agentStatus, turnTimings, runningTaskIds, unreadTaskIds, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, undoFileChanges, retryTask, archiveTask, pinTask, pinTaskById, updateApprovalMode]);
 }
