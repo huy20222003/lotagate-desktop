@@ -52,7 +52,8 @@ export interface RemoteCommandArgument { name: string; required: boolean; variad
 export interface RemoteCommandOption { name: string; valueName?: string; description: string; required?: boolean; allowedValues?: string[] }
 export interface RemoteCommandDescriptor { id: string; path: string[]; summary: string; arguments?: RemoteCommandArgument[]; options?: RemoteCommandOption[]; slash?: RemoteSlashCommandDefinition }
 export interface RemoteSkillDescriptor { name: string; detail: string }
-export interface RemoteTaskSnapshot { task: RemoteTaskSummary; activities: Activity[]; commands: RemoteCommandDescriptor[]; skills: RemoteSkillDescriptor[]; models: Array<{ id: string; label: string; category?: string }>; attachments: Record<string, RemoteAttachmentSummary[]> }
+export interface RemoteContextWindowUsage { usedTokens: number; contextWindow: number; model?: string }
+export interface RemoteTaskSnapshot { task: RemoteTaskSummary; activities: Activity[]; commands: RemoteCommandDescriptor[]; skills: RemoteSkillDescriptor[]; models: Array<{ id: string; label: string; category?: string; contextWindow?: number }>; showContextWindowUsage?: boolean; contextUsage?: RemoteContextWindowUsage; attachments: Record<string, RemoteAttachmentSummary[]> }
 export interface RemoteTrustRequest { trustRequestId: string; taskId: string; sessionId: string; path: string; cwd: string }
 export interface RemoteControlSnapshot { generatedAt: string; workspaces: RemoteWorkspaceSummary[]; approvals: DesktopApprovalRequest[]; trustRequests: RemoteTrustRequest[]; task?: RemoteTaskSnapshot }
 export interface RemoteControlStateEvent { type: 'state'; session: RemoteControlSession | null }

@@ -7,7 +7,7 @@ import { fileIconFor } from '../../../components/file-icon.js';
 export interface MessageFileReference {
   path: string;
   name?: string;
-  kind?: Artifact['kind'];
+  kind?: Artifact['kind'] | 'folder';
   mention?: string;
 }
 
@@ -77,7 +77,7 @@ function findNextToken(content: string, cursor: number, references: readonly Mes
 function mergeFileReferences(references: readonly MessageFileReference[], extractedReferences: readonly MessageFileReference[], workspaceCwd?: string, executionCwd?: string): MessageFileReference[] {
   const byPath = new Map<string, MessageFileReference>();
   for (const reference of [...references, ...extractedReferences]) {
-    if (!isAbsoluteFilePath(reference.path)) continue;
+    if (!isAbsoluteFilePath(reference.path) && reference.kind !== 'folder') continue;
     const displayPath = projectPathForDisplay(reference.path, workspaceCwd, executionCwd);
     const normalized = displayPath === reference.path ? reference : { ...reference, path: displayPath, mention: reference.mention ?? reference.path };
     if (!byPath.has(normalized.path)) byPath.set(normalized.path, normalized);
@@ -97,8 +97,8 @@ function extractTaggedFileReferences(content: string, workspaceCwd?: string): Me
     const mention = match[1];
     if (mention === undefined) continue;
     const path = resolveWorkspacePath(mention.slice(1), workspaceCwd);
-    if (!isAbsoluteFilePath(path)) continue;
-    references.push({ path, mention });
+    if (!isAbsolutePath(path)) continue;
+    references.push({ path, mention, ...(isAbsoluteFilePath(path) ? {} : { kind: 'folder' }) });
   }
   return references;
 }
@@ -109,7 +109,7 @@ function isFileBoundary(content: string, start: number, length: number): boolean
   return (before === undefined || !/[A-Za-z0-9_.-]/u.test(before)) && (after === undefined || !/[A-Za-z0-9_.-]/u.test(after));
 }
 
-function fileName(path: string): string { return path.split(/[\\/]/u).pop() ?? path; }
+function fileName(path: string): string { return path.replace(/[\\/]+$/u, '').split(/[\\/]/u).pop() ?? path; }
 function displayPath(path: string): string { return path.replace(/\\/gu, '/'); }
 function isAbsolutePath(path: string): boolean { return /^(?:[A-Za-z]:[\\/]|\\\\|\/(?!\/))/u.test(path); }
 function isAbsoluteFilePath(path: string): boolean {

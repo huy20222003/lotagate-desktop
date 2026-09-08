@@ -36,8 +36,13 @@ export class DesktopOperations {
     if (!isAbsolute(input)) throw new Error('The file path must be absolute.');
     const path = resolve(input);
     const details = await stat(path);
-    if (!details.isFile()) throw new Error('The selected path is not a file.');
     const target = destination ?? (await this.getSettings()).defaultFileOpenDestination;
+    if (details.isDirectory()) {
+      if (target === 'file-explorer') { const error = await shell.openPath(path); if (error) throw new Error(error); return; }
+      await openInVsCode(path);
+      return;
+    }
+    if (!details.isFile()) throw new Error('The selected path is not a regular file or folder.');
     if (target === 'file-explorer') { shell.showItemInFolder(path); return; }
     await openInVsCode(path);
   }

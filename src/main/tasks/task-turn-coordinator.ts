@@ -31,7 +31,7 @@ export class TaskTurnCoordinator {
     if (taskId === undefined || !['turn.completed', 'turn.failed', 'turn.cancelled'].includes(event.event)) return;
     const claim = this.claims.get(taskId);
     const sessionId = typeof event.data['sessionId'] === 'string' ? event.data['sessionId'] : undefined;
-    if (claim !== undefined && ((claim.sessionId === undefined && sessionId === undefined) || claim.sessionId === sessionId)) this.claims.delete(taskId);
+    if (claim !== undefined && (claim.sessionId === undefined || claim.sessionId === sessionId)) this.claims.delete(taskId);
   }
 
   releaseSession(sessionId: string): void {

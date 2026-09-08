@@ -6,7 +6,7 @@ const PROMPT_TOKEN_EXACT_PATTERN = /^(@[^\s]+|https?:\/\/[^\s]+|\/[A-Za-z0-9][^\
 export function promptTokenDisplayValue(token: string): string {
   if (!token.startsWith('@')) return token;
   const reference = token.slice(1);
-  if (!reference.includes('/') && !reference.includes('\\') && !/\.[^\s./\\]+$/u.test(reference)) return token;
+  if (!reference.includes('/') && !reference.includes('\\') && !/\.[^\s./\\]+$/u.test(reference)) return reference;
   return reference.split(/[\\/]/u).pop() || token;
 }
 

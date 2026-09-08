@@ -1,9 +1,9 @@
 import { createElement } from 'react';
-import { Atom, Braces, FileArchive, FileAudio, FileCode2, FileCog, FileDiff, FileImage, FileJson, FileSpreadsheet, FileTerminal, FileText, FileType2, FileVideo, Presentation } from 'lucide-react';
+import { Atom, Braces, FileArchive, FileAudio, FileCode2, FileCog, FileDiff, FileImage, FileJson, FileSpreadsheet, FileTerminal, FileText, FileType2, FileVideo, Folder, Presentation } from 'lucide-react';
 import type { LucideIcon, LucideProps } from 'lucide-react';
 import type { Artifact } from '../../contracts/ipc/v1/workspace.js';
 
-type FileIconInput = { name: string; kind?: Artifact['kind'] | undefined };
+type FileIconInput = { name: string; kind?: Artifact['kind'] | 'folder' | undefined };
 
 const icons = {
   archive: withTone(FileArchive, 'archive'),
@@ -12,6 +12,7 @@ const icons = {
   config: withTone(FileCog, 'config'),
   data: withTone(FileJson, 'data'),
   diff: withTone(FileDiff, 'code'),
+  folder: withTone(Folder, 'folder'),
   document: withTone(FileText, 'document'),
   image: withTone(FileImage, 'media'),
   javascript: withTone(Braces, 'javascript'),
@@ -24,6 +25,7 @@ const icons = {
 };
 
 export function fileIconFor({ name, kind }: FileIconInput): LucideIcon {
+  if (kind === 'folder') return icons.folder;
   const extension = fileExtension(name);
 
   if (kind === 'image' || isExtension(extension, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico'])) return icons.image;

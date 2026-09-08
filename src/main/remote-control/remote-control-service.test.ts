@@ -38,7 +38,7 @@ describe('RemoteControlService', () => {
   it('creates a relay session without exposing the host credential to the renderer', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ sessionId: '11111111-1111-4111-8111-111111111111', hostToken: 'host-secret', pairingToken: 'pairing-token', expiresAt: '2026-09-02T01:00:00.000Z', connectUrl: 'https://remote.example/api/v1/connect/#session=11111111-1111-4111-8111-111111111111&token=pairing-token' }), { status: 201, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
-    const service = new RemoteControlService({ serverUrl: 'https://remote.example', globalPrefix: 'api/v1', enrollmentToken: 'desktop-enrollment-test-token', tasks: {} as never, workspaces: {} as never, workspaceFileSuggestions: {} as never, agents: {} as never, approvals: {} as never, artifacts: {} as never, logger: { warn: vi.fn() } as never });
+    const service = new RemoteControlService({ serverUrl: 'https://remote.example', globalPrefix: 'api/v1', enrollmentToken: 'desktop-enrollment-test-token', tasks: {} as never, workspaces: {} as never, workspaceFileSuggestions: {} as never, agents: {} as never, approvals: {} as never, artifacts: {} as never, settings: {} as never, logger: { warn: vi.fn() } as never });
 
     const session = await service.create();
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://remote.example/api/v1/sessions');
@@ -64,7 +64,7 @@ describe('RemoteControlService', () => {
     vi.stubGlobal('fetch', fetchMock);
     const bytes = Buffer.alloc(REMOTE_MEDIA_READ_CHUNK_BYTES, 0xab);
     const readMediaChunk = vi.fn().mockResolvedValue({ artifact: { id: 'artifact-1', taskId: 'task-1', name: 'gift_2.jpg', path: 'C:\\artifacts\\gift_2.jpg', kind: 'image', size: bytes.length, createdAt: '2026-09-02T00:00:00.000Z' }, mimeType: 'image/jpeg', bytes });
-    const service = new RemoteControlService({ serverUrl: 'https://remote.example', globalPrefix: 'api/v1', enrollmentToken: 'desktop-enrollment-test-token', tasks: {} as never, workspaces: {} as never, workspaceFileSuggestions: {} as never, agents: {} as never, approvals: {} as never, artifacts: { readMediaChunk } as never, logger: { warn: vi.fn() } as never });
+    const service = new RemoteControlService({ serverUrl: 'https://remote.example', globalPrefix: 'api/v1', enrollmentToken: 'desktop-enrollment-test-token', tasks: {} as never, workspaces: {} as never, workspaceFileSuggestions: {} as never, agents: {} as never, approvals: {} as never, artifacts: { readMediaChunk } as never, settings: {} as never, logger: { warn: vi.fn() } as never });
 
     await service.create();
     const socket = sockets[0]!;
@@ -92,7 +92,7 @@ describe('RemoteControlService', () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ sessionId, hostToken: 'host-secret', pairingToken: 'pairing-token', expiresAt: '2099-09-02T01:00:00.000Z', connectUrl: `https://remote.example/api/v1/connect/#session=${sessionId}&token=pairing-token` }), { status: 201, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
     const task = { id: taskId, workspaceId: 'workspace-1', title: 'Test chat', cwd: 'C:\\workspace', status: 'idle', pinned: false, archived: false, draft: '', draftAttachmentIds: [], createdAt: '2026-09-02T00:00:00.000Z', updatedAt: '2026-09-02T00:00:00.000Z' };
-    const service = new RemoteControlService({ serverUrl: 'https://remote.example', globalPrefix: 'api/v1', enrollmentToken: 'desktop-enrollment-test-token', tasks: { list: vi.fn().mockResolvedValue([task]), require: vi.fn().mockResolvedValue(task), activitiesPage: vi.fn().mockResolvedValue({ activities: [{ id: 'activity-1', taskId, kind: 'user', text: 'Show image', createdAt: '2026-09-02T00:00:00.000Z', metadata: { artifactIds: ['artifact-1'] } }] }) } as never, workspaces: { list: vi.fn().mockResolvedValue([{ id: 'workspace-1', name: 'Workspace', rootPath: 'C:\\workspace' }]) } as never, workspaceFileSuggestions: {} as never, agents: { commandList: vi.fn().mockResolvedValue(undefined), commandExecuteResult: vi.fn().mockResolvedValue(undefined), modelList: vi.fn().mockResolvedValue(undefined) } as never, approvals: { listPending: vi.fn().mockReturnValue([]) } as never, artifacts: { list: vi.fn().mockResolvedValue([{ id: 'artifact-1', taskId, name: 'gift.jpg', path: 'C:\\artifacts\\gift.jpg', kind: 'image', size: 6422, createdAt: '2026-09-02T00:00:00.000Z' }]) } as never, logger: { warn: vi.fn() } as never });
+    const service = new RemoteControlService({ serverUrl: 'https://remote.example', globalPrefix: 'api/v1', enrollmentToken: 'desktop-enrollment-test-token', tasks: { list: vi.fn().mockResolvedValue([task]), require: vi.fn().mockResolvedValue(task), activitiesPage: vi.fn().mockResolvedValue({ activities: [{ id: 'activity-1', taskId, kind: 'user', text: 'Show image', createdAt: '2026-09-02T00:00:00.000Z', metadata: { artifactIds: ['artifact-1'] } }] }) } as never, workspaces: { list: vi.fn().mockResolvedValue([{ id: 'workspace-1', name: 'Workspace', rootPath: 'C:\\workspace' }]) } as never, workspaceFileSuggestions: {} as never, agents: { commandList: vi.fn().mockResolvedValue(undefined), commandExecuteResult: vi.fn().mockResolvedValue(undefined), modelList: vi.fn().mockResolvedValue(undefined) } as never, approvals: { listPending: vi.fn().mockReturnValue([]) } as never, artifacts: { list: vi.fn().mockResolvedValue([{ id: 'artifact-1', taskId, name: 'gift.jpg', path: 'C:\\artifacts\\gift.jpg', kind: 'image', size: 6422, createdAt: '2026-09-02T00:00:00.000Z' }]) } as never, settings: { get: vi.fn().mockResolvedValue({ showContextWindowUsage: true }) } as never, logger: { warn: vi.fn() } as never });
 
     await service.create();
     const socket = sockets[0]!;
@@ -108,6 +108,7 @@ describe('RemoteControlService', () => {
     const response = responses.find(message => message.type === 'command.result');
     const snapshot = (response?.payload as { result?: { task?: { attachments?: Record<string, Array<{ size?: unknown }>> } } } | undefined)?.result;
     expect(snapshot?.task?.attachments?.['activity-1']?.[0]?.size).toBe(6422);
+    expect(snapshot?.task).toHaveProperty('showContextWindowUsage', true);
 
     await service.stop();
   });

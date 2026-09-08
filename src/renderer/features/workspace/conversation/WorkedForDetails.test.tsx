@@ -66,7 +66,7 @@ describe('WorkedForDetails', () => {
     const { container } = render(<WorkedForDetails activities={[toolActivity('tool-start', 'Running shell.exec.', { actionId: 'action-long-shell', toolName: 'shell.exec', displayName: 'shell.exec', command })]} />);
     const label = container.querySelector('.worked-tool > span');
 
-    expect(label).toHaveTextContent(`Run ${formatTextClamp(160, command)}`);
+    expect(label).toHaveTextContent(`Run ${formatTextClamp(96, command)}`);
     expect(label).toHaveAttribute('title', command);
   });
 

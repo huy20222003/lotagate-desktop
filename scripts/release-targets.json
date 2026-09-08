@@ -9,7 +9,7 @@
     "id": "win32-arm64",
     "platform": "win32",
     "architecture": "arm64",
-    "runner": "windows-11-arm"
+    "runner": "windows-11-vs2026-arm"
   },
   {
     "id": "darwin-x64",

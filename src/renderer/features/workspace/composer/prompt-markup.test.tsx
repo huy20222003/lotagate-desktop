@@ -10,8 +10,8 @@ describe('PromptMarkup', () => {
     expect(promptTokenDisplayValue('@src\\components\\Button.tsx')).toBe('Button.tsx');
   });
 
-  it('does not shorten ordinary prompt tokens', () => {
-    expect(promptTokenDisplayValue('@teammate')).toBe('@teammate');
+  it('displays a root-level tagged folder without the mention marker', () => {
+    expect(promptTokenDisplayValue('@todo')).toBe('todo');
     expect(promptTokenDisplayValue('https://example.com/path')).toBe('https://example.com/path');
   });
 

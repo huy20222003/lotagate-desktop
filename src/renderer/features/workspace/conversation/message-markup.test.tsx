@@ -64,6 +64,20 @@ describe('message markup', () => {
     expect(openFile).toHaveBeenCalledWith(path);
   });
 
+  it('renders an explicit @folder tag with the folder path tooltip and opens it', async () => {
+    const path = 'D:\\workspace\\src';
+    const openFile = vi.fn().mockResolvedValue(undefined);
+    window.lotagate = { operations: { openFile } } as unknown as typeof window.lotagate;
+    render(<MessageMarkup content="Kiểm tra @src" workspaceCwd={'D:\\workspace'} highlightPromptTokens />);
+
+    const link = screen.getByRole('link', { name: 'src' });
+    expect(link.querySelector('.file-icon-folder')).toBeInTheDocument();
+    fireEvent.pointerMove(link, { pointerType: 'mouse' });
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('D:/workspace/src'));
+    fireEvent.click(link);
+    expect(openFile).toHaveBeenCalledWith(path);
+  });
+
   it('maps an execution-worktree path to the project-root path for the UI', async () => {
     const projectRoot = 'D:\\project';
     const executionCwd = 'D:\\session-worktree';

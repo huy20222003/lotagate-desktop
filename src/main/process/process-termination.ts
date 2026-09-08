@@ -72,7 +72,9 @@ export function terminateDesktopProcess(child: ChildProcess): Promise<void> {
           settleIfReady();
         });
         treeKiller.once('close', code => {
-          if (code !== 0) terminationError ??= new Error(`taskkill could not terminate process tree ${String(pid)}.`);
+          // taskkill returns a non-zero code when the root process has already
+          // exited. That is a successful outcome for Desktop-owned cleanup.
+          if (code !== 0 && !childClosed && child.exitCode === null && child.signalCode === null) terminationError ??= new Error(`taskkill could not terminate process tree ${String(pid)}.`);
           treeTerminated = true;
           forceChild();
           settleIfReady();

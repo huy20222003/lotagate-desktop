@@ -16,6 +16,7 @@ import type { DesktopLogger } from '../observability/desktop-logger.js';
 import type { ArtifactService } from '../artifacts/artifact-service.js';
 import { artifactKind } from '../artifacts/artifact-kind.js';
 import type { WorkspaceFileSuggestions } from '../workspaces/workspace-file-suggestions.js';
+import type { SettingsService } from '../settings/settings-service.js';
 import { normalizeRemoteServerGlobalPrefix, remoteServerRoute } from './remote-server-paths.js';
 import { MAX_ACTIVITY_ITEMS, MAX_PENDING_TRUST_REQUESTS, MAX_RECONNECT_DELAY_MS, MAX_TASKS_PER_WORKSPACE, MAX_TIMER_DELAY_MS, RECONNECT_STABLE_MS, REMOTE_REQUEST_TIMEOUT_MS, REMOTE_UPLOAD_CLEANUP_INTERVAL_MS, REMOTE_UPLOAD_TTL_MS } from './remote-control-constants.js';
 
@@ -30,7 +31,7 @@ export class RemoteControlService {
   private readonly pendingTrustRequests = new Map<string, RemoteTrustRequest>();
   private readonly drainingTasks = new Set<string>();
 
-  constructor(private readonly options: { serverUrl: string; globalPrefix: string; enrollmentToken?: string; tasks: TaskStore; taskTurns?: TaskTurnCoordinator; workspaces: WorkspaceRegistry; workspaceFileSuggestions: WorkspaceFileSuggestions; agents: AgentManager; approvals: ApprovalCoordinator; artifacts: ArtifactService; logger: DesktopLogger }) {}
+  constructor(private readonly options: { serverUrl: string; globalPrefix: string; enrollmentToken?: string; tasks: TaskStore; taskTurns?: TaskTurnCoordinator; workspaces: WorkspaceRegistry; workspaceFileSuggestions: WorkspaceFileSuggestions; agents: AgentManager; approvals: ApprovalCoordinator; artifacts: ArtifactService; settings: SettingsService; logger: DesktopLogger }) {}
 
   get(): RemoteControlSession | null { return this.runtime?.publicState ?? null; }
   onState(listener: (event: RemoteControlStateEvent) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -203,6 +204,7 @@ export class RemoteControlService {
     const trustRequests = [...this.pendingTrustRequests.values()].map(request => ({ ...request }));
     if (taskId === undefined) return { generatedAt: new Date().toISOString(), workspaces: summaries, approvals, trustRequests };
     const task = await this.options.tasks.require(taskId);
+    const workspace = workspaces.find(item => item.id === task.workspaceId);
     const activities = (await this.options.tasks.activitiesPage(task.id, { limit: MAX_ACTIVITY_ITEMS })).activities.map(item => ({ ...item, text: limitText(item.text), metadata: sanitizeValue(item.metadata) as Record<string, unknown> }));
     const [commands, skills, models, artifacts] = await Promise.all([this.options.agents.commandList(task.cwd).catch(() => undefined), this.options.agents.commandExecuteResult(task.cwd, { actionId: 'skill.list', positionals: [], options: {} }).catch(() => undefined), this.options.agents.modelList(task.cwd).catch(() => undefined), this.options.artifacts.list(task.id).catch(() => [])]);
     const attachmentByActivity = Object.fromEntries(activities.flatMap(activity => {
@@ -211,7 +213,11 @@ export class RemoteControlService {
       return items.length === 0 ? [] : [[activity.id, items] as const];
     }));
     const commandDescriptors = readCommands(commands);
-    return { generatedAt: new Date().toISOString(), workspaces: summaries, approvals, trustRequests, task: { task: remoteTaskSummary(task), activities, commands: mergeRemoteCommandDescriptors(commandDescriptors), skills: readSkills(skills), models: readModels(models), attachments: attachmentByActivity } };
+    const remoteModels = readModels(models);
+    const showContextWindowUsage = (await this.options.settings.get()).showContextWindowUsage === true;
+    const selectedModel = task.model ?? remoteModels[0]?.id;
+    const contextUsage = showContextWindowUsage ? readLatestContextUsage(activities, remoteModels, selectedModel) ?? defaultContextUsage(remoteModels, selectedModel) : undefined;
+    return { generatedAt: new Date().toISOString(), workspaces: summaries, approvals, trustRequests, task: { task: remoteTaskSummary(task), activities, commands: mergeRemoteCommandDescriptors(commandDescriptors), skills: readSkills(skills), models: remoteModels, ...(showContextWindowUsage ? { showContextWindowUsage: true } : {}), ...(contextUsage === undefined || !showContextWindowUsage ? {} : { contextUsage }), attachments: attachmentByActivity } };
   }
 
   private async resolveRemoteCommandOptions(taskId: string, options: Record<string, string | boolean>, attachments: Record<string, string[]>): Promise<Record<string, string | boolean>> {
@@ -262,7 +268,7 @@ export class RemoteControlService {
     if (model !== undefined && task.model !== model) await this.options.tasks.update(task.id, { model });
     await this.options.tasks.appendActivity(task.id, 'user', prompt, { remote: true, ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
     try {
-      const result = await this.options.agents.turnStart(task.cwd, { sessionId, prompt: agentPrompt ?? prompt, taskId: task.id, ...(model === undefined ? {} : { model }), ...(skills.length === 0 ? {} : { skills }), ...(attachments.length === 0 ? {} : { attachments }) });
+      const result = await this.options.agents.turnStart(task.cwd, { sessionId, prompt: agentPrompt ?? prompt, taskId: task.id, sessionName: task.title, ...(model === undefined ? {} : { model }), ...(skills.length === 0 ? {} : { skills }), ...(attachments.length === 0 ? {} : { attachments }) });
       const turnId = readString(readRecord(result)?.['turnId']);
       if (turnId !== undefined) await this.options.tasks.update(task.id, { turnId });
       if (turnId === undefined && claimToken !== undefined) this.options.taskTurns?.release(task.id, claimToken);
@@ -448,15 +454,34 @@ function isRecord(value: unknown): value is Record<string, unknown> { return typ
 function isNonEmptyString(value: unknown): value is string { return typeof value === 'string' && value.length > 0; }
 function readRecord(value: unknown): Record<string, unknown> | undefined { return isRecord(value) ? value : undefined; }
 function readString(value: unknown): string | undefined { return isNonEmptyString(value) ? value : undefined; }
-function readModels(value: unknown): Array<{ id: string; label: string; category?: string }> {
+function readModels(value: unknown): Array<{ id: string; label: string; category?: string; contextWindow?: number }> {
   const list = isRecord(value) && Array.isArray(value['models']) ? value['models'] : [];
   return list.flatMap(item => {
     if (typeof item === 'string' && item.length > 0) return [{ id: item, label: item }];
     if (!isRecord(item) || typeof item['id'] !== 'string' || item['id'].length === 0) return [];
     const category = typeof item['model_category'] === 'string' ? item['model_category'] : typeof item['modelCategory'] === 'string' ? item['modelCategory'] : undefined;
-    return [{ id: item['id'], label: typeof item['label'] === 'string' && item['label'].length > 0 ? item['label'] : item['id'], ...(category === undefined ? {} : { category }) }];
+    const contextWindow = positiveNumber(item['context_window']) ?? positiveNumber(item['contextWindow']);
+    return [{ id: item['id'], label: typeof item['label'] === 'string' && item['label'].length > 0 ? item['label'] : item['id'], ...(category === undefined ? {} : { category }), ...(contextWindow === undefined ? {} : { contextWindow }) }];
   }).slice(0, 100);
 }
+function readLatestContextUsage(activities: Array<{ kind: string; metadata: Record<string, unknown> }>, models: Array<{ id: string; contextWindow?: number }>, selectedModel?: string): { usedTokens: number; contextWindow: number; model?: string } | undefined {
+  for (const activity of [...activities].reverse()) {
+    if (activity.kind !== 'usage' || !isRecord(activity.metadata['usage'])) continue;
+    const usage = activity.metadata['usage'];
+    const usedTokens = nonNegativeNumber(usage['promptTokens']) ?? nonNegativeNumber(usage['totalTokens']);
+    const model = typeof activity.metadata['model'] === 'string' ? activity.metadata['model'] : selectedModel;
+    const contextWindow = positiveNumber(activity.metadata['contextWindow']) ?? models.find(item => item.id === model)?.contextWindow;
+    if (usedTokens !== undefined && contextWindow !== undefined) return { usedTokens, contextWindow, ...(model === undefined ? {} : { model }) };
+  }
+  return undefined;
+}
+
+function defaultContextUsage(models: Array<{ id: string; contextWindow?: number }>, selectedModel?: string): { usedTokens: number; contextWindow: number; model?: string } | undefined {
+  const contextWindow = models.find(item => item.id === selectedModel)?.contextWindow;
+  return contextWindow === undefined ? undefined : { usedTokens: 0, contextWindow, ...(selectedModel === undefined ? {} : { model: selectedModel }) };
+}
+function positiveNumber(value: unknown): number | undefined { const number = nonNegativeNumber(value); return number !== undefined && number > 0 ? number : undefined; }
+function nonNegativeNumber(value: unknown): number | undefined { return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : typeof value === 'string' && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : undefined; }
 function readCommands(value: unknown): RemoteCommandDescriptor[] {
   const list = isRecord(value) && Array.isArray(value['commands']) ? value['commands'] : [];
   return list.flatMap(item => {

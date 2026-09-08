@@ -39,7 +39,7 @@ handle('agent.turnStart', async (event, cwd: unknown, input: unknown) => {
     if (taskId !== undefined && claimToken === undefined) claimToken = context.taskTurns.claim(taskId, canonicalCwd);
     if (taskId !== undefined && claimToken !== undefined) { if (!context.taskTurns.owns(taskId, claimToken)) throw new Error('The task turn claim is invalid or expired.'); context.taskTurns.bind(taskId, claimToken, sessionId); }
     try {
-      return await agents.turnStart(canonicalCwd, { sessionId, prompt: z.string().min(1).max(512 * 1024).parse(value['prompt']), ...(value['model'] === undefined ? {} : { model: z.string().min(1).max(256).parse(value['model']) }), ...(reasoningEffort === undefined ? {} : { reasoningEffort }), ...(taskId === undefined ? {} : { taskId }), ...(skills === undefined ? {} : { skills }), ...(attachments.length === 0 ? {} : { attachments }) });
+      return await agents.turnStart(canonicalCwd, { sessionId, prompt: z.string().min(1).max(512 * 1024).parse(value['prompt']), ...(value['model'] === undefined ? {} : { model: z.string().min(1).max(256).parse(value['model']) }), ...(reasoningEffort === undefined ? {} : { reasoningEffort }), ...(taskId === undefined ? {} : { taskId }), ...(value['sessionName'] === undefined ? {} : { sessionName: z.string().min(1).max(120).parse(value['sessionName']) }), ...(skills === undefined ? {} : { skills }), ...(attachments.length === 0 ? {} : { attachments }) });
     } catch (error) {
       if (taskId !== undefined && claimToken !== undefined) context.taskTurns.release(taskId, claimToken);
       throw error;

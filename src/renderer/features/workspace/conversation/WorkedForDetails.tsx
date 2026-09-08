@@ -9,7 +9,7 @@ import { useSmoothStreamingText } from './use-smooth-streaming-text.js';
 import { formatTextClamp } from '../../../utils/text.js';
 import { contextCompactionPhase, isContextCompactionActivity } from './context-compaction-activity.js';
 
-const TOOL_COMMAND_PREVIEW_LENGTH = 160;
+const TOOL_COMMAND_PREVIEW_LENGTH = 96;
 
 interface ToolStep {
   actionId: string;

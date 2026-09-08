@@ -431,7 +431,7 @@ export function useWorkspaceController() {
       const model = selectedModel || activeTask.model;
       if (model && activeTask.model !== model) await window.lotagate.tasks.update(activeTask.id, { model });
       if (isCurrentOperation()) { setThinking(true); setThinkingStartedAt(Date.now()); setAgentStatus(undefined); }
-      const turn = await window.lotagate.agent.turnStart(activeTask.cwd, { sessionId, prompt: options?.agentPrompt ?? prompt, taskId: activeTask.id, ...(turnClaimToken === undefined ? {} : { turnClaimToken }), ...(model ? { model } : {}), reasoningEffort: selectedEffort, ...(options?.skills === undefined ? {} : { skills: [...options.skills] }), ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
+      const turn = await window.lotagate.agent.turnStart(activeTask.cwd, { sessionId, prompt: options?.agentPrompt ?? prompt, taskId: activeTask.id, sessionName: activeTask.title, ...(turnClaimToken === undefined ? {} : { turnClaimToken }), ...(model ? { model } : {}), reasoningEffort: selectedEffort, ...(options?.skills === undefined ? {} : { skills: [...options.skills] }), ...(attachmentIds.length === 0 ? {} : { attachmentIds }) });
       const turnId = extractTurnId(turn);
       if (turnId) {
         turnStarted = true;
