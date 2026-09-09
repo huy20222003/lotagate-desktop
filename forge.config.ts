@@ -73,7 +73,7 @@ const config: ForgeConfig = {
       : []),
     new MakerZIP({}, ['darwin', 'win32']),
     new MakerDeb({ options: { bin: packagedExecutableName } }),
-    new MakerRpm({ options: { bin: packagedExecutableName } }),
+    new MakerRpm({ options: { bin: packagedExecutableName, license: 'UNLICENSED' } }),
   ],
   plugins: [
     new VitePlugin({

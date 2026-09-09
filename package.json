@@ -3,6 +3,7 @@
   "productName": "LotaGate Desktop",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "author": "LotaGate",
   "description": "LotaGate Desktop agent workspace for development and automation.",
   "type": "commonjs",
