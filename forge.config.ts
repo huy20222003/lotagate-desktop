@@ -67,7 +67,7 @@ const config: ForgeConfig = {
       ui: { chooseDirectory: true, template: wixUiTemplate },
       lightSwitches: [`-dWixUILicenseRtf=${eulaPath}`],
     }),
-    new MakerDMG({}, ['darwin']),
+    new MakerDMG({ additionalDMGOptions: { filesystem: 'APFS' } }, ['darwin']),
     ...(macInstallerIdentity
       ? [new MakerPKG({ identity: macInstallerIdentity, install: '/Applications' }, ['darwin'])]
       : []),
