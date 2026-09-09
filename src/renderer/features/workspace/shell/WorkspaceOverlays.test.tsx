@@ -181,6 +181,7 @@ describe('FileChangesDrawer', () => {
     await waitFor(() => expect(document.querySelector('.diff-line span[style*="color"]')).toBeInTheDocument());
     fireEvent.click(openFileButton);
     expect(await screen.findByRole('tab', { name: 'file.ts' })).toBeVisible();
+    expect(screen.getByRole('tab', { name: 'file.ts' }).querySelector('.file-icon-typescript')).toBeInTheDocument();
     expect(readFile).toHaveBeenCalledWith('/workspace', 'src/file.ts');
     await waitFor(() => expect(document.querySelector('.file-content')).toHaveTextContent('const completeFile = true;'));
     expect(screen.getAllByText('1', { exact: true }).some(element => element.className === 'file-content-line-number')).toBe(true);
@@ -205,6 +206,31 @@ describe('FileChangesDrawer', () => {
     expect(headers).toHaveLength(2);
     expect(headers[0]).toHaveAttribute('aria-expanded', 'false');
     expect(headers[1]).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('activates the pasted attachment tab when the drawer opens from a message', async () => {
+    const previewArtifact = vi.fn().mockResolvedValue({ artifact: { id: 'artifact-1', taskId: 'task-1', name: 'pasted-file.txt', path: '/private/pasted-file.txt', kind: 'text' as const, size: 14, createdAt: new Date().toISOString() }, content: 'pasted content' });
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { tasks: { previewArtifact } } });
+
+    const { rerender } = render(<FileChangesDrawer cwd="/workspace" summary={{ additions: 0, deletions: 0, files: [] }} initialFile={{ path: 'pasted-file.txt', artifact: { taskId: 'task-1', artifactId: 'artifact-1' } }} onClose={() => undefined} />);
+
+    expect(await screen.findByRole('tab', { name: 'pasted-file.txt' })).toBeVisible();
+    expect(screen.getByText('pasted content')).toBeVisible();
+    expect(previewArtifact).toHaveBeenCalledWith('task-1', 'artifact-1');
+
+    rerender(<FileChangesDrawer cwd="/workspace" summary={{ additions: 1, deletions: 0, files: [{ path: 'src/changed.ts', additions: 1, deletions: 0, truncated: false, lines: [{ kind: 'addition', text: 'changed', newLine: 1 }] }] }} onClose={() => undefined} />);
+    expect(screen.getByRole('tab', { name: 'Review' })).toHaveAttribute('data-state', 'active');
+  });
+
+  it('renders an image attachment in the file content tab', async () => {
+    const artifact = { id: 'image-1', taskId: 'task-1', name: 'photo.png', path: '/private/photo.png', kind: 'image' as const, size: 20, createdAt: new Date().toISOString() };
+    const previewArtifact = vi.fn().mockResolvedValue({ artifact, dataUrl: 'data:image/png;base64,abc' });
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { tasks: { previewArtifact } } });
+
+    render(<FileChangesDrawer cwd="/workspace" summary={{ additions: 0, deletions: 0, files: [] }} initialFile={{ path: '/private/photo.png', artifact: { taskId: 'task-1', artifactId: 'image-1' } }} onClose={() => undefined} />);
+
+    expect(await screen.findByRole('img', { name: 'photo.png' })).toHaveAttribute('src', 'data:image/png;base64,abc');
+    expect(previewArtifact).toHaveBeenCalledWith('task-1', 'image-1');
   });
 
   it('keeps split diff sides aligned and colors the full side cell', () => {

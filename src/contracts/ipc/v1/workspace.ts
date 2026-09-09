@@ -104,6 +104,7 @@ export type Artifact = z.infer<typeof artifactSchema>;
 export type QueuedPrompt = z.infer<typeof queuedPromptSchema>;
 export interface ArtifactPreview { artifact: Artifact; content?: string; dataUrl?: string; }
 export interface ArtifactMedia { artifact: Artifact; mimeType: string; bytes: Uint8Array; }
+export interface DesktopFilePreview { kind: Artifact['kind']; content?: string; media?: { mimeType: string; bytes: Uint8Array } }
 export type TrustRequest = z.infer<typeof trustRequestSchema>;
 export type AgentEventEnvelope = z.infer<typeof agentEventEnvelopeSchema>;
 export interface AgentDiagnosticEnvelope {
@@ -155,7 +156,7 @@ export interface DesktopCheckpointApi {
   undo(cwd: string, taskId: string, turnId: string): Promise<CheckpointUndoResult>;
 }
 
-export interface WorkspaceFileSuggestion { path: string; kind: 'file' | 'folder' }
+export interface WorkspaceFileSuggestion { path: string; kind: 'file' | 'folder'; hasChildren?: boolean }
 
 export interface DesktopTaskApi {
   list(workspaceId?: string): Promise<Task[]>;

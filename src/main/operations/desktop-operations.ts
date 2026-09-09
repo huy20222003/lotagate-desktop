@@ -1,11 +1,17 @@
 import { app, Menu, nativeImage, Tray, BrowserWindow, shell } from 'electron';
 import { spawn } from 'node:child_process';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, resolve } from 'node:path';
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { DESKTOP_PRODUCT_NAME } from '../app-identity.js';
 import { desktopAssetPath } from '../app-assets.js';
 import { DesktopNotificationService, type DesktopNotificationInput } from '../notifications/desktop-notification-service.js';
 import { DEFAULT_FILE_OPEN_DESTINATION, type DesktopSettingsSnapshot, type FileOpenDestination } from '../../contracts/ipc/v1/settings.js';
+import type { WorkspaceFileSuggestion } from '../../contracts/ipc/v1/workspace.js';
+import { MAX_RESULTS } from '../workspaces/workspace-constants.js';
+import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
+import type { DesktopFilePreview } from '../../contracts/ipc/v1/workspace.js';
+import { artifactKind } from '../artifacts/artifact-kind.js';
+import { artifactMimeType } from '../artifacts/artifact-mime.js';
 
 export class DesktopOperations {
   private tray: Tray | undefined;
@@ -46,8 +52,59 @@ export class DesktopOperations {
     if (target === 'file-explorer') { shell.showItemInFolder(path); return; }
     await openInVsCode(path);
   }
+  async listDirectory(input: string): Promise<WorkspaceFileSuggestion[]> {
+    const directory = await requireAbsoluteDirectory(input);
+    const entries = await readdir(directory, { withFileTypes: true });
+    const visibleEntries = await Promise.all(entries.slice(0, MAX_RESULTS).map(async entry => {
+      if (!entry.isDirectory()) return { entry, hasChildren: undefined };
+      const children = await readdir(join(directory, entry.name), { withFileTypes: true }).catch(() => []);
+      return { entry, hasChildren: children.length > 0 };
+    }));
+    return visibleEntries
+      .sort((left, right) => Number(right.entry.isDirectory()) - Number(left.entry.isDirectory()) || left.entry.name.localeCompare(right.entry.name))
+      .map(({ entry, hasChildren }) => ({ path: join(directory, entry.name), kind: entry.isDirectory() ? 'folder' : 'file', ...(hasChildren === undefined ? {} : { hasChildren }) }));
+  }
+  async readFile(input: string): Promise<string> {
+    const file = await requireAbsoluteFile(input);
+    const details = await stat(file);
+    if (details.size > DESKTOP_RUNTIME_LIMITS.hostFileBytes) throw new Error('The selected file is too large to preview.');
+    return readFile(file, 'utf8');
+  }
+  async previewFile(input: string): Promise<DesktopFilePreview> {
+    const file = await requireAbsoluteFile(input);
+    const kind = artifactKind(file);
+    const details = await stat(file);
+    if (kind === 'image' || kind === 'audio' || kind === 'video') {
+      if (details.size > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new Error('The media file exceeds the supported preview size.');
+      return { kind, media: { mimeType: artifactMimeType({ kind, name: basename(file) }), bytes: Uint8Array.from(await readFile(file)) } };
+    }
+    if (kind === 'text' || kind === 'markdown' || kind === 'patch' || kind === 'json') {
+      if (details.size > DESKTOP_RUNTIME_LIMITS.hostFileBytes) throw new Error('The selected file is too large to preview.');
+      return { kind, content: await readFile(file, 'utf8') };
+    }
+    return { kind };
+  }
   emitDeepLink(url: string): void { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('operations.deepLink', url); }
   async exportDiagnostics(input: { version: string; settings: Record<string, unknown> }): Promise<string> { const directory = join(app.getPath('downloads'), 'lotagate-diagnostics'); await mkdir(directory, { recursive: true }); const path = join(directory, `diagnostics-${Date.now()}.json`); await writeFile(path, JSON.stringify({ appVersion: input.version, platform: process.platform, arch: process.arch, createdAt: new Date().toISOString(), settings: input.settings }, null, 2), 'utf8'); return path; }
+}
+
+async function requireAbsoluteDirectory(input: string): Promise<string> {
+  const path = await requireAbsolutePath(input);
+  const details = await stat(path);
+  if (!details.isDirectory()) throw new Error('The selected path is not a directory.');
+  return path;
+}
+
+async function requireAbsoluteFile(input: string): Promise<string> {
+  const path = await requireAbsolutePath(input);
+  const details = await stat(path);
+  if (!details.isFile()) throw new Error('The selected path is not a regular file.');
+  return path;
+}
+
+async function requireAbsolutePath(input: string): Promise<string> {
+  if (!isAbsolute(input)) throw new Error('The file path must be absolute.');
+  return resolve(input);
 }
 
 function openInVsCode(path: string): Promise<void> {

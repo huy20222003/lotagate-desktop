@@ -52,6 +52,9 @@ handle('operations.notify', async (event, title: unknown, body: unknown) => { as
 handle('operations.showWindow', async event => { assertTrustedRenderer(event); operations.showWindow(); });
 handle('operations.revealPath', async (event, path: unknown) => { assertTrustedRenderer(event); await operations.revealPath(cwdSchema.parse(path)); });
 handle('operations.openFile', async (event, path: unknown, destination?: unknown) => { assertTrustedRenderer(event); await operations.openFile(cwdSchema.parse(path), destination === undefined ? undefined : fileOpenDestinationSchema.parse(destination)); });
+handle('operations.listDirectory', async (event, path: unknown) => { assertTrustedRenderer(event); return operations.listDirectory(cwdSchema.parse(path)); });
+handle('operations.readFile', async (event, path: unknown) => { assertTrustedRenderer(event); return operations.readFile(cwdSchema.parse(path)); });
+handle('operations.previewFile', async (event, path: unknown) => { assertTrustedRenderer(event); return operations.previewFile(cwdSchema.parse(path)); });
 handle('operations.exportDiagnostics', async event => { assertTrustedRenderer(event); return operations.exportDiagnostics({ version: updates.getInfo().version, settings: await settings.get() }); });
 handle('updates.getInfo', async event => { assertTrustedRenderer(event); return updates.getInfo(); });
 handle('updates.getState', async event => { assertTrustedRenderer(event); return updates.getState(); });

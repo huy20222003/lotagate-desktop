@@ -71,6 +71,9 @@ export interface DesktopBridge {
     showWindow(): Promise<void>;
     revealPath(path: string): Promise<void>;
     openFile(path: string, destination?: import('./settings.js').FileOpenDestination): Promise<void>;
+    listDirectory(path: string): Promise<import('./workspace.js').WorkspaceFileSuggestion[]>;
+    readFile(path: string): Promise<string>;
+    previewFile(path: string): Promise<import('./workspace.js').DesktopFilePreview>;
     exportDiagnostics(): Promise<string>;
     onDeepLink(listener: (url: string) => void): () => void;
   };
