@@ -1,4 +1,4 @@
-.git-panel { position: relative; display: flex; min-width: 360px; max-width: 75vw; min-height: 0; flex: 0 0 auto; flex-direction: column; border-left: 1px solid var(--color-border); background: var(--color-surface-drawer); box-shadow: -20px 0 45px var(--shadow-drawer); animation: file-changes-slide-in .18s ease-out; }
+.git-panel { position: relative; display: flex; min-width: 360px; max-width: 55vw; min-height: 0; flex: 0 0 auto; flex-direction: column; border-left: 1px solid var(--color-border); background: var(--color-surface-drawer); box-shadow: -20px 0 45px var(--shadow-drawer); animation: file-changes-slide-in .18s ease-out; }
 .git-panel.is-resizing { user-select: none; }
 .git-panel-resize-handle { position: absolute; top: 0; bottom: 0; left: -5px; z-index: 3; width: 10px; cursor: col-resize; outline: none; }
 .git-panel-resize-handle::after { position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: transparent; content: ''; transition: background .15s ease; }

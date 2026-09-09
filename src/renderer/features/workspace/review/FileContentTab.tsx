@@ -16,7 +16,7 @@ export function FileContentTab({ cwd, path, file, onOpenPath }: { cwd: string; p
   const [openFolder, setOpenFolder] = useState<string | undefined>();
   const [folderContents, setFolderContents] = useState<Map<string, FolderContentsState>>(new Map());
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [lineWrap, setLineWrap] = useState(false);
+  const [lineWrap, setLineWrap] = useState(true);
   const [highlightedLines, setHighlightedLines] = useState<Awaited<ReturnType<typeof highlightFileContent>>>();
   const folderRef = useRef<HTMLDivElement>(null);
   const requestedFoldersRef = useRef<Set<string>>(new Set());

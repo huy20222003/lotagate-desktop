@@ -305,7 +305,7 @@
 .composer-dock { position: relative; z-index: 1; width: min(860px, calc(100% - 96px)); flex: 0 0 auto; margin: 0 auto 16px; }
 .terminal-panel { position: relative; display: flex; min-height: 180px; flex: 0 0 auto; flex-direction: column; border-top: 1px solid var(--color-border); background: var(--color-canvas); }
 .terminal-panel[hidden] { display: none; }
-.terminal-panel-right { position: relative; min-width: 360px; max-width: 75vw; height: auto; min-height: 0; border-top: 0; border-left: 1px solid var(--color-border); box-shadow: -20px 0 45px var(--shadow-soft); }
+.terminal-panel-right { position: relative; min-width: 360px; max-width: 55vw; height: auto; min-height: 0; border-top: 0; border-left: 1px solid var(--color-border); box-shadow: -20px 0 45px var(--shadow-soft); }
 .terminal-panel.is-resizing { user-select: none; }
 .terminal-panel-resize-handle { position: absolute; z-index: 3; outline: none; }
 .terminal-panel-resize-handle-side { top: 0; bottom: 0; left: -5px; width: 10px; cursor: col-resize; touch-action: none; }

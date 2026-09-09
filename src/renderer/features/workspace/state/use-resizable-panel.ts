@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { clamp, FILE_PANEL_DEFAULT_WIDTH, FILE_PANEL_MAX_WIDTH, FILE_PANEL_MIN_WIDTH } from '../review/file-change-view.js';
 
+const SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.55;
+
 type ResizeSide = 'left' | 'right';
 interface ResizableSidePanelOptions { side?: ResizeSide; initialWidth?: number; minWidth?: number; maxWidth?: number }
+
+function getMaxSidePanelWidth(minWidth: number, maxWidth: number): number {
+  const viewportMax = typeof window === 'undefined' ? maxWidth : Math.floor(window.innerWidth * SIDE_PANEL_MAX_VIEWPORT_RATIO);
+  return Math.max(minWidth, Math.min(maxWidth, viewportMax));
+}
 
 export function useResizableSidePanel({ side = 'right', initialWidth = FILE_PANEL_DEFAULT_WIDTH, minWidth = FILE_PANEL_MIN_WIDTH, maxWidth = FILE_PANEL_MAX_WIDTH }: ResizableSidePanelOptions = {}) {
   const [panelWidth, setPanelWidth] = useState(initialWidth);
@@ -12,10 +19,9 @@ export function useResizableSidePanel({ side = 'right', initialWidth = FILE_PANE
   const resizePanel = useCallback((clientX: number) => {
     const start = resizeStart.current;
     if (!start) return;
-    const availableWidth = Math.max(minWidth, Math.floor(window.innerWidth * 0.75));
     const delta = clientX - start.clientX;
     const nextWidth = side === 'left' ? start.width + delta : start.width - delta;
-    setPanelWidth(clamp(nextWidth, minWidth, Math.min(maxWidth, availableWidth)));
+    setPanelWidth(clamp(nextWidth, minWidth, getMaxSidePanelWidth(minWidth, maxWidth)));
   }, [maxWidth, minWidth, side]);
 
   useEffect(() => {
@@ -43,7 +49,7 @@ export function useResizableSidePanel({ side = 'right', initialWidth = FILE_PANE
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
     const grows = side === 'left' ? event.key === 'ArrowRight' : event.key === 'ArrowLeft';
-    setPanelWidth(current => clamp(current + (grows ? 16 : -16), minWidth, maxWidth));
+    setPanelWidth(current => clamp(current + (grows ? 16 : -16), minWidth, getMaxSidePanelWidth(minWidth, maxWidth)));
   };
 
   return { panelWidth, resizing, startResize, handleResizeKeyDown };

@@ -181,6 +181,8 @@ describe('FileChangesDrawer', () => {
     await waitFor(() => expect(document.querySelector('.diff-line span[style*="color"]')).toBeInTheDocument());
     fireEvent.click(openFileButton);
     expect(await screen.findByRole('tab', { name: 'file.ts' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Close Review' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close file.ts' })).toBeVisible();
     expect(screen.getByRole('tab', { name: 'file.ts' }).querySelector('.file-icon-typescript')).toBeInTheDocument();
     expect(readFile).toHaveBeenCalledWith('/workspace', 'src/file.ts');
     await waitFor(() => expect(document.querySelector('.file-content')).toHaveTextContent('const completeFile = true;'));
