@@ -7,6 +7,7 @@ export const CLI_REQUEST_TIMEOUTS_MS: Readonly<Record<string, number>> = {
   'attachment.begin': 30_000,
   'attachment.chunk': 30_000,
   'attachment.complete': 30_000,
+  'attachment.delete': 30_000,
   'turn.start': 30_000,
   shutdown: 2_000,
 };

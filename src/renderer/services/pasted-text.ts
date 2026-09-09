@@ -1,4 +1,4 @@
-export const PASTED_TEXT_ATTACHMENT_THRESHOLD = 600;
+export const PASTED_TEXT_ATTACHMENT_THRESHOLD = 1200;
 export const PASTED_TEXT_ATTACHMENT_NAME = 'pasted-file.txt';
 export const PASTED_TEXT_PROMPT = 'Please review the attached pasted text.';
 

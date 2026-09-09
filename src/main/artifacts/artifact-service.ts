@@ -55,7 +55,7 @@ export class ArtifactService {
       const artifact = artifacts.find(item => item.id === id);
       if (artifact === undefined) throw new Error('Attachment artifact was not found.');
       if (artifact.size <= 0 || artifact.size > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new Error('The attachment exceeds the supported size limit.');
-      return { id: artifact.id, name: artifact.name, mimeType: artifactMimeType(artifact), sizeBytes: artifact.size, path: artifact.path };
+      return { id: artifact.id, name: artifact.name, mimeType: artifactMimeType(artifact), sizeBytes: artifact.size, path: artifact.path, ...(artifact.source === 'pasted-text' ? { storageName: artifact.name } : {}) };
     });
   }
 
@@ -83,9 +83,10 @@ export class ArtifactService {
     const safeName = basename(name).replace(/[^A-Za-z0-9._-]/gu, '_').slice(0, 120) || 'artifact.txt';
     const directory = join(desktopDataPath('artifacts'), taskId);
     await mkdir(directory, { recursive: true });
-    const path = join(directory, `${randomUUID()}-${safeName}`);
+    const artifactName = source === 'pasted-text' ? pastedArtifactName(safeName, await this.list(taskId)) : safeName;
+    const path = join(directory, `${randomUUID()}-${artifactName}`);
     await writeFile(path, content, 'utf8');
-    const artifact = artifactSchema.parse({ id: randomUUID(), taskId, name: safeName, path, kind, ...(source === undefined ? {} : { source }), size, createdAt: new Date().toISOString() });
+    const artifact = artifactSchema.parse({ id: randomUUID(), taskId, name: artifactName, path, kind, ...(source === undefined ? {} : { source }), size, createdAt: new Date().toISOString() });
     await this.store.update(current => [...current, artifact]);
     return artifact;
   }
@@ -172,4 +173,15 @@ function artifactMimeType(artifact: Artifact): string {
   if (extension === 'webp') return 'image/webp';
   if (extension === 'bmp') return 'image/bmp';
   return 'image/png';
+}
+
+function pastedArtifactName(baseName: string, artifacts: readonly Artifact[]): string {
+  if (!artifacts.some(artifact => artifact.source === 'pasted-text' && artifact.name === baseName)) return baseName;
+  const extension = baseName.includes('.') ? `.${baseName.split('.').pop()}` : '';
+  const stem = extension.length === 0 ? baseName : baseName.slice(0, -extension.length);
+  for (let index = 1; index <= 10_000; index += 1) {
+    const candidate = `${stem}-${index}${extension}`;
+    if (!artifacts.some(artifact => artifact.source === 'pasted-text' && artifact.name === candidate)) return candidate;
+  }
+  throw new Error('Unable to allocate a unique pasted attachment name.');
 }

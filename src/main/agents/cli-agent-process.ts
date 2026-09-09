@@ -111,9 +111,9 @@ export class CliAgentProcess {
     return operation;
   }
 
-  async uploadAttachment(input: { id: string; name: string; mimeType: string; sizeBytes: number; path: string }): Promise<void> {
+  async uploadAttachment(input: { id: string; sessionId: string; name: string; mimeType: string; sizeBytes: number; path: string; storageName?: string }): Promise<void> {
     if (input.sizeBytes <= 0 || input.sizeBytes > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new CliAgentProcessError('The attachment exceeds the supported size limit.');
-    await this.request('attachment.begin', { attachmentId: input.id, name: input.name, mimeType: input.mimeType, sizeBytes: input.sizeBytes });
+    await this.request('attachment.begin', { attachmentId: input.id, sessionId: input.sessionId, name: input.name, mimeType: input.mimeType, sizeBytes: input.sizeBytes, ...(input.storageName === undefined ? {} : { storageName: input.storageName }) });
     let index = 0;
     try {
       for await (const chunk of createReadStream(input.path, { highWaterMark: DESKTOP_RUNTIME_LIMITS.cliAttachmentChunkBytes })) {
@@ -124,6 +124,10 @@ export class CliAgentProcess {
     } catch (error) {
       throw new CliAgentProcessError(`Unable to upload attachment ${input.name}.`, error);
     }
+  }
+
+  async deleteAttachment(input: { sessionId: string; attachmentId: string }): Promise<void> {
+    await this.request('attachment.delete', input);
   }
 
   async shutdown(reason = 'unspecified'): Promise<void> {

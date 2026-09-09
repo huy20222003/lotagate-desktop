@@ -2,6 +2,8 @@ import type { FileChangeDiff, FileChangeSummary, WorkspaceFileSuggestion } from 
 
 export type DiffViewMode = 'unified' | 'split';
 export type OpenFileChangesHandler = (summary: FileChangeSummary, initialExpandedPath?: string) => void;
+export interface OpenFileTarget { path: string; artifact?: { taskId: string; artifactId: string } }
+export type OpenFileTargetHandler = (target: OpenFileTarget) => void;
 export interface OpenFileState { status: 'loading' | 'ready' | 'error'; content?: string | undefined; error?: string | undefined }
 
 export const REVIEW_TAB = 'review';

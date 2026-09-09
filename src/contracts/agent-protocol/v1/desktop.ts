@@ -28,6 +28,7 @@ export const desktopRequestSchema = z.discriminatedUnion('method', [
   requestBase.extend({ method: z.literal('attachment.begin'), params }),
   requestBase.extend({ method: z.literal('attachment.chunk'), params }),
   requestBase.extend({ method: z.literal('attachment.complete'), params }),
+  requestBase.extend({ method: z.literal('attachment.delete'), params }),
   requestBase.extend({ method: z.literal('turn.start'), params }),
   requestBase.extend({ method: z.literal('turn.cancel'), params }),
   requestBase.extend({ method: z.literal('approval.respond'), params }),

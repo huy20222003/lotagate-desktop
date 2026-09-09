@@ -165,15 +165,18 @@
 .file-content-scroll { min-height: 0; flex: 1; }
 .file-content-scroll .scrollbar-viewport { height: 100%; }
 .file-content-view { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.file-content-view > .diff-context-menu-surface { display: flex; min-height: 0; flex: 1; flex-direction: column; }
 .file-content-breadcrumb-wrap { position: relative; flex: 0 0 auto; border-bottom: 1px solid var(--color-border-subtle); }
 .file-content-breadcrumb-scrollbar { width: 100%; min-width: 0; min-height: 36px; flex: 0 0 auto; overflow: hidden; }
-.file-content-breadcrumb-scrollbar .scrollbar-viewport { width: 100%; height: auto; min-height: 36px; overflow-x: auto; overflow-y: hidden; }
-.file-content-breadcrumb-scrollbar .scrollbar-track-horizontal { opacity: .8; }
+.file-content-breadcrumb-scrollbar .scrollbar-viewport { width: 100%; height: auto; min-height: 36px; overflow-x: auto; overflow-y: hidden; cursor: grab; scrollbar-width: none; -ms-overflow-style: none; }
+.file-content-breadcrumb-scrollbar .scrollbar-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.file-content-breadcrumb-scrollbar .scrollbar-viewport.is-dragging { cursor: grabbing; user-select: none; }
+.file-content-breadcrumb-scrollbar .scrollbar-track-horizontal { display: none; }
 .file-content-breadcrumb { display: flex; min-height: 36px; align-items: center; gap: 2px; width: max-content; min-width: 100%; padding: 0 12px; color: var(--color-text-tertiary); font-size: 11px; white-space: nowrap; }
 .file-content-breadcrumb-item { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 2px; }
 .file-content-breadcrumb-button { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 4px; padding: 4px 5px; background: transparent; color: var(--color-text-secondary); font: inherit; }
 .file-content-breadcrumb-button:hover, .file-content-breadcrumb-button[aria-expanded='true'] { background: var(--color-surface-hover); color: var(--color-text); }
-.file-content-breadcrumb-current { max-width: 180px; overflow: hidden; color: var(--color-text); text-overflow: ellipsis; white-space: nowrap; }
+.file-content-breadcrumb-current { flex: 0 0 auto; color: var(--color-text); white-space: nowrap; }
 .file-content-folder-popover { position: absolute; top: 35px; left: 12px; z-index: 5; display: flex; min-width: 210px; max-width: min(320px, calc(100% - 24px)); max-height: 280px; overflow: hidden; border: 1px solid var(--color-border); border-radius: 6px; padding: 5px; background: var(--color-surface-popover); box-shadow: 0 16px 38px var(--shadow-popover); }
 .file-content-folder-scrollbar { width: 100%; min-height: 0; max-height: 268px; flex: 1 1 auto; }
 .file-content-folder-scrollbar .scrollbar-viewport { width: 100%; max-height: 268px; overflow-x: hidden; overflow-y: auto; }
@@ -184,7 +187,9 @@
 .file-content-folder-state { padding: 10px 8px; color: var(--color-text-tertiary); font-size: 11px; }
 .file-content-folder-skeleton { display: block; width: 150px; height: 14px; }
 .file-content { min-height: 100%; margin: 0; padding: 14px 0 28px; background: var(--color-canvas); color: var(--color-text-secondary); font: 12px/1.6 var(--font-code, ui-monospace, SFMono-Regular, Consolas, monospace); white-space: pre; }
+.file-content.is-wrapped { width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
 .file-content-line { display: grid; grid-template-columns: 54px minmax(0, 1fr); min-height: 20px; padding: 0 16px 0 0; }
+.file-content.is-wrapped .file-content-line { white-space: pre-wrap; overflow-wrap: anywhere; }
 .file-content-line-number { border-right: 1px solid var(--color-border-subtle); padding-right: 12px; color: var(--color-text-tertiary); font-size: 13px; font-variant-numeric: tabular-nums; line-height: inherit; text-align: right; user-select: none; }
 .file-content-line > span:last-child { min-width: 0; padding-left: 12px; }
 .file-content-state { display: grid; min-height: 180px; place-items: center; align-content: center; gap: 9px; padding: 24px; color: var(--color-text-tertiary); font-size: 12px; text-align: center; }

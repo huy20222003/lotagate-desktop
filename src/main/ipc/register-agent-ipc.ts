@@ -20,6 +20,32 @@ handle('agent.shutdown', async (event, cwd: unknown) => {
 handle('agent.sessionCreate', async (event, cwd: unknown, input: unknown) => { assertTrustedRenderer(event); return agents.sessionCreate(await requireWorkspaceCwd(cwd), objectSchema.parse(input) as { model?: string; name?: string }); });
 handle('agent.sessionList', async (event, cwd: unknown) => { assertTrustedRenderer(event); return agents.sessionList(await requireWorkspaceCwd(cwd)); });
 handle('agent.sessionResume', async (event, cwd: unknown, sessionId: unknown) => { assertTrustedRenderer(event); return agents.sessionResume(await requireWorkspaceCwd(cwd), idSchema.parse(sessionId)); });
+handle('agent.uploadAttachment', async (event, cwd: unknown, input: unknown) => {
+    assertTrustedRenderer(event);
+    const canonicalCwd = await requireWorkspaceCwd(cwd);
+    const value = objectSchema.parse(input);
+    const sessionId = idSchema.parse(value['sessionId']);
+    const taskId = idSchema.parse(value['taskId']);
+    const attachmentId = idSchema.parse(value['attachmentId']);
+    const task = await tasks.requireForCwd(taskId, canonicalCwd);
+    if (task.sessionId !== sessionId) throw new Error('The task session does not match the requested agent session.');
+    const [attachment] = await artifacts.attachmentInputs(taskId, [attachmentId]);
+    if (attachment === undefined) throw new Error('Attachment artifact was not found.');
+    await agents.uploadAttachment(canonicalCwd, sessionId, attachment);
+  });
+handle('agent.deleteAttachment', async (event, cwd: unknown, input: unknown) => {
+    assertTrustedRenderer(event);
+    const canonicalCwd = await requireWorkspaceCwd(cwd);
+    const value = objectSchema.parse(input);
+    const sessionId = idSchema.parse(value['sessionId']);
+    const taskId = idSchema.parse(value['taskId']);
+    const attachmentId = idSchema.parse(value['attachmentId']);
+    const task = await tasks.requireForCwd(taskId, canonicalCwd);
+    if (task.sessionId !== sessionId) throw new Error('The task session does not match the requested agent session.');
+    if (!task.draftAttachmentIds.includes(attachmentId)) throw new Error('Only draft attachments can be deleted.');
+    await artifacts.attachmentInputs(taskId, [attachmentId]);
+    await agents.deleteAttachment(canonicalCwd, sessionId, attachmentId);
+  });
 handle('agent.turnClaim', async (event, cwd: unknown, taskId: unknown, sessionId?: unknown) => { assertTrustedRenderer(event); const canonicalCwd = await requireWorkspaceCwd(cwd); const id = idSchema.parse(taskId); await tasks.requireForCwd(id, canonicalCwd); const owner = typeof sessionId === 'string' && sessionId.length > 0 ? idSchema.parse(sessionId) : undefined; return context.taskTurns.claim(id, canonicalCwd, owner); });
 handle('agent.turnRelease', async (event, taskId: unknown, token: unknown) => { assertTrustedRenderer(event); context.taskTurns.release(idSchema.parse(taskId), idSchema.parse(token)); });
 handle('agent.turnStart', async (event, cwd: unknown, input: unknown) => {

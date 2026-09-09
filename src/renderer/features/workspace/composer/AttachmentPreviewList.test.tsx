@@ -24,7 +24,7 @@ describe('AttachmentPreviewList', () => {
     const openFile = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(window, 'lotagate', { configurable: true, value: { operations: { openFile } } });
 
-    render(<AttachmentPreviewList attachments={[{ id: 'artifact-1', name: 'pasted-file.txt', kind: 'text', source: 'pasted-text', size: 700, path: 'C:\\attachments\\pasted-file.txt', subtitle: 'A long pasted instruction…' }]} />);
+    render(<AttachmentPreviewList attachments={[{ id: 'artifact-1', name: 'pasted-file.txt', kind: 'text', source: 'pasted-text', size: 1200, path: 'C:\\attachments\\pasted-file.txt', subtitle: 'A long pasted instruction…' }]} />);
 
     expect(screen.getByText('A long pasted instruction…')).toBeInTheDocument();
     expect(screen.getByText('Pasted text')).toBeInTheDocument();

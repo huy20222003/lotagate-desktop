@@ -40,12 +40,20 @@ export function useWorkspaceAttachmentActions({ task, draftTaskRef, ensureDraftT
     const activeTask = await ensureDraftTask();
     if (!activeTask) return;
     const artifact = await window.lotagate.tasks.createTextArtifact(activeTask.id, PASTED_TEXT_ATTACHMENT_NAME, content, 'text', 'pasted-text');
-    await appendDraftAttachment(artifact);
+    try {
+      if (activeTask.sessionId !== undefined) await window.lotagate.agent.uploadAttachment(activeTask.cwd, { sessionId: activeTask.sessionId, taskId: activeTask.id, attachmentId: artifact.id });
+      await appendDraftAttachment(artifact);
+    } catch (error) {
+      if (activeTask.sessionId !== undefined) await window.lotagate.agent.deleteAttachment(activeTask.cwd, { sessionId: activeTask.sessionId, taskId: activeTask.id, attachmentId: artifact.id }).catch(() => undefined);
+      await window.lotagate.tasks.deleteArtifact(activeTask.id, artifact.id, true).catch(() => undefined);
+      throw error;
+    }
   }, [appendDraftAttachment, ensureDraftTask]);
 
   const removeAttachment = useCallback(async (attachmentId: string) => {
     const activeTask = draftTaskRef.current ?? task;
     if (!activeTask || !activeTask.draftAttachmentIds.includes(attachmentId)) return;
+    if (activeTask.sessionId !== undefined) await window.lotagate.agent.deleteAttachment(activeTask.cwd, { sessionId: activeTask.sessionId, taskId: activeTask.id, attachmentId });
     await window.lotagate.tasks.deleteArtifact(activeTask.id, attachmentId, true);
     const next = await window.lotagate.tasks.update(activeTask.id, { draftAttachmentIds: activeTask.draftAttachmentIds.filter(id => id !== attachmentId) });
     draftTaskRef.current = next;

@@ -4,7 +4,7 @@ import type { AttachmentPreview } from '../../../services/attachment-types.js';
 import { AgentMessage } from './AgentMessage.js';
 import { UserMessage } from './UserMessage.js';
 import type { TurnTiming } from './ElapsedTime.js';
-import type { OpenFileChangesHandler } from '../review/file-change-view.js';
+import type { OpenFileChangesHandler, OpenFileTargetHandler } from '../review/file-change-view.js';
 
 interface ChatMessageProps {
   activity: Activity;
@@ -17,11 +17,12 @@ interface ChatMessageProps {
   activities?: readonly Activity[];
   workspaceCwd: string;
   onOpenFileChanges: OpenFileChangesHandler;
+  onOpenAttachment?: OpenFileTargetHandler;
   onUndoFileChanges: (turnId: string) => Promise<void>;
 }
 
-export const ChatMessage = memo(function ChatMessage({ activity, attachments, artifacts, timing, fileChangeSummary, undoState, undoBusy, activities, workspaceCwd, onOpenFileChanges, onUndoFileChanges }: ChatMessageProps) {
-  if (activity.kind === 'user') return <UserMessage activity={activity} attachments={attachments} workspaceCwd={workspaceCwd} />;
+export const ChatMessage = memo(function ChatMessage({ activity, attachments, artifacts, timing, fileChangeSummary, undoState, undoBusy, activities, workspaceCwd, onOpenFileChanges, onOpenAttachment = () => undefined, onUndoFileChanges }: ChatMessageProps) {
+  if (activity.kind === 'user') return <UserMessage activity={activity} attachments={attachments} workspaceCwd={workspaceCwd} onOpenAttachment={onOpenAttachment} />;
   const streaming = timing?.endedAt === undefined && timing !== undefined;
   return <AgentMessage activity={activity} artifacts={artifacts} workspaceCwd={workspaceCwd} onUndoFileChanges={onUndoFileChanges} {...(undoState === undefined ? {} : { undoState })} {...(undoBusy === undefined ? {} : { undoBusy })} onOpenFileChanges={onOpenFileChanges} streaming={streaming} {...(timing === undefined ? {} : { timing })} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...(activities === undefined ? {} : { activities })} />;
 }, areChatMessagePropsEqual);
@@ -35,6 +36,7 @@ function areChatMessagePropsEqual(previous: ChatMessageProps, next: ChatMessageP
     && previous.undoBusy === next.undoBusy
     && previous.workspaceCwd === next.workspaceCwd
     && previous.onOpenFileChanges === next.onOpenFileChanges
+    && previous.onOpenAttachment === next.onOpenAttachment
     && previous.onUndoFileChanges === next.onUndoFileChanges
     && previous.timing?.startedAt === next.timing?.startedAt
     && previous.timing?.endedAt === next.timing?.endedAt

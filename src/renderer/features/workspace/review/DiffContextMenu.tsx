@@ -28,6 +28,7 @@ export function DiffContextMenu({ path, workspaceCwd, lineWrap, onToggleLineWrap
   const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     setOpenWith(false);
+    setSubmenuSide('right');
     setPosition({ x: Math.max(8, Math.min(event.clientX, window.innerWidth - 270)), y: Math.max(8, Math.min(event.clientY, window.innerHeight - 250)) });
   };
   const openOpenWith = () => {
@@ -37,9 +38,12 @@ export function DiffContextMenu({ path, workspaceCwd, lineWrap, onToggleLineWrap
       const submenu = submenuRef.current;
       if (menu === null || submenu === null) return;
       const menuBounds = menu.getBoundingClientRect();
-      const submenuWidth = submenu.getBoundingClientRect().width;
-      const opensRight = menuBounds.right + submenuWidth <= window.innerWidth;
-      setSubmenuSide(opensRight ? 'right' : 'left');
+      const submenuBounds = submenu.getBoundingClientRect();
+      const submenuWidth = submenuBounds.width;
+      const viewportWidth = window.visualViewport?.width ?? (document.documentElement.clientWidth || window.innerWidth);
+      const rightSpace = viewportWidth - menuBounds.right;
+      const fitsRight = rightSpace >= submenuWidth + 8 && submenuBounds.right <= viewportWidth - 8;
+      setSubmenuSide(fitsRight ? 'right' : 'left');
     });
   };
   return <div className="diff-context-menu-surface" onContextMenu={handleContextMenu}>{children}{position !== undefined ? <div ref={menuRef} className="diff-context-menu" style={{ left: position.x, top: position.y }} role="menu" aria-label={`Actions for ${displayFilePath(path)}`} onContextMenu={event => event.preventDefault()}>

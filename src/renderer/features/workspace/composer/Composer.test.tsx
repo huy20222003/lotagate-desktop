@@ -220,7 +220,7 @@ describe('Composer overlays', () => {
     />);
 
     const input = screen.getByRole('textbox', { name: 'Prompt' });
-    const pastedText = `First line\n${'content '.repeat(100)}`;
+    const pastedText = `First line\n${'content '.repeat(200)}`;
     fireEvent.paste(input, { clipboardData: { files: [], getData: () => pastedText } });
 
     await waitFor(() => expect(onAttachText).toHaveBeenCalledWith(pastedText));
@@ -234,7 +234,7 @@ describe('Composer overlays', () => {
       workspace={workspace()}
       thinking={false}
       task={taskWithDraft('')}
-      attachments={[{ id: 'artifact-1', name: 'pasted-file.txt', kind: 'text', source: 'pasted-text', size: 700 }]}
+      attachments={[{ id: 'artifact-1', name: 'pasted-file.txt', kind: 'text', source: 'pasted-text', size: 1200 }]}
       queuedMessages={[]}
       models={[]}
       selectedModel=""
