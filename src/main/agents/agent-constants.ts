@@ -1,3 +1,5 @@
+import { cliExecutableName } from './cli-executable-name.js';
+
 export const REQUIRED_DESKTOP_CAPABILITIES = ['execution-context', 'tool-allowlist', 'approval-reviews', 'lifecycle-controls', 'browser-host', 'execution-broker', 'intent-runtime', 'host-evidence', 'conversational-progress', 'local-memory-commands', 'extensions'] as const;
 export const CLI_REQUEST_TIMEOUTS_MS: Readonly<Record<string, number>> = {
   initialize: 15_000,
@@ -14,5 +16,5 @@ export const CLI_REQUEST_TIMEOUTS_MS: Readonly<Record<string, number>> = {
 export const CLI_DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 export const CLI_PROCESS_CLOSE_TIMEOUT_MS = 3_000;
 export const CLI_PACKAGE_JSON = '@lotagate/cli/package.json';
-export const CLI_EXECUTABLE = 'bin/lotagate.exe';
+export const CLI_EXECUTABLE = `bin/${cliExecutableName()}`;
 export const CLI_NODE_LAUNCHER = 'bin/lotagate.mjs';

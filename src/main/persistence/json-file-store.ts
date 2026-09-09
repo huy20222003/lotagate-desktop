@@ -1,5 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+
+import { renameWithRetry } from './atomic-file-operations.js';
 
 export class JsonFileStore<T> {
   private writeChain: Promise<void> = Promise.resolve();
@@ -45,7 +47,7 @@ export class JsonFileStore<T> {
     await mkdir(dirname(this.filePath), { recursive: true });
     const temporary = `${this.filePath}.${process.pid}.tmp`;
     await writeFile(temporary, JSON.stringify(value, null, 2), 'utf8');
-    await rename(temporary, this.filePath);
+    await renameWithRetry(temporary, this.filePath);
   }
 }
 

@@ -9,12 +9,13 @@ import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerRpm } from '@electron-forge/maker-rpm';
 import { generateRuntimeConfigArtifact } from './scripts/runtime-config-artifact.mjs';
+import { cliExecutableName } from './src/main/agents/cli-executable-name.js';
 
 const installerResource = (fileName: string): string => resolve(process.cwd(), 'resources', 'installer', fileName);
 const eulaPath = installerResource('eula.rtf');
 const wixUiTemplate = readFileSync(installerResource('wix-ui.xml'), 'utf8');
 const macInstallerIdentity = process.env['LOTAGATE_MAC_INSTALLER_IDENTITY']?.trim();
-const packagedCliExecutable = process.env['LOTAGATE_PACKAGED_CLI_PATH']?.trim() || resolve(process.cwd(), 'node_modules', '@lotagate', 'cli', 'bin', 'lotagate.exe');
+const packagedCliExecutable = process.env['LOTAGATE_PACKAGED_CLI_PATH']?.trim() || resolve(process.cwd(), 'node_modules', '@lotagate', 'cli', 'bin', cliExecutableName());
 const packagedExecutableName = 'lotagate-desktop';
 const runtimeConfigArtifact = generateRuntimeConfigArtifact(process.cwd());
 const removePackagedSourceMaps = (buildPath: string, _electronVersion: string, _platform: string, _arch: string, callback: (error?: Error | null) => void): void => {

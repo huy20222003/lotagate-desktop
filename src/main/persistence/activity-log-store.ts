@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 import { activitySchema, type Activity, type ActivityPage } from '../../contracts/ipc/v1/workspace.js';
+import { renameWithRetry } from './atomic-file-operations.js';
 import { ACTIVITY_LOG_VERSION, DEFAULT_COMPACTION_BYTES, DEFAULT_COMPACTION_OPERATIONS } from './persistence-constants.js';
 
 const activityAppendRecordSchema = z.object({
@@ -284,7 +285,7 @@ export class ActivityLogStore {
     const raw = validLines.length === 0 ? '' : `${validLines.join('\n')}\n`;
     const temporary = `${this.filePath}.${process.pid}.repair.tmp`;
     await writeFile(temporary, raw, 'utf8');
-    await rename(temporary, this.filePath);
+    await renameWithRetry(temporary, this.filePath);
   }
 
   private async appendRecord(record: ActivityLogRecord): Promise<void> {
@@ -325,7 +326,7 @@ export class ActivityLogStore {
     await mkdir(dirname(this.filePath), { recursive: true });
     const temporary = `${this.filePath}.${process.pid}.snapshot.tmp`;
     await writeFile(temporary, raw, 'utf8');
-    await rename(temporary, this.filePath);
+    await renameWithRetry(temporary, this.filePath);
     this.recordOperation(record);
   }
 }

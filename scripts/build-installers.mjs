@@ -91,7 +91,9 @@ if (!options.skipValidation) {
 
 const stagedCliPath = resolve(desktopRoot, '.tools', 'packaging', 'cli', targetId);
 await runNpm(['run', 'cli:prepare', '--', '--platform', targetPlatform, '--arch', options.arch, '--output', stagedCliPath], 'Staging target-specific CLI runtime');
-process.env['LOTAGATE_PACKAGED_CLI_PATH'] = resolve(stagedCliPath, 'lotagate.exe');
+const stagedCliManifest = JSON.parse(await readFile(resolve(stagedCliPath, 'manifest.json'), 'utf8'));
+if (typeof stagedCliManifest.binary !== 'string' || stagedCliManifest.binary.trim() === '') fail(`CLI staging manifest is missing the target binary name: ${resolve(stagedCliPath, 'manifest.json')}.`);
+process.env['LOTAGATE_PACKAGED_CLI_PATH'] = resolve(stagedCliPath, stagedCliManifest.binary);
 await rm(outputRoot, { recursive: true, force: true });
 await runNpm(['run', 'build'], 'Building Desktop bundles');
 process.env['LOTAGATE_BUILD_PLATFORM'] = targetPlatform;

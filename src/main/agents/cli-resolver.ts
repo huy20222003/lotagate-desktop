@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, join, sep } from 'node:path';
+import { cliExecutableName } from './cli-executable-name.js';
 import { CLI_EXECUTABLE, CLI_NODE_LAUNCHER, CLI_PACKAGE_JSON } from './agent-constants.js';
 
 export interface CliInvocation {
@@ -16,7 +17,8 @@ export class CliResolutionError extends Error {
 }
 
 export function resolveCliInvocation(): CliInvocation {
-  const packagedExecutable = typeof process.resourcesPath === 'string' ? join(process.resourcesPath, 'lotagate.exe') : undefined;
+  const nativeName = cliExecutableName();
+  const packagedExecutable = typeof process.resourcesPath === 'string' ? join(process.resourcesPath, nativeName) : undefined;
   if (packagedExecutable !== undefined && existsSync(packagedExecutable)) return { executable: packagedExecutable, executableArgs: [] };
 
   const require = createRequire(import.meta.url);
@@ -35,6 +37,7 @@ export function resolveCliInvocation(): CliInvocation {
   const candidates = [packagedPath, resolveAsarUnpacked(packagedPath)].filter((value): value is string => value !== undefined);
   const executable = candidates.find(candidate => existsSync(candidate));
   if (executable !== undefined) return { executable, executableArgs: [] };
+  if (existsSync(localLauncher)) return { executable: resolveNodeExecutable(), executableArgs: [localLauncher] };
   throw new CliResolutionError(`The @lotagate/cli executable was not installed at ${CLI_EXECUTABLE}.`);
 }
 

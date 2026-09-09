@@ -1,8 +1,7 @@
-import { access, copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const targetPackages = {
@@ -26,9 +25,15 @@ if (cliManifest?.name !== '@lotagate/cli' || typeof cliManifest.version !== 'str
   throw new Error('The installed @lotagate/cli package is missing or invalid.');
 }
 
+const cliTargets = await import(pathToFileURL(join(cliRoot, 'native-targets.mjs')).href);
+const cliNativeTarget = cliTargets.targetById(nativeTarget.nativeTarget);
+if (cliNativeTarget === undefined || typeof cliNativeTarget.binaryName !== 'string') {
+  throw new Error(`The installed @lotagate/cli package does not define native target ${nativeTarget.nativeTarget}.`);
+}
+
 const nativeRoot = await findNativePackage(nativeTarget.packageName, cliRoot);
 const nativeManifest = nativeRoot === undefined ? undefined : await readJson(join(nativeRoot, 'package.json'));
-const source = nativeRoot === undefined ? undefined : join(nativeRoot, 'bin', 'lotagate.exe');
+const source = nativeRoot === undefined ? undefined : join(nativeRoot, 'bin', cliNativeTarget.binaryName);
 if (nativeManifest?.name !== nativeTarget.packageName || nativeManifest.version !== cliManifest.version || nativeManifest.lotagateNative?.target !== nativeTarget.nativeTarget || typeof nativeManifest.lotagateNative?.sha256 !== 'string' || source === undefined || !(await isFile(source))) {
   throw new Error(`The target-specific native CLI package ${nativeTarget.packageName} is not installed or failed integrity metadata validation. Run npm ci on the native ${targetId} runner.`);
 }
@@ -37,11 +42,11 @@ const outputRoot = resolve(options.output ?? join(desktopRoot, '.tools', 'packag
 assertInsideDesktop(outputRoot);
 await rm(outputRoot, { recursive: true, force: true });
 await mkdir(outputRoot, { recursive: true });
-const destination = join(outputRoot, 'lotagate.exe');
+const destination = join(outputRoot, cliNativeTarget.binaryName);
 await copyFile(source, destination);
 const sha256 = await hash(destination);
-if (sha256 !== nativeManifest.lotagateNative.sha256) throw new Error(`The staged CLI checksum does not match ${nativePackageName}.`);
-await writeFile(join(outputRoot, 'manifest.json'), `${JSON.stringify({ version: 1, target: targetId, package: '@lotagate/cli', cliVersion: cliManifest.version, nativePackage: nativeTarget.packageName, nativeTarget: nativeTarget.nativeTarget, binary: 'lotagate.exe', sha256 }, null, 2)}\n`, 'utf8');
+if (sha256 !== nativeManifest.lotagateNative.sha256) throw new Error(`The staged CLI checksum does not match ${nativeTarget.packageName}.`);
+await writeFile(join(outputRoot, 'manifest.json'), `${JSON.stringify({ version: 1, target: targetId, package: '@lotagate/cli', cliVersion: cliManifest.version, nativePackage: nativeTarget.packageName, nativeTarget: nativeTarget.nativeTarget, binary: cliNativeTarget.binaryName, sha256 }, null, 2)}\n`, 'utf8');
 console.log(`Staged ${nativeTarget.packageName}@${cliManifest.version} for ${targetId}: ${destination}`);
 
 function parseOptions(args) {
