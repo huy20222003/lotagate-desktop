@@ -7,6 +7,7 @@ import type { WorkspaceRegistry } from '../workspaces/workspace-registry.js';
 import { SettingsService } from '../settings/settings-service.js';
 import { resolveTerminalShell } from './terminal-shell.js';
 import { MAX_INPUT_BYTES } from './terminal-constants.js';
+import { createChildProcessEnvironment } from '../process/process-environment.js';
 // The interactive terminal is an explicit user action. Agent-run commands
 // continue to use TerminalService's trusted-workspace and approval gates.
 
@@ -31,7 +32,7 @@ export class InteractiveTerminalService {
     const cwd = await this.workspaces.requireRegisteredRoot(value.cwd);
 
     const launch = resolveTerminalShell((await this.settings.get()).terminalShell);
-    const child = nodePty.spawn(launch.command, launch.args, { cwd, name: 'xterm-256color', cols: 120, rows: 30, env: { ...safeEnvironment(), FORCE_COLOR: '1', TERM: 'xterm-256color', COLORTERM: 'truecolor' } });
+    const child = nodePty.spawn(launch.command, launch.args, { cwd, name: 'xterm-256color', cols: 120, rows: 30, env: createChildProcessEnvironment({ overrides: { FORCE_COLOR: '1', TERM: 'xterm-256color', COLORTERM: 'truecolor' } }) });
     const id = randomUUID();
     this.sessions.set(id, { ownerId, cwd, child });
     child.onData(data => onOutput({ sessionId: id, data }));
@@ -72,11 +73,6 @@ export class InteractiveTerminalService {
     if (!session || session.ownerId !== ownerId) throw new Error('Terminal session was not found.');
     return session;
   }
-}
-
-function safeEnvironment(): NodeJS.ProcessEnv {
-  const allowed = ['PATH', 'Path', 'PATHEXT', 'SystemRoot', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'LANG', 'LC_ALL'];
-  return Object.fromEntries(allowed.flatMap(key => process.env[key] === undefined ? [] : [[key, process.env[key] as string]]));
 }
 
 function loadNodePty(): NodePtyModule {

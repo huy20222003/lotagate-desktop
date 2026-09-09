@@ -80,7 +80,7 @@ jobs:
           git config --global url."https://github.com/".insteadOf "git@github.com:"
 
       - name: Install locked dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci
 
       - name: Prepare public Desktop runtime configuration
         shell: bash

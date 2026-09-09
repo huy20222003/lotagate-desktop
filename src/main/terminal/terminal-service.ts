@@ -9,6 +9,7 @@ import { assertPathInside, requireDirectory } from '../security/path-policy.js';
 import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 import { terminateDesktopProcess } from '../process/process-termination.js';
+import { createChildProcessEnvironment } from '../process/process-environment.js';
 import { MAX_EVIDENCE_BYTES, MAX_EVIDENCE_RECORDS, MAX_OUTPUT_BYTES } from './terminal-constants.js';
 
 export interface TerminalResult { command: string; args: string[]; cwd: string; stdout: string; stderr: string; exitCode: number | null; truncated: boolean; durationMs: number; }
@@ -37,7 +38,7 @@ export class TerminalService {
     assertPathInside(cwd, workspace.rootPath);
     if (!value.approved && !isReadOnlyCommand(value.command, value.args)) throw new Error('This command requires explicit approval.');
     const started = Date.now();
-    const child = spawn(value.command, value.args, { cwd, shell: false, detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: safeEnvironment() });
+    const child = spawn(value.command, value.args, { cwd, shell: false, detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: createChildProcessEnvironment() });
     let stdout = ''; let stderr = ''; let truncated = false;
     const collect = (chunk: Buffer, target: 'stdout' | 'stderr') => {
       const available = MAX_OUTPUT_BYTES - Buffer.byteLength(stdout + stderr, 'utf8');
@@ -77,5 +78,4 @@ async function retainEvidence(values: TerminalEvidence[], retentionDays: number)
   return retained;
 }
 
-function safeEnvironment(): NodeJS.ProcessEnv { const allowed = ['PATH', 'Path', 'PATHEXT', 'SystemRoot', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'LANG', 'LC_ALL']; return Object.fromEntries(allowed.flatMap(key => process.env[key] === undefined ? [] : [[key, process.env[key] as string]])); }
 function redact(value: string): string { return value.replace(/Bearer\s+[^\s]+/giu, 'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]{8,}/gu, '[REDACTED]'); }

@@ -8,6 +8,7 @@ import { WHISPER_CPP_VERSION } from './speech-runtime-constants.mjs';
 
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outputRoot = resolve(desktopRoot, 'out', 'make');
+const electronRoot = resolve(desktopRoot, 'node_modules', 'electron');
 const minimumNodeMajor = 22;
 const wixVersion = '3.14.1';
 const wixDownloadUrl = 'https://github.com/wixtoolset/wix3/releases/download/wix314rtm/wix314-binaries.zip';
@@ -80,7 +81,7 @@ if (!(await hasForgeBinary())) {
   );
 }
 
-await runNpm(['run', 'release:prepare'], 'Preparing release runtime dependencies');
+await ensureElectronRuntime(targetPlatform, options.arch);
 await assertNativePrerequisites(plan);
 
 if (!options.skipValidation) {
@@ -157,6 +158,32 @@ async function hasNodeModules() {
   try {
     await access(resolve(desktopRoot, 'node_modules'), constants.F_OK);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureElectronRuntime(platform, arch) {
+  if (await electronRuntimeIsInstalled()) return;
+
+  await runNodeScript(
+    resolve(electronRoot, 'install.js'),
+    'Downloading the Electron runtime',
+    {
+      ELECTRON_INSTALL_PLATFORM: platform,
+      ELECTRON_INSTALL_ARCH: arch,
+    },
+  );
+
+  if (!(await electronRuntimeIsInstalled())) {
+    fail(`Electron runtime is not installed for ${platform}/${arch}.`);
+  }
+}
+
+async function electronRuntimeIsInstalled() {
+  try {
+    const platformPath = (await readFile(resolve(electronRoot, 'path.txt'), 'utf8')).trim();
+    return platformPath.length > 0 && (await fileExists(resolve(electronRoot, 'dist', platformPath)));
   } catch {
     return false;
   }

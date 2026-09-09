@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -44,6 +44,7 @@ await rm(outputRoot, { recursive: true, force: true });
 await mkdir(outputRoot, { recursive: true });
 const destination = join(outputRoot, cliNativeTarget.binaryName);
 await copyFile(source, destination);
+if (process.platform !== 'win32') await chmod(destination, 0o755);
 const sha256 = await hash(destination);
 if (sha256 !== nativeManifest.lotagateNative.sha256) throw new Error(`The staged CLI checksum does not match ${nativeTarget.packageName}.`);
 await writeFile(join(outputRoot, 'manifest.json'), `${JSON.stringify({ version: 1, target: targetId, package: '@lotagate/cli', cliVersion: cliManifest.version, nativePackage: nativeTarget.packageName, nativeTarget: nativeTarget.nativeTarget, binary: cliNativeTarget.binaryName, sha256 }, null, 2)}\n`, 'utf8');

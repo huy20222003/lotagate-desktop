@@ -17,6 +17,13 @@
   "engines": {
     "node": ">=22.0.0"
   },
+  "allowScripts": {
+    "@lotagate/cli@0.1.25": true,
+    "@swc/core@1.16.1": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "node-pty@1.1.0": true
+  },
   "scripts": {
     "dev": "npm run cli:build && electron-vite dev",
     "cli:build": "npm --prefix ../cli run build",
@@ -31,7 +38,6 @@
     "lint": "eslint .",
     "check:file-size": "node scripts/check-file-sizes.mjs",
     "cli:prepare": "node scripts/prepare-cli-runtime.mjs",
-    "release:prepare": "node scripts/prepare-release-dependencies.mjs",
     "speech:prepare": "node scripts/prepare-speech-runtime.mjs",
     "prepackage": "npm run speech:prepare",
     "package": "electron-forge package",

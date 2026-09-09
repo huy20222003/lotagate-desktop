@@ -7,6 +7,7 @@ import { SandboxUnavailableError } from './sandbox-execution-provider.js';
 import type { FileChangeDiff, FileDiffLine } from '../../contracts/ipc/v1/workspace.js';
 import { requireWorkspaceWritePath } from '../security/path-policy.js';
 import { terminateDesktopProcess } from '../process/process-termination.js';
+import { createChildProcessEnvironment } from '../process/process-environment.js';
 import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 
 export interface DesktopHostExecutionBrokerOptions {
@@ -149,7 +150,7 @@ function createPowerShellScriptArguments(script: string): string[] {
 
 function runProcess(command: string, args: string[], cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return new Promise(resolveResult => {
-    const child = spawn(command, args, { cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: safeEnvironment() });
+    const child = spawn(command, args, { cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: createChildProcessEnvironment() });
     let stdout = ''; let stderr = ''; let bytes = 0; let truncated = false; let timedOut = false; let settled = false;
     let stopping = false;
     let stopResult: Record<string, unknown> | undefined;
@@ -198,5 +199,4 @@ function createBoundedFileChange(filePath: string, before: string, after: string
   return { path: filePath || '.', lines, additions: Math.max(0, newLines.length - prefix - suffix), deletions: Math.max(0, oldLines.length - prefix - suffix), truncated: lines.length >= DESKTOP_RUNTIME_LIMITS.maxFileDiffLines || kind === 'created' && newLines.length > DESKTOP_RUNTIME_LIMITS.maxFileDiffLines };
 }
 function assertInside(candidate: string, root: string): void { const relativePath = relative(root, candidate); if (isAbsolute(relativePath) || relativePath === '..' || relativePath.startsWith(`..${sep}`)) throw new Error('Host execution path is outside the workspace boundary.'); }
-function safeEnvironment(): NodeJS.ProcessEnv { const allowed = ['PATH', 'Path', 'PATHEXT', 'SystemRoot', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'LANG', 'LC_ALL']; return Object.fromEntries(allowed.flatMap(key => process.env[key] === undefined ? [] : [[key, process.env[key] as string]])); }
 function redact(value: string): string { return value.replace(/Bearer\s+[^\s]+/giu, 'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]{8,}/gu, '[REDACTED]'); }
