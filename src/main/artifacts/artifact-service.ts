@@ -77,13 +77,15 @@ export class ArtifactService {
     }
   }
 
-  async createText(taskId: string, name: string, content: string, kind: Extract<Artifact['kind'], 'text' | 'markdown' | 'patch' | 'json'> = 'text'): Promise<Artifact> {
+  async createText(taskId: string, name: string, content: string, kind: Extract<Artifact['kind'], 'text' | 'markdown' | 'patch' | 'json'> = 'text', source?: Artifact['source']): Promise<Artifact> {
+    const size = Buffer.byteLength(content, 'utf8');
+    if (size === 0 || size > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new Error('The text attachment exceeds the supported size limit.');
     const safeName = basename(name).replace(/[^A-Za-z0-9._-]/gu, '_').slice(0, 120) || 'artifact.txt';
     const directory = join(desktopDataPath('artifacts'), taskId);
     await mkdir(directory, { recursive: true });
     const path = join(directory, `${randomUUID()}-${safeName}`);
     await writeFile(path, content, 'utf8');
-    const artifact = artifactSchema.parse({ id: randomUUID(), taskId, name: safeName, path, kind, size: Buffer.byteLength(content, 'utf8'), createdAt: new Date().toISOString() });
+    const artifact = artifactSchema.parse({ id: randomUUID(), taskId, name: safeName, path, kind, ...(source === undefined ? {} : { source }), size, createdAt: new Date().toISOString() });
     await this.store.update(current => [...current, artifact]);
     return artifact;
   }

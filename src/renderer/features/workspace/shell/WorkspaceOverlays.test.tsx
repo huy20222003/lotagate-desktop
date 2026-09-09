@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DesktopApprovalRequest } from '../../../../contracts/ipc/v1/approval.js';
 import { FileChangesDrawer, InlineApproval } from './WorkspaceOverlays.js';
 import { SourcesDrawer } from '../artifacts/SourcesDrawer.js';
+import { ApprovalPrompt, type ApprovalDescriptor } from '../../../components/approval/ApprovalPrompt.js';
 
 const request: DesktopApprovalRequest = {
   approvalId: 'approval-1',
@@ -19,6 +20,13 @@ const request: DesktopApprovalRequest = {
   detail: { summary: 'Run command: npm test', command: 'npm test' },
   risk: 'normal',
 };
+const composerApproval: ApprovalDescriptor = {
+  approvalId: request.approvalId,
+  toolName: request.toolName,
+  displayName: request.displayName ?? request.toolName,
+  kind: request.kind ?? 'unknown',
+  detail: request.detail,
+};
 
 describe('InlineApproval', () => {
   afterEach(() => cleanup());
@@ -29,6 +37,7 @@ describe('InlineApproval', () => {
     expect(screen.getByText('Run command: npm test')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Yes, allow' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'No, deny' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
@@ -38,7 +47,7 @@ describe('InlineApproval', () => {
     expect(screen.queryByText('This filesystem.read operation may change workspace or external state.')).not.toBeInTheDocument();
   });
 
-  it('sends the selected decision and prevents duplicate submissions', async () => {
+  it('submits the decision and prevents duplicate submissions', async () => {
     let resolveDecision: (() => void) | undefined;
     const onDecision = vi.fn(() => new Promise<void>(resolve => { resolveDecision = resolve; }));
     render(<InlineApproval request={request} onDecision={onDecision} />);
@@ -63,6 +72,21 @@ describe('InlineApproval', () => {
     expect(allow).toHaveFocus();
   });
 
+  it('moves the composer approval focus to Other with the arrow keys', () => {
+    render(<ApprovalPrompt request={composerApproval} onDecision={vi.fn(async () => undefined)} />);
+    const allow = screen.getByRole('button', { name: 'Yes, allow' });
+    const deny = screen.getByRole('button', { name: 'No, deny' });
+    const other = screen.getByRole('textbox', { name: 'Other approval instruction' });
+
+    expect(allow).toHaveFocus();
+    fireEvent.keyDown(allow, { key: 'ArrowDown' });
+    expect(deny).toHaveFocus();
+    fireEvent.keyDown(deny, { key: 'ArrowDown' });
+    expect(other).toHaveFocus();
+    fireEvent.keyDown(other, { key: 'ArrowUp' });
+    expect(deny).toHaveFocus();
+  });
+
   it('confirms the focused Yes decision with Enter', async () => {
     const onDecision = vi.fn(async () => undefined);
     render(<InlineApproval request={request} onDecision={onDecision} />);
@@ -84,6 +108,32 @@ describe('InlineApproval', () => {
 
     await waitFor(() => expect(onDecision).toHaveBeenCalledWith(true));
   });
+
+  it('submits a custom Other instruction only after Enter', async () => {
+    const onDecision = vi.fn(async () => undefined);
+    render(<ApprovalPrompt request={{ approvalId: 'approval-other', toolName: request.toolName, displayName: request.displayName ?? 'Shell command', kind: request.kind ?? 'shell', detail: request.detail }} onDecision={onDecision} />);
+
+    const input = screen.getByRole('textbox', { name: 'Other approval instruction' });
+    expect(input).toHaveAttribute('placeholder', 'Other');
+    fireEvent.change(input, { target: { value: 'Run the command after checking the package lock.' } });
+    expect(onDecision).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(onDecision).toHaveBeenCalledWith({ decision: 'redirect', message: 'Run the command after checking the package lock.' }));
+  });
+
+  it('only changes the selected composer decision until Submit is clicked', async () => {
+    const onDecision = vi.fn(async () => undefined);
+    render(<ApprovalPrompt request={{ approvalId: 'approval-select', toolName: request.toolName, displayName: request.displayName ?? 'Shell command', kind: request.kind ?? 'shell', detail: request.detail }} onDecision={onDecision} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'No, deny' }));
+    expect(onDecision).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, allow' }));
+    expect(onDecision).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+
+    await waitFor(() => expect(onDecision).toHaveBeenCalledWith({ decision: 'allow' }));
+  });
 });
 
 describe('FileChangesDrawer', () => {
@@ -91,8 +141,9 @@ describe('FileChangesDrawer', () => {
 
   it('collapses long unchanged regions and opens file content in a tab', async () => {
     const readFile = vi.fn().mockResolvedValue('const completeFile = true;\nsecond line;');
+    const openFile = vi.fn().mockResolvedValue(undefined);
     const fileSuggestions = vi.fn().mockResolvedValue([{ path: 'README.md', kind: 'file' as const }]);
-    Object.defineProperty(window, 'lotagate', { configurable: true, value: { git: { readFile }, workspaces: { fileSuggestions } } });
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { git: { readFile }, operations: { openFile }, workspaces: { fileSuggestions } } });
     const contextLines = Array.from({ length: 9 }, (_, index) => ({ kind: 'context' as const, text: `context-${index + 1}`, oldLine: index + 1, newLine: index + 1 }));
     render(<FileChangesDrawer cwd="/workspace" summary={{ additions: 1, deletions: 1, files: [{ path: 'src/file.ts', additions: 1, deletions: 1, truncated: false, lines: [...contextLines, { kind: 'deletion', text: 'old line', oldLine: 10 }, { kind: 'addition', text: 'new line', newLine: 10 }] }] }} onClose={() => undefined} />);
     const drawer = screen.getByRole('complementary', { name: 'Changed files' });
@@ -112,10 +163,12 @@ describe('FileChangesDrawer', () => {
     const fileHeader = document.querySelector<HTMLElement>('.file-change-item-header.is-expandable');
     expect(fileHeader).not.toBeNull();
     if (fileHeader === null) throw new Error('File change header was not rendered.');
-    const filePath = screen.getByText('src/file.ts', { selector: 'strong' });
+    const filePath = screen.getByRole('button', { name: 'src/file.ts' });
     expect(filePath).not.toHaveAttribute('title');
     fireEvent.pointerMove(filePath, { pointerType: 'mouse' });
     expect(await screen.findByRole('tooltip')).toHaveTextContent('src/file.ts');
+    fireEvent.click(filePath);
+    expect(openFile).toHaveBeenCalledWith('/workspace/src/file.ts');
     fireEvent.click(fileHeader);
     expect(fileHeader).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('button', { name: '3 unmodified lines' })).not.toBeInTheDocument();

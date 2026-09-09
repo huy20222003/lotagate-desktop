@@ -17,6 +17,12 @@ describe('agent markdown renderer', () => {
     expect(screen.getByText('const value = 1;')).toBeInTheDocument();
   });
 
+  it('removes parser boundary newlines from fenced code', () => {
+    render(<AgentMarkdown content={'```\n\n123\n98765\n95t\nplk\n\n```'} />);
+
+    expect(document.querySelector('.markdown-code-block pre')?.textContent).toBe('123\n98765\n95t\nplk');
+  });
+
   it('renders Mermaid fences as clickable diagrams with a source copy action', async () => {
     render(<AgentMarkdown content={'```mermaid\nflowchart TD\n  A[Start] --> B[Done]\n```'} />);
 

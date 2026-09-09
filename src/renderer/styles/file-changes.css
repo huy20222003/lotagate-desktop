@@ -62,7 +62,10 @@
 .file-change-item pre { margin: 0; padding: 7px 0; background: transparent; color: var(--color-text-secondary); font: 12px/1.6 var(--font-code, ui-monospace, SFMono-Regular, Consolas, monospace); }
 .unified-diff-scroll { overflow: hidden; }
 .unified-diff-scroll .scrollbar-viewport { height: auto; overflow: auto; }
+.unified-diff-scroll pre { width: 100%; min-width: 100%; }
+.unified-diff-scroll.is-no-wrap pre { width: max-content; }
 .unified-diff-scroll.is-no-wrap .diff-line { white-space: pre; overflow-wrap: normal; }
+.unified-diff-scroll.is-no-wrap .diff-line { width: 100%; grid-template-columns: 48px max-content; }
 .diff-context-menu-surface { position: relative; min-width: 0; }
 .diff-context-menu { position: fixed; z-index: 200; display: grid; min-width: 248px; overflow: visible; border: 1px solid var(--color-border); border-radius: 8px; padding: 5px; background: var(--color-surface-popover); box-shadow: 0 16px 38px var(--shadow-popover); }
 .diff-context-menu-item { display: flex; min-height: 32px; align-items: center; gap: 9px; width: 100%; border: 0; border-radius: 5px; padding: 0 9px; background: transparent; color: var(--color-text-secondary); font: inherit; font-size: 12px; text-align: left; white-space: nowrap; }
@@ -72,7 +75,7 @@
 .diff-context-menu-submenu-wrap { position: relative; }
 .diff-context-menu-submenu { top: -5px; left: calc(100% - 4px); position: absolute; min-width: 190px; }
 .diff-context-menu-submenu.is-left { right: calc(100% - 4px); left: auto; }
-.diff-line { display: grid; grid-template-columns: 48px minmax(0, 1fr); padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff-line { display: grid; min-width: 100%; box-sizing: border-box; grid-template-columns: 48px minmax(0, 1fr); padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .diff-line-number { padding-right: 12px; color: var(--color-diff-context-fg); font-size: 13px; font-variant-numeric: tabular-nums; line-height: inherit; text-align: right; user-select: none; }
 .diff-line.diff-addition .diff-line-number { color: var(--color-diff-added-border); }
 .diff-line.diff-deletion .diff-line-number { color: var(--color-diff-deleted-border); }

@@ -70,6 +70,7 @@ export const artifactSchema = z.object({
   name: z.string().min(1),
   path: z.string().min(1),
   kind: z.enum(['markdown', 'text', 'image', 'audio', 'video', 'patch', 'json', 'binary']),
+  source: z.enum(['pasted-text']).optional(),
   size: z.number().nonnegative(),
   createdAt: z.string().datetime(),
   deletedAt: z.string().datetime().optional(),
@@ -178,7 +179,7 @@ export interface DesktopTaskApi {
   artifacts(taskId: string): Promise<Artifact[]>;
   pickArtifact(taskId: string): Promise<Artifact | null>;
   importArtifact(taskId: string, sourcePath: string): Promise<Artifact>;
-  createTextArtifact(taskId: string, name: string, content: string, kind?: 'text' | 'markdown' | 'patch' | 'json'): Promise<Artifact>;
+  createTextArtifact(taskId: string, name: string, content: string, kind?: 'text' | 'markdown' | 'patch' | 'json', source?: 'pasted-text'): Promise<Artifact>;
   createImageArtifact(taskId: string, name: string, bytes: Uint8Array): Promise<Artifact>;
   deleteArtifact(taskId: string, artifactId: string, confirmed: boolean): Promise<void>;
   previewArtifact(taskId: string, artifactId: string): Promise<ArtifactPreview>;

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { CliAgentProcess, type CliAgentDiagnostic, type CliAgentEventHandler } from './cli-agent-process.js';
 import { resolveCliInvocation } from './cli-resolver.js';
 import type { DesktopAgentResult, DesktopEvent, DesktopExecutionPolicy, DesktopHostRequest, DesktopHostResponse, DesktopReasoningEffort, DesktopSkillSelection } from '../../contracts/agent-protocol/v1/desktop.js';
+import type { DesktopApprovalDecision } from '../../contracts/ipc/v1/approval.js';
 import { requireDirectory } from '../security/path-policy.js';
 import { CACHE_TTL_MS } from '../cache/cache-policy.js';
 import type { PersistentCache } from '../cache/persistent-cache.js';
@@ -94,7 +95,7 @@ export class AgentManager {
   }
 
   async turnCancel(cwd: string, turnId: string): Promise<unknown> { return this.requestOnBinding(await this.bindingForTurn(cwd, turnId), 'turn.cancel', { turnId }); }
-  async approvalRespond(cwd: string, input: { approvalId: string; approved: boolean }): Promise<unknown> {
+  async approvalRespond(cwd: string, input: { approvalId: string; decision: DesktopApprovalDecision['decision']; message?: string }): Promise<unknown> {
     const binding = await this.bindingForApproval(cwd, input.approvalId);
     try { return await this.requestOnBinding(binding, 'approval.respond', input); }
     finally { if (this.approvalBindings.get(input.approvalId) === binding) this.approvalBindings.delete(input.approvalId); }

@@ -3,6 +3,7 @@ import { Globe2 } from 'lucide-react';
 import type { Artifact } from '../../../../contracts/ipc/v1/workspace.js';
 import { Icon, Tooltip } from '../../../components/ui.js';
 import { fileIconFor } from '../../../components/file-icon.js';
+import { openFilePath } from '../../../services/open-file.js';
 
 export interface MessageFileReference {
   path: string;
@@ -35,7 +36,7 @@ export function MessageExternalLink({ href, children }: { href: string; children
 function MessageFileLink({ reference }: { reference: MessageFileReference }) {
   const name = fileName(reference.path);
   const FileIcon = fileIconFor({ name, kind: reference.kind });
-  return <Tooltip label={displayPath(reference.path)}><a className="message-file-reference" href="#open-file" onClick={event => { event.preventDefault(); void window.lotagate.operations.openFile(reference.path).catch(() => undefined); }}><Icon icon={FileIcon} size={14} /><span>{name}</span></a></Tooltip>;
+  return <Tooltip label={displayPath(reference.path)}><a className="message-file-reference" href="#open-file" onClick={event => { event.preventDefault(); openFilePath(reference.path); }}><Icon icon={FileIcon} size={14} /><span>{name}</span></a></Tooltip>;
 }
 
 function tokenizeMessage(content: string, references: readonly MessageFileReference[], highlightPromptTokens: boolean): MessageToken[] {

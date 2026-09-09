@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Task, Workspace } from '../../../../contracts/ipc/v1/workspace.js';
@@ -186,6 +186,79 @@ describe('Composer overlays', () => {
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveValue('');
     expect(onSend).toHaveBeenCalledWith('hello', undefined);
     resolveSend?.();
+  });
+
+  it('converts a direct long-text paste into a text attachment request', async () => {
+    const onAttachText = vi.fn().mockResolvedValue(undefined);
+    render(<Composer
+      disabled={false}
+      workspace={workspace()}
+      thinking={false}
+      task={taskWithDraft('')}
+      attachments={[]}
+      queuedMessages={[]}
+      models={[]}
+      selectedModel=""
+      selectedEffort="medium"
+      onModel={vi.fn()}
+      onEffort={vi.fn()}
+      busy={false}
+      onSend={vi.fn().mockResolvedValue(undefined)}
+      onRunCommand={vi.fn().mockResolvedValue(false)}
+      onCancel={vi.fn().mockResolvedValue(undefined)}
+      onDraft={vi.fn().mockResolvedValue(undefined)}
+      onAttach={vi.fn().mockResolvedValue(undefined)}
+      onAttachImage={vi.fn().mockResolvedValue(undefined)}
+      onAttachText={onAttachText}
+      onRemoveAttachment={vi.fn().mockResolvedValue(undefined)}
+      onSteerQueued={vi.fn().mockResolvedValue(undefined)}
+      onRemoveQueued={vi.fn().mockResolvedValue(undefined)}
+      onEditQueued={vi.fn().mockResolvedValue(undefined)}
+      approvalMode="auto"
+      onApprovalMode={vi.fn()}
+      onApproval={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    const input = screen.getByRole('textbox', { name: 'Prompt' });
+    const pastedText = `First line\n${'content '.repeat(100)}`;
+    fireEvent.paste(input, { clipboardData: { files: [], getData: () => pastedText } });
+
+    await waitFor(() => expect(onAttachText).toHaveBeenCalledWith(pastedText));
+    expect(input).toHaveValue('');
+  });
+
+  it('sends an attachment-only paste with a non-empty transport prompt', () => {
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    render(<Composer
+      disabled={false}
+      workspace={workspace()}
+      thinking={false}
+      task={taskWithDraft('')}
+      attachments={[{ id: 'artifact-1', name: 'pasted-file.txt', kind: 'text', source: 'pasted-text', size: 700 }]}
+      queuedMessages={[]}
+      models={[]}
+      selectedModel=""
+      selectedEffort="medium"
+      onModel={vi.fn()}
+      onEffort={vi.fn()}
+      busy={false}
+      onSend={onSend}
+      onRunCommand={vi.fn().mockResolvedValue(false)}
+      onCancel={vi.fn().mockResolvedValue(undefined)}
+      onDraft={vi.fn().mockResolvedValue(undefined)}
+      onAttach={vi.fn().mockResolvedValue(undefined)}
+      onAttachImage={vi.fn().mockResolvedValue(undefined)}
+      onRemoveAttachment={vi.fn().mockResolvedValue(undefined)}
+      onSteerQueued={vi.fn().mockResolvedValue(undefined)}
+      onRemoveQueued={vi.fn().mockResolvedValue(undefined)}
+      onEditQueued={vi.fn().mockResolvedValue(undefined)}
+      approvalMode="auto"
+      onApprovalMode={vi.fn()}
+      onApproval={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(onSend).toHaveBeenCalledWith('Please review the attached pasted text.', undefined);
   });
 
   it('opens reasoning effort card, controls effort via slider, and separates model selection popover', () => {

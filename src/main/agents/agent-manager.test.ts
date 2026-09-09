@@ -16,7 +16,7 @@ describe('AgentManager response routing', () => {
       internals.approvalBindings.set('approval-1', binding);
       internals.trustBindings.set('trust-1', binding);
 
-      await manager.approvalRespond(canonicalRoot, { approvalId: 'approval-1', approved: true });
+      await manager.approvalRespond(canonicalRoot, { approvalId: 'approval-1', decision: 'allow' });
       await manager.trustRespond(canonicalRoot, { trustRequestId: 'trust-1', trusted: true });
 
       expect(internals.approvalBindings.has('approval-1')).toBe(false);

@@ -4,13 +4,15 @@ import type { QueuedMessage } from './message-queue-service.js';
 import { replaceAssistantResponse, type AssistantReplacementInput, type PendingAssistantStream } from '../conversation/streaming-activity.js';
 import { contextCompactionActivityId } from '../conversation/context-compaction-activity.js';
 import { DESKTOP_CONTEXT_COMPACTION_ID_METADATA_KEY } from '../../../../contracts/ipc/v1/workspace.js';
+import { pastedTextPreview } from '../../../services/pasted-text.js';
 
 export async function loadAttachmentPreviews(taskId: string, attachmentIds: readonly string[] = [], availableArtifacts?: Artifact[]): Promise<AttachmentPreview[]> {
   const artifacts = (availableArtifacts ?? await window.lotagate.tasks.artifacts(taskId)).filter(artifact => attachmentIds.includes(artifact.id));
   return Promise.all(artifacts.map(async artifact => {
     const preview = await window.lotagate.tasks.previewArtifact(taskId, artifact.id).catch(() => undefined);
     const dataUrl = preview?.dataUrl;
-    return { id: artifact.id, name: artifact.name, kind: artifact.kind, size: artifact.size, path: artifact.path, ...(dataUrl ? { dataUrl } : {}) };
+    const subtitle = artifact.source === 'pasted-text' ? pastedTextPreview(preview?.content) : undefined;
+    return { id: artifact.id, name: artifact.name, kind: artifact.kind, size: artifact.size, path: artifact.path, ...(artifact.source === undefined ? {} : { source: artifact.source }), ...(dataUrl ? { dataUrl } : {}), ...(subtitle === undefined ? {} : { subtitle }) };
   }));
 }
 

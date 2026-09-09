@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { BrowserWindow } from 'electron';
 import { assertTrustedRenderer } from './sender-policy.js';
 import { automationCreateInputSchema, automationUpdateInputSchema } from '../../contracts/ipc/v1/automation.js';
-import { desktopApprovalInputSchema } from '../../contracts/ipc/v1/approval.js';
+import { desktopApprovalDecisionSchema, desktopApprovalInputSchema } from '../../contracts/ipc/v1/approval.js';
 import type { IpcRegistrationContext } from './ipc-registration-context.js';
 import { fileOpenDestinationSchema } from '../../contracts/ipc/v1/settings.js';
 
@@ -28,11 +28,12 @@ handle('browser.stopRecording', async (event, id: unknown) => { assertTrustedRen
 handle('browser.list', async event => { assertTrustedRenderer(event); return browser.list(); });
 handle('browser.evidence', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.evidence(idSchema.parse(id)); });
 handle('approval.request', async (event, input: unknown) => { assertTrustedRenderer(event); return approvals.request(desktopApprovalInputSchema.parse(input)); });
-handle('approval.respond', async (event, approvalId: unknown, approved: unknown, owner?: unknown) => {
+handle('approval.respond', async (event, approvalId: unknown, response: unknown, owner?: unknown) => {
     assertTrustedRenderer(event);
     const ownerValue = owner === undefined ? undefined : z.object({ taskId: idSchema.optional(), sessionId: idSchema.optional() }).strict().parse(owner);
     const parsedOwner = ownerValue === undefined ? undefined : { ...(ownerValue.taskId === undefined ? {} : { taskId: ownerValue.taskId }), ...(ownerValue.sessionId === undefined ? {} : { sessionId: ownerValue.sessionId }) };
-    return approvals.respond(idSchema.parse(approvalId), z.boolean().parse(approved), parsedOwner);
+    const parsedResponse = typeof response === 'boolean' ? response : desktopApprovalDecisionSchema.parse(response);
+    return approvals.respond(idSchema.parse(approvalId), parsedResponse, parsedOwner);
   });
 handle('automation.list', async event => { assertTrustedRenderer(event); return automations.list(); });
 handle('automation.get', async (event, id: unknown) => { assertTrustedRenderer(event); return automations.get(idSchema.parse(id)); });

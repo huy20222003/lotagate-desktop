@@ -26,13 +26,24 @@ export const desktopApprovalRequestSchema = desktopApprovalInputSchema.extend({
   requestedAt: z.string().datetime(),
 }).strict();
 
-export interface DesktopApprovalResolution { approvalId: string; approved: boolean; result?: unknown }
+export const desktopApprovalDecisionSchema = z.discriminatedUnion('decision', [
+  z.object({ decision: z.literal('allow') }).strict(),
+  z.object({ decision: z.literal('deny') }).strict(),
+  z.object({ decision: z.literal('redirect'), message: z.string().trim().min(1).max(512 * 1024) }).strict(),
+]);
+
+export type DesktopApprovalDecision =
+  | { decision: 'allow' }
+  | { decision: 'deny' }
+  | { decision: 'redirect'; message: string };
+export type DesktopApprovalResponse = DesktopApprovalDecision | boolean;
+export interface DesktopApprovalResolution { approvalId: string; approved: boolean; decision: DesktopApprovalDecision['decision']; message?: string; result?: unknown }
 export type DesktopApprovalInput = z.input<typeof desktopApprovalInputSchema>;
 export type DesktopApprovalRequest = z.infer<typeof desktopApprovalRequestSchema>;
 
 export interface DesktopApprovalApi {
   request(input: DesktopApprovalInput): Promise<DesktopApprovalResolution>;
-  respond(approvalId: string, approved: boolean, owner?: { taskId?: string; sessionId?: string }): Promise<DesktopApprovalResolution>;
+  respond(approvalId: string, decision: DesktopApprovalResponse, owner?: { taskId?: string; sessionId?: string }): Promise<DesktopApprovalResolution>;
   onRequest(listener: (request: DesktopApprovalRequest) => void): () => void;
   onResolved(listener: (resolution: DesktopApprovalResolution) => void): () => void;
 }

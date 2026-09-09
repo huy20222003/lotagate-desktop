@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 're
 import type { FileOpenDestination } from '../../../../contracts/ipc/v1/settings.js';
 import { Icon } from '../../../components/ui.js';
 import { useClipboard } from '../../../hooks/use-clipboard.js';
+import { openFilePath } from '../../../services/open-file.js';
 import { absoluteWorkspacePath, displayFilePath, relativeWorkspaceFilePath } from './file-change-view.js';
 
 export function DiffContextMenu({ path, workspaceCwd, lineWrap, onToggleLineWrap, children }: { path: string; workspaceCwd?: string | undefined; lineWrap: boolean; onToggleLineWrap: () => void; children: ReactNode }) {
@@ -22,7 +23,7 @@ export function DiffContextMenu({ path, workspaceCwd, lineWrap, onToggleLineWrap
     document.addEventListener('keydown', closeOnEscape);
     return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', closeOnEscape); };
   }, [position]);
-  const open = (destination?: FileOpenDestination) => { setPosition(undefined); void window.lotagate.operations.openFile(absolutePath, destination).catch(() => undefined); };
+  const open = (destination?: FileOpenDestination) => { setPosition(undefined); openFilePath(absolutePath, destination); };
   const copyValue = (value: string) => { setPosition(undefined); void copy(value); };
   const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -38,8 +39,7 @@ export function DiffContextMenu({ path, workspaceCwd, lineWrap, onToggleLineWrap
       const menuBounds = menu.getBoundingClientRect();
       const submenuWidth = submenu.getBoundingClientRect().width;
       const opensRight = menuBounds.right + submenuWidth <= window.innerWidth;
-      const fitsLeft = menuBounds.left >= submenuWidth;
-      setSubmenuSide(opensRight || !fitsLeft ? 'right' : 'left');
+      setSubmenuSide(opensRight ? 'right' : 'left');
     });
   };
   return <div className="diff-context-menu-surface" onContextMenu={handleContextMenu}>{children}{position !== undefined ? <div ref={menuRef} className="diff-context-menu" style={{ left: position.x, top: position.y }} role="menu" aria-label={`Actions for ${displayFilePath(path)}`} onContextMenu={event => event.preventDefault()}>

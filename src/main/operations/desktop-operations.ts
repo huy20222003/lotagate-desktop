@@ -51,10 +51,16 @@ export class DesktopOperations {
 }
 
 function openInVsCode(path: string): Promise<void> {
-  const command = process.platform === 'win32' ? 'code.cmd' : 'code';
+  const windows = process.platform === 'win32';
+  const command = windows ? (process.env['ComSpec'] ?? 'cmd.exe') : 'code';
+  const args = windows ? ['/d', '/s', '/c', `call code.cmd --reuse-window ${escapeWindowsCommandArgument(path)}`] : ['--reuse-window', path];
   return new Promise((resolve, reject) => {
-    const child = spawn(command, ['--reuse-window', path], { detached: true, shell: false, windowsHide: true, stdio: 'ignore' });
+    const child = spawn(command, args, { detached: true, shell: false, windowsHide: true, stdio: 'ignore' });
     child.once('error', reject);
     child.once('spawn', () => { child.unref(); resolve(); });
   });
+}
+
+function escapeWindowsCommandArgument(value: string): string {
+  return value.replace(/[\s&|<>()^%]/gu, character => `^${character}`);
 }

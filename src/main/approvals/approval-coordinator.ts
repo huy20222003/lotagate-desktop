@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { desktopApprovalInputSchema, desktopApprovalRequestSchema, type DesktopApprovalInput, type DesktopApprovalRequest, type DesktopApprovalResolution } from '../../contracts/ipc/v1/approval.js';
+import { desktopApprovalInputSchema, desktopApprovalRequestSchema, type DesktopApprovalDecision, type DesktopApprovalInput, type DesktopApprovalRequest, type DesktopApprovalResolution, type DesktopApprovalResponse } from '../../contracts/ipc/v1/approval.js';
 import { DEFAULT_TIMEOUT_MS } from './approval-constants.js';
 
 type PendingApproval = {
   request: DesktopApprovalRequest;
   resolve: (resolution: DesktopApprovalResolution) => void;
   reject: (reason: unknown) => void;
-  onDecision?: (approved: boolean) => Promise<unknown>;
+  onDecision?: (decision: DesktopApprovalDecision) => Promise<unknown>;
   isAvailable?: () => boolean;
   timer: ReturnType<typeof setTimeout>;
 };
@@ -30,7 +30,7 @@ export class ApprovalCoordinator {
     return [...this.pending.values()].map(item => item.request);
   }
 
-  request(input: DesktopApprovalInput, onDecision?: (approved: boolean) => Promise<unknown>, options?: { isAvailable?: () => boolean }): Promise<DesktopApprovalResolution> {
+  request(input: DesktopApprovalInput, onDecision?: (decision: DesktopApprovalDecision) => Promise<unknown>, options?: { isAvailable?: () => boolean }): Promise<DesktopApprovalResolution> {
     const parsed = desktopApprovalInputSchema.parse(input);
     const request = desktopApprovalRequestSchema.parse({ ...parsed, approvalId: parsed.approvalId ?? randomUUID(), requestedAt: new Date().toISOString() });
     if (this.pending.has(request.approvalId)) throw new Error('An approval with this id is already pending.');
@@ -41,27 +41,28 @@ export class ApprovalCoordinator {
     });
   }
 
-  async respond(approvalId: string, approved: boolean, owner?: { taskId?: string; sessionId?: string }): Promise<DesktopApprovalResolution> {
+  async respond(approvalId: string, response: DesktopApprovalResponse, owner?: { taskId?: string; sessionId?: string }): Promise<DesktopApprovalResolution> {
     const pending = this.pending.get(approvalId);
     if (pending === undefined) throw new Error('This approval is no longer active.');
     if (!approvalOwnerMatches(pending.request, owner)) throw new Error('This approval belongs to a different session.');
+    const decision = normalizeDecision(response);
     this.pending.delete(approvalId);
     clearTimeout(pending.timer);
     if (pending.isAvailable?.() === false) {
-      const resolution = { approvalId, approved: false };
+      const resolution = { approvalId, approved: false, decision: 'deny' as const };
       pending.resolve(resolution);
       for (const listener of this.resolutionListeners) listener(resolution);
       return resolution;
     }
     try {
-      const result = pending.onDecision === undefined ? undefined : await pending.onDecision(approved);
-      const resolution = { approvalId, approved, ...(result === undefined ? {} : { result }) };
+      const result = pending.onDecision === undefined ? undefined : await pending.onDecision(decision);
+      const resolution = { approvalId, approved: decision.decision === 'allow', decision: decision.decision, ...(decision.decision === 'redirect' ? { message: decision.message } : {}), ...(result === undefined ? {} : { result }) };
       pending.resolve(resolution);
       for (const listener of this.resolutionListeners) listener(resolution);
       return resolution;
     } catch (error) {
       if (pending.isAvailable?.() === false) {
-        const resolution = { approvalId, approved: false };
+        const resolution = { approvalId, approved: false, decision: 'deny' as const };
         pending.resolve(resolution);
         for (const listener of this.resolutionListeners) listener(resolution);
         return resolution;
@@ -89,7 +90,7 @@ export class ApprovalCoordinator {
   private resolveCancelled(pending: PendingApproval): void {
     if (!this.pending.delete(pending.request.approvalId)) return;
     clearTimeout(pending.timer);
-    const resolution = { approvalId: pending.request.approvalId, approved: false };
+    const resolution = { approvalId: pending.request.approvalId, approved: false, decision: 'deny' as const };
     pending.resolve(resolution);
     for (const listener of this.resolutionListeners) listener(resolution);
   }
@@ -98,6 +99,12 @@ export class ApprovalCoordinator {
     const pending = this.pending.get(approvalId);
     if (pending !== undefined) this.resolveCancelled(pending);
   }
+}
+
+function normalizeDecision(response: DesktopApprovalResponse): DesktopApprovalDecision {
+  if (typeof response === 'boolean') return { decision: response ? 'allow' : 'deny' };
+  if (response.decision === 'redirect' && response.message.trim().length === 0) throw new Error('Approval redirect requires a message.');
+  return response;
 }
 
 function approvalOwnerMatches(request: DesktopApprovalRequest, owner: { taskId?: string; sessionId?: string } | undefined): boolean {

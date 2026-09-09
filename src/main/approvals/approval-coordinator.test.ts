@@ -14,7 +14,22 @@ describe('ApprovalCoordinator', () => {
     const resolution = await coordinator.respond(request!.approvalId, true);
     expect(await pending).toMatchObject({ approvalId: request!.approvalId, approved: true });
     expect(resolution.result).toEqual({ status: 'done' });
-    expect(onDecision).toHaveBeenCalledWith(true);
+    expect(onDecision).toHaveBeenCalledWith({ decision: 'allow' });
+  });
+
+  it('forwards a redirect instruction without converting it into a denial', async () => {
+    const coordinator = new ApprovalCoordinator();
+    const onRequest = vi.fn();
+    const onDecision = vi.fn().mockResolvedValue({ status: 'redirected' });
+    coordinator.onRequest(onRequest);
+    const pending = coordinator.request({ source: 'agent', surface: 'composer', toolName: 'filesystem.write', detail: { path: 'file.txt' } }, onDecision);
+    const request = onRequest.mock.calls[0]?.[0];
+
+    const resolution = await coordinator.respond(request!.approvalId, { decision: 'redirect', message: 'Inspect the file first.' });
+
+    expect(onDecision).toHaveBeenCalledWith({ decision: 'redirect', message: 'Inspect the file first.' });
+    expect(resolution).toMatchObject({ approvalId: request!.approvalId, approved: false, decision: 'redirect', message: 'Inspect the file first.', result: { status: 'redirected' } });
+    await expect(pending).resolves.toMatchObject({ decision: 'redirect' });
   });
 
   it('rejects a second response after the approval has been resolved', async () => {

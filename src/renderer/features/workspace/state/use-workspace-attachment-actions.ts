@@ -2,6 +2,7 @@ import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction 
 import type { Artifact, Task } from '../../../../contracts/ipc/v1/workspace.js';
 import type { AttachmentPreview } from '../../../services/attachment-types.js';
 import { loadAttachmentPreviews } from './workspace-controller-helpers.js';
+import { PASTED_TEXT_ATTACHMENT_NAME } from '../../../services/pasted-text.js';
 
 interface WorkspaceAttachmentActionsOptions {
   readonly task: Task | undefined;
@@ -35,6 +36,13 @@ export function useWorkspaceAttachmentActions({ task, draftTaskRef, ensureDraftT
     await appendDraftAttachment(artifact);
   }, [appendDraftAttachment, ensureDraftTask]);
 
+  const attachText = useCallback(async (content: string) => {
+    const activeTask = await ensureDraftTask();
+    if (!activeTask) return;
+    const artifact = await window.lotagate.tasks.createTextArtifact(activeTask.id, PASTED_TEXT_ATTACHMENT_NAME, content, 'text', 'pasted-text');
+    await appendDraftAttachment(artifact);
+  }, [appendDraftAttachment, ensureDraftTask]);
+
   const removeAttachment = useCallback(async (attachmentId: string) => {
     const activeTask = draftTaskRef.current ?? task;
     if (!activeTask || !activeTask.draftAttachmentIds.includes(attachmentId)) return;
@@ -45,5 +53,5 @@ export function useWorkspaceAttachmentActions({ task, draftTaskRef, ensureDraftT
     setAttachments(current => current.filter(item => item.id !== attachmentId));
   }, [draftTaskRef, setAttachments, setTask, task]);
 
-  return { appendDraftAttachment, pickArtifact, attachImage, removeAttachment };
+  return { appendDraftAttachment, pickArtifact, attachImage, attachText, removeAttachment };
 }

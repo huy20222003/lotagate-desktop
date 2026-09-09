@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Folder, Paperclip, RotateCcw, Send, Square, Zap } from 'lucide-react';
 import type { Task, Workspace, WorkspaceFileSuggestion } from '../../../../contracts/ipc/v1/workspace.js';
-import type { DesktopApprovalRequest } from '../../../../contracts/ipc/v1/approval.js';
+import type { DesktopApprovalDecision, DesktopApprovalRequest } from '../../../../contracts/ipc/v1/approval.js';
 import { Button, Dropdown, Icon, IconButton, Modal, Spinner, TextArea } from '../../../components/ui.js';
 import { Scrollbar } from '../../../components/Scrollbar.js';
 import type { AttachmentPreview } from '../../../services/attachment-types.js';
@@ -23,6 +23,7 @@ import { fileIconFor } from '../../../components/file-icon.js';
 import { DESKTOP_REASONING_EFFORTS, type DesktopReasoningEffort } from '../../../../contracts/agent-protocol/v1/desktop.js';
 import { ContextWindowUsageIndicator } from './ContextWindowUsage.js';
 import type { ContextWindowUsage } from '../context-window-usage.js';
+import { isLongPastedText, PASTED_TEXT_PROMPT } from '../../../services/pasted-text.js';
 
 export { AttachmentPreviewList } from './AttachmentPreviewList.js';
 
@@ -259,7 +260,7 @@ function ComposerModelPicker({ models, selectedModel, selectedEffort, onModel, o
   );
 }
 
-export function Composer({ disabled, workspace, thinking, task, attachments, queuedMessages, models, selectedModel, onModel, selectedEffort, onEffort, busy, error, onSend, onRunCommand, onCancel, onDraft, onAttach, onAttachImage, onRemoveAttachment, onSteerQueued, onRemoveQueued, onEditQueued, approval, approvalMode, onApprovalMode, onApproval, showContextWindowUsage = false, contextUsage }: { disabled: boolean; workspace?: Workspace | undefined; thinking: boolean; task?: Task | undefined; attachments: AttachmentPreview[]; queuedMessages: readonly QueuedMessage[]; models: WorkspaceModelOption[]; selectedModel: string; onModel: (model: string) => void; selectedEffort: DesktopReasoningEffort; onEffort: (effort: DesktopReasoningEffort) => void; busy: boolean; error?: string | undefined; onSend: (prompt: string, options?: PromptSendOptions) => Promise<void>; onRunCommand: (invocation: DesktopCommandInvocation, preview: string) => Promise<boolean>; onCancel: () => Promise<void>; onDraft: (draft: string) => Promise<void>; onAttach: () => Promise<void>; onAttachImage: (name: string, bytes: Uint8Array) => Promise<void>; onRemoveAttachment: (attachmentId: string) => Promise<void>; onSteerQueued: (id: string) => Promise<void>; onRemoveQueued: (id: string) => Promise<void>; onEditQueued: (id: string) => Promise<QueuedMessage | undefined>; approval?: DesktopApprovalRequest | undefined; approvalMode: ApprovalMode; onApprovalMode: (mode: ApprovalMode) => void; onApproval: (approved: boolean) => Promise<void>; showContextWindowUsage?: boolean; contextUsage?: ContextWindowUsage }) {
+export function Composer({ disabled, workspace, thinking, task, attachments, queuedMessages, models, selectedModel, onModel, selectedEffort, onEffort, busy, error, onSend, onRunCommand, onCancel, onDraft, onAttach, onAttachImage, onAttachText, onRemoveAttachment, onSteerQueued, onRemoveQueued, onEditQueued, approval, approvalMode, onApprovalMode, onApproval, showContextWindowUsage = false, contextUsage }: { disabled: boolean; workspace?: Workspace | undefined; thinking: boolean; task?: Task | undefined; attachments: AttachmentPreview[]; queuedMessages: readonly QueuedMessage[]; models: WorkspaceModelOption[]; selectedModel: string; onModel: (model: string) => void; selectedEffort: DesktopReasoningEffort; onEffort: (effort: DesktopReasoningEffort) => void; busy: boolean; error?: string | undefined; onSend: (prompt: string, options?: PromptSendOptions) => Promise<void>; onRunCommand: (invocation: DesktopCommandInvocation, preview: string) => Promise<boolean>; onCancel: () => Promise<void>; onDraft: (draft: string) => Promise<void>; onAttach: () => Promise<void>; onAttachImage: (name: string, bytes: Uint8Array) => Promise<void>; onAttachText?: (content: string) => Promise<void>; onRemoveAttachment: (attachmentId: string) => Promise<void>; onSteerQueued: (id: string) => Promise<void>; onRemoveQueued: (id: string) => Promise<void>; onEditQueued: (id: string) => Promise<QueuedMessage | undefined>; approval?: DesktopApprovalRequest | undefined; approvalMode: ApprovalMode; onApprovalMode: (mode: ApprovalMode) => void; onApproval: (decision: DesktopApprovalDecision) => Promise<void>; showContextWindowUsage?: boolean; contextUsage?: ContextWindowUsage }) {
   const [draft, setDraft] = useState(task?.draft ?? '');
   const [suggestions, setSuggestions] = useState<WorkspaceFileSuggestion[]>([]);
   const [cursor, setCursor] = useState(0);
@@ -292,6 +293,20 @@ export function Composer({ disabled, workspace, thinking, task, attachments, que
     input.style.overflowY = input.scrollHeight > PROMPT_INPUT_MAX_HEIGHT ? 'auto' : 'hidden';
   }, []);
   const displayDraft = promptInputDisplayValue(draft);
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input || onAttachText === undefined) return;
+    const handlePastedText = (event: ClipboardEvent): void => {
+      const clipboardData = event.clipboardData;
+      if (!clipboardData || clipboardData.files.length > 0) return;
+      const pastedText = clipboardData.getData('text/plain');
+      if (!isLongPastedText(pastedText)) return;
+      event.preventDefault();
+      void onAttachText(pastedText);
+    };
+    input.addEventListener('paste', handlePastedText);
+    return () => input.removeEventListener('paste', handlePastedText);
+  }, [onAttachText]);
   useLayoutEffect(() => {
     resizePromptInput();
     const selection = pendingSelection.current;
@@ -319,7 +334,7 @@ export function Composer({ disabled, workspace, thinking, task, attachments, que
   const chooseSlashCommand = (next: SlashCommandDefinition) => { setSlashPickerDismissed(false); setSlashCommand(next); setSlashForm(createSlashCommandForm(next, models)); setDraft(''); void onDraft(''); setSuggestions([]); setSlashError(undefined); setSlashValidationAttempted(false); setSlashCommandIndex(0); };
   const chooseSkill = (next: Pick<ExtensionRow, 'name'>) => { const value = `/${next.name} `; setSlashPickerDismissed(false); setDraft(value); setCursor(value.length); void onDraft(value); setSuggestions([]); setSlashCommandIndex(0); window.requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(value.length, value.length); }); };
   const clearSlashCommand = () => { setSlashCommand(undefined); setSlashForm(createSlashCommandForm()); setSlashError(undefined); setSlashValidationAttempted(false); setSlashCommandIndex(0); setSlashPickerDismissed(false); setDraft(''); void onDraft(''); window.requestAnimationFrame(() => inputRef.current?.focus()); };
-  const send = async () => { if (disabled || busy) return; if (slashCommand) { setSlashValidationAttempted(true); try { const invocation = createSlashInvocation(slashCommand, slashForm); const preview = slashCommandPreview(slashCommand, slashForm); setSlashCommand(undefined); setSlashForm(createSlashCommandForm()); setSlashError(undefined); setSlashValidationAttempted(false); await onRunCommand(invocation, preview); } catch (reason) { setSlashError(reason instanceof Error ? reason.message : 'Unable to run slash command.'); } return; } const value = draft.trim(); if (!value) return; const skillMatch = /^\/([^\s]+)(?:\s+([\s\S]*))?$/u.exec(value); const skillName = skillMatch?.[1]; const skill = skillName === undefined ? undefined : skillRows.find(row => row.name === skillName); const requestedScope = skillMatch?.[2]?.trim(); const options: PromptSendOptions | undefined = skill === undefined ? undefined : { skills: [skill.name], agentPrompt: requestedScope ? `Use the selected skill "${skill.name}" for this request.\n\nRequested scope:\n${requestedScope}` : `Use the selected skill "${skill.name}" for this request.` }; setDraft(''); void onDraft(''); setSuggestions([]); setSuggestionIndex(0); setVoiceError(undefined); await onSend(value, options); };
+  const send = async () => { if (disabled || busy) return; if (slashCommand) { setSlashValidationAttempted(true); try { const invocation = createSlashInvocation(slashCommand, slashForm); const preview = slashCommandPreview(slashCommand, slashForm); setSlashCommand(undefined); setSlashForm(createSlashCommandForm()); setSlashError(undefined); setSlashValidationAttempted(false); await onRunCommand(invocation, preview); } catch (reason) { setSlashError(reason instanceof Error ? reason.message : 'Unable to run slash command.'); } return; } const value = draft.trim(); const prompt = value || (attachments.some(attachment => attachment.source === 'pasted-text') ? PASTED_TEXT_PROMPT : ''); if (!prompt) return; const skillMatch = /^\/([^\s]+)(?:\s+([\s\S]*))?$/u.exec(value); const skillName = skillMatch?.[1]; const skill = skillName === undefined ? undefined : skillRows.find(row => row.name === skillName); const requestedScope = skillMatch?.[2]?.trim(); const options: PromptSendOptions | undefined = skill === undefined ? undefined : { skills: [skill.name], agentPrompt: requestedScope ? `Use the selected skill "${skill.name}" for this request.\n\nRequested scope:\n${requestedScope}` : `Use the selected skill "${skill.name}" for this request.` }; setDraft(''); void onDraft(''); setSuggestions([]); setSuggestionIndex(0); setVoiceError(undefined); await onSend(prompt, options); };
   const completeVoiceInput = useCallback((transcript: string) => { const spoken = transcript.trim(); if (!spoken) return; const next = draft.trimEnd() ? `${draft.trimEnd()} ${spoken}` : spoken; setDraft(next); void onDraft(next); setVoiceError(undefined); }, [draft, onDraft]);
   const options = models.map(model => ({ value: model.id, label: model.label }));
   const approvalOptions = [{ value: 'auto', label: 'Approve for me' }, { value: 'ask', label: 'Ask for approval' }];
