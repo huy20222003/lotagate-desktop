@@ -12,4 +12,9 @@ describe('resolveTerminalShell', () => {
   it('fails clearly when Git Bash is selected but not installed', () => {
     expect(() => resolveTerminalShell('git-bash', 'win32', {}, () => false)).toThrow('Git Bash is not installed');
   });
+
+  it('uses the configured macOS login shell and defaults to zsh', () => {
+    expect(resolveTerminalShell('git-bash', 'darwin', { SHELL: '/bin/fish' })).toEqual({ command: '/bin/fish', args: ['--login', '-i'] });
+    expect(resolveTerminalShell('git-bash', 'darwin', {})).toEqual({ command: '/bin/zsh', args: ['--login', '-i'] });
+  });
 });

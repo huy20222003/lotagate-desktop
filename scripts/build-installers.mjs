@@ -80,6 +80,7 @@ if (!(await hasForgeBinary())) {
   );
 }
 
+await runNpm(['run', 'release:prepare'], 'Preparing release runtime dependencies');
 await assertNativePrerequisites(plan);
 
 if (!options.skipValidation) {

@@ -31,6 +31,7 @@
     "lint": "eslint .",
     "check:file-size": "node scripts/check-file-sizes.mjs",
     "cli:prepare": "node scripts/prepare-cli-runtime.mjs",
+    "release:prepare": "node scripts/prepare-release-dependencies.mjs",
     "speech:prepare": "node scripts/prepare-speech-runtime.mjs",
     "prepackage": "npm run speech:prepare",
     "package": "electron-forge package",

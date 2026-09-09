@@ -16,6 +16,11 @@ export class CliResolutionError extends Error {
   }
 }
 
+export interface CliPackageResolutionOptions {
+  exists?: (path: string) => boolean;
+  nodeExecutable?: string;
+}
+
 export function resolveCliInvocation(): CliInvocation {
   const nativeName = cliExecutableName();
   const packagedExecutable = typeof process.resourcesPath === 'string' ? join(process.resourcesPath, nativeName) : undefined;
@@ -30,15 +35,18 @@ export function resolveCliInvocation(): CliInvocation {
   }
 
   const packageRoot = dirname(packageJsonPath);
-  const localLauncher = join(packageRoot, CLI_NODE_LAUNCHER);
-  if (existsSync(join(packageRoot, '.git')) && existsSync(localLauncher)) return { executable: resolveNodeExecutable(), executableArgs: [localLauncher] };
+  return resolveCliPackageInvocation(packageRoot);
+}
 
+export function resolveCliPackageInvocation(packageRoot: string, options: CliPackageResolutionOptions = {}): CliInvocation {
+  const exists = options.exists ?? existsSync;
+  const localLauncher = join(packageRoot, CLI_NODE_LAUNCHER);
+  if (exists(join(packageRoot, '.git')) && exists(localLauncher)) return { executable: options.nodeExecutable ?? resolveNodeExecutable(), executableArgs: [localLauncher] };
   const packagedPath = join(packageRoot, CLI_EXECUTABLE);
   const candidates = [packagedPath, resolveAsarUnpacked(packagedPath)].filter((value): value is string => value !== undefined);
-  const executable = candidates.find(candidate => existsSync(candidate));
+  const executable = candidates.find(candidate => exists(candidate));
   if (executable !== undefined) return { executable, executableArgs: [] };
-  if (existsSync(localLauncher)) return { executable: resolveNodeExecutable(), executableArgs: [localLauncher] };
-  throw new CliResolutionError(`The @lotagate/cli executable was not installed at ${CLI_EXECUTABLE}.`);
+  throw new CliResolutionError(`The packaged @lotagate/cli executable was not installed at ${CLI_EXECUTABLE}. Reinstall LotaGate Desktop to restore the complete application package.`);
 }
 
 function resolveNodeExecutable(): string {

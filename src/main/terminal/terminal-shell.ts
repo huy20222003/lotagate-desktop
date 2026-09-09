@@ -11,7 +11,8 @@ export function resolveTerminalShell(shell: TerminalShell, platform = process.pl
   if (shell === 'cmd') return platform === 'win32'
     ? { command: 'cmd.exe', args: ['/d', '/q'] }
     : { command: environment['SHELL'] ?? '/bin/sh', args: ['-i'] };
-  if (platform !== 'win32') return { command: 'bash', args: ['--login', '-i'] };
+  if (platform === 'darwin') return { command: environment['SHELL']?.trim() || '/bin/zsh', args: ['--login', '-i'] };
+  if (platform !== 'win32') return { command: environment['SHELL']?.trim() || '/bin/sh', args: ['--login', '-i'] };
   const joinWindowsPath = win32.join;
   const candidates = [
     environment['ProgramFiles'] === undefined ? undefined : joinWindowsPath(environment['ProgramFiles'], 'Git', 'bin', 'bash.exe'),

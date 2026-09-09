@@ -72,8 +72,15 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - name: Configure HTTPS for Git dependencies
+        shell: bash
+        run: |
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://github.com/".insteadOf "git+ssh://git@github.com/"
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+
       - name: Install locked dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Prepare public Desktop runtime configuration
         shell: bash
