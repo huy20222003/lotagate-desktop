@@ -17,4 +17,5 @@ export const CLI_DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 export const CLI_PROCESS_CLOSE_TIMEOUT_MS = 3_000;
 export const CLI_PACKAGE_JSON = '@lotagate/cli/package.json';
 export const CLI_EXECUTABLE = `bin/${cliExecutableName()}`;
+export const CLI_NATIVE_EXECUTABLE = 'bin/lotagate.exe';
 export const CLI_NODE_LAUNCHER = 'bin/lotagate.mjs';

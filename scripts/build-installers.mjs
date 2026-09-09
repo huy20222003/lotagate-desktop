@@ -9,6 +9,7 @@ import { WHISPER_CPP_VERSION } from './speech-runtime-constants.mjs';
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outputRoot = resolve(desktopRoot, 'out', 'make');
 const electronRoot = resolve(desktopRoot, 'node_modules', 'electron');
+const cliRoot = resolve(desktopRoot, 'node_modules', '@lotagate', 'cli');
 const minimumNodeMajor = 22;
 const wixVersion = '3.14.1';
 const wixDownloadUrl = 'https://github.com/wixtoolset/wix3/releases/download/wix314rtm/wix314-binaries.zip';
@@ -82,6 +83,7 @@ if (!(await hasForgeBinary())) {
 }
 
 await ensureElectronRuntime(targetPlatform, options.arch);
+await ensureCliRuntime();
 await assertNativePrerequisites(plan);
 
 if (!options.skipValidation) {
@@ -187,6 +189,13 @@ async function electronRuntimeIsInstalled() {
   } catch {
     return false;
   }
+}
+
+async function ensureCliRuntime() {
+  await runNodeScript(
+    resolve(cliRoot, 'scripts', 'install-native.mjs'),
+    'Preparing the @lotagate/cli native runtime',
+  );
 }
 
 async function hasForgeBinary() {

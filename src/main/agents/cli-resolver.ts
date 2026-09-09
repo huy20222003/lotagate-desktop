@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, join, sep } from 'node:path';
 import { cliExecutableName } from './cli-executable-name.js';
-import { CLI_EXECUTABLE, CLI_NODE_LAUNCHER, CLI_PACKAGE_JSON } from './agent-constants.js';
+import { CLI_EXECUTABLE, CLI_NATIVE_EXECUTABLE, CLI_NODE_LAUNCHER, CLI_PACKAGE_JSON } from './agent-constants.js';
 
 export interface CliInvocation {
   executable: string;
@@ -19,6 +19,7 @@ export class CliResolutionError extends Error {
 export interface CliPackageResolutionOptions {
   exists?: (path: string) => boolean;
   nodeExecutable?: string;
+  platform?: NodeJS.Platform;
 }
 
 export function resolveCliInvocation(): CliInvocation {
@@ -42,8 +43,11 @@ export function resolveCliPackageInvocation(packageRoot: string, options: CliPac
   const exists = options.exists ?? existsSync;
   const localLauncher = join(packageRoot, CLI_NODE_LAUNCHER);
   if (exists(join(packageRoot, '.git')) && exists(localLauncher)) return { executable: options.nodeExecutable ?? resolveNodeExecutable(), executableArgs: [localLauncher] };
-  const packagedPath = join(packageRoot, CLI_EXECUTABLE);
-  const candidates = [packagedPath, resolveAsarUnpacked(packagedPath)].filter((value): value is string => value !== undefined);
+  const packagedPaths = [...new Set([
+    join(packageRoot, `bin/${cliExecutableName(options.platform)}`),
+    join(packageRoot, CLI_NATIVE_EXECUTABLE),
+  ])];
+  const candidates = packagedPaths.flatMap(packagedPath => [packagedPath, resolveAsarUnpacked(packagedPath)]).filter((value): value is string => value !== undefined);
   const executable = candidates.find(candidate => exists(candidate));
   if (executable !== undefined) return { executable, executableArgs: [] };
   throw new CliResolutionError(`The packaged @lotagate/cli executable was not installed at ${CLI_EXECUTABLE}. Reinstall LotaGate Desktop to restore the complete application package.`);

@@ -21,6 +21,15 @@ describe('resolveCliInvocation', () => {
     expect(() => resolveCliPackageInvocation('C:\\app.asar\\node_modules\\@lotagate\\cli', { exists: () => false })).toThrow(/packaged @lotagate\/cli executable was not installed/u);
   });
 
+  it('resolves the native package artifact on Unix hosts', () => {
+    const invocation = resolveCliPackageInvocation('/app/node_modules/@lotagate/cli', {
+      platform: 'linux',
+      exists: path => path.replaceAll('\\', '/').endsWith('/bin/lotagate.exe'),
+    });
+    expect(invocation.executable.replaceAll('\\', '/')).toBe('/app/node_modules/@lotagate/cli/bin/lotagate.exe');
+    expect(invocation.executableArgs).toEqual([]);
+  });
+
   it('keeps the Node launcher fallback limited to a linked development package', () => {
     const invocation = resolveCliPackageInvocation('C:\\workspace\\cli', {
       exists: path => path.endsWith('\\.git') || path.endsWith('\\bin\\lotagate.mjs'),
