@@ -249,11 +249,11 @@ repository secrets `LOTAGATE_GCP_WORKLOAD_IDENTITY_PROVIDER` and
 configured Drive folder. `LOTAGATE_SPEECH_MODEL_URL` is an optional repository
 variable for a public HTTPS mirror containing the exact pinned model; when it
 is absent, the official whisper.cpp model URL is used. The release jobs also
-require the GitHub Repository Variables `LOTAGATE_API_BASE_URL`,
+require the GitHub Repository Secrets `LOTAGATE_API_BASE_URL`,
 `LOTAGATE_TRUSTED_ORIGIN`, and the base64 DER SubjectPublicKeyInfo
 `LOTAGATE_DESKTOP_UPDATE_PUBLIC_KEY`; `LOTAGATE_REMOTE_SERVER_URL` and
-`LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX` are optional and default to an empty
-remote URL and `api/v1`. If the remote URL is configured, also configure the
+`LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX` are optional repository secrets that
+default to an empty remote URL and `api/v1`. If the remote URL is configured, also configure the
 shared `LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN` as a GitHub Repository Secret.
 The workflow materializes these values into a temporary `.env` file so Forge
 can generate the packaged `runtime.dat`; the file is never committed. The

@@ -141,7 +141,10 @@ function isPowerShellExecutable(command: string): boolean {
 
 function createPowerShellScriptArguments(script: string): string[] {
   const command = `${script}\n$__lotagateExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }\nexit $__lotagateExitCode`;
-  return ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')];
+  // `shell: false` keeps Node and the operating system from interpolating the
+  // script. PowerShell still evaluates the script intentionally through its
+  // own `-Command` argument, which is the host execution contract here.
+  return ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command];
 }
 
 function runProcess(command: string, args: string[], cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Record<string, unknown>> {

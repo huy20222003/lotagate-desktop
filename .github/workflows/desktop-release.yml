@@ -78,16 +78,16 @@ jobs:
       - name: Prepare public Desktop runtime configuration
         shell: bash
         env:
-          LOTAGATE_API_BASE_URL: ${{ vars.LOTAGATE_API_BASE_URL }}
-          LOTAGATE_TRUSTED_ORIGIN: ${{ vars.LOTAGATE_TRUSTED_ORIGIN }}
-          LOTAGATE_REMOTE_SERVER_URL: ${{ vars.LOTAGATE_REMOTE_SERVER_URL }}
-          LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX: ${{ vars.LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX }}
+          LOTAGATE_API_BASE_URL: ${{ secrets.LOTAGATE_API_BASE_URL }}
+          LOTAGATE_TRUSTED_ORIGIN: ${{ secrets.LOTAGATE_TRUSTED_ORIGIN }}
+          LOTAGATE_REMOTE_SERVER_URL: ${{ secrets.LOTAGATE_REMOTE_SERVER_URL }}
+          LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX: ${{ secrets.LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX }}
           LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN: ${{ secrets.LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN }}
           LOTAGATE_DESKTOP_UPDATE_PUBLIC_KEY: ${{ secrets.LOTAGATE_DESKTOP_UPDATE_PUBLIC_KEY }}
         run: |
           set -euo pipefail
           if [[ -z "${LOTAGATE_API_BASE_URL}" || -z "${LOTAGATE_TRUSTED_ORIGIN}" || -z "${LOTAGATE_DESKTOP_UPDATE_PUBLIC_KEY}" ]]; then
-            echo "::error::Configure LOTAGATE_API_BASE_URL, LOTAGATE_TRUSTED_ORIGIN, and LOTAGATE_DESKTOP_UPDATE_PUBLIC_KEY as GitHub Repository Variables before running the Desktop release workflow."
+            echo "::error::Configure LOTAGATE_API_BASE_URL, LOTAGATE_TRUSTED_ORIGIN, and LOTAGATE_DESKTOP_UPDATE_PUBLIC_KEY as GitHub Repository Secrets before running the Desktop release workflow."
             exit 1
           fi
           if [[ -n "${LOTAGATE_REMOTE_SERVER_URL}" && -z "${LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN}" ]]; then
