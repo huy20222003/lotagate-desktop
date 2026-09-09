@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cliExecutableName } from './cli-executable-name.js';
 import { resolveCliInvocation, resolveCliPackageInvocation } from './cli-resolver.js';
@@ -31,10 +32,12 @@ describe('resolveCliInvocation', () => {
   });
 
   it('keeps the Node launcher fallback limited to a linked development package', () => {
-    const invocation = resolveCliPackageInvocation('C:\\workspace\\cli', {
-      exists: path => path.endsWith('\\.git') || path.endsWith('\\bin\\lotagate.mjs'),
+    const packageRoot = join('workspace', 'cli');
+    const launcher = join(packageRoot, 'bin', 'lotagate.mjs');
+    const invocation = resolveCliPackageInvocation(packageRoot, {
+      exists: path => path === join(packageRoot, '.git') || path === launcher,
       nodeExecutable: 'node.exe',
     });
-    expect(invocation).toEqual({ executable: 'node.exe', executableArgs: ['C:\\workspace\\cli\\bin\\lotagate.mjs'] });
+    expect(invocation).toEqual({ executable: 'node.exe', executableArgs: [launcher] });
   });
 });
