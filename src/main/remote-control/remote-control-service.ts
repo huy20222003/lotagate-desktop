@@ -204,7 +204,6 @@ export class RemoteControlService {
     const trustRequests = [...this.pendingTrustRequests.values()].map(request => ({ ...request }));
     if (taskId === undefined) return { generatedAt: new Date().toISOString(), workspaces: summaries, approvals, trustRequests };
     const task = await this.options.tasks.require(taskId);
-    const workspace = workspaces.find(item => item.id === task.workspaceId);
     const activities = (await this.options.tasks.activitiesPage(task.id, { limit: MAX_ACTIVITY_ITEMS })).activities.map(item => ({ ...item, text: limitText(item.text), metadata: sanitizeValue(item.metadata) as Record<string, unknown> }));
     const [commands, skills, models, artifacts] = await Promise.all([this.options.agents.commandList(task.cwd).catch(() => undefined), this.options.agents.commandExecuteResult(task.cwd, { actionId: 'skill.list', positionals: [], options: {} }).catch(() => undefined), this.options.agents.modelList(task.cwd).catch(() => undefined), this.options.artifacts.list(task.id).catch(() => [])]);
     const attachmentByActivity = Object.fromEntries(activities.flatMap(activity => {

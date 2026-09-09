@@ -249,8 +249,9 @@ repository secrets `LOTAGATE_GCP_WORKLOAD_IDENTITY_PROVIDER` and
 configured Drive folder. `LOTAGATE_SPEECH_MODEL_URL` is an optional repository
 variable for a public HTTPS mirror containing the exact pinned model; when it
 is absent, the official whisper.cpp model URL is used. The release jobs also
-require the GitHub Repository Secrets `LOTAGATE_API_BASE_URL` and
-`LOTAGATE_TRUSTED_ORIGIN`; `LOTAGATE_REMOTE_SERVER_URL` and
+require the GitHub Repository Variables `LOTAGATE_API_BASE_URL`,
+`LOTAGATE_TRUSTED_ORIGIN`, and the base64 DER SubjectPublicKeyInfo
+`LOTAGATE_DESKTOP_UPDATE_PUBLIC_KEY`; `LOTAGATE_REMOTE_SERVER_URL` and
 `LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX` are optional and default to an empty
 remote URL and `api/v1`. If the remote URL is configured, also configure the
 shared `LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN` as a GitHub Repository Secret.
@@ -281,8 +282,11 @@ for status display. Development/link mode does not check for updates. Packaged
 Desktop builds check the public `/downloads/latest` release contract before
 session restore and expose the same status in Settings → About. Updates are
 selected for the current operating system and architecture, downloaded to a
-temporary directory, verified against the release SHA-256, and handed to the
-native installer or archive opener. Optional updates can be skipped; mandatory
+temporary directory, verified against the release SHA-256 and the trusted
+detached signature, and handed to the native installer or archive opener. The
+server signs every completed release upload with its configured
+`DESKTOP_UPDATE_SIGNING_PRIVATE_KEY`; Desktop refuses unsigned or unverifiable
+artifacts. Optional updates can be skipped; mandatory
 updates remain in the update gate until a compatible verified asset is ready.
 
 Persistent human-operated browser data uses a stable, hashed profile partition

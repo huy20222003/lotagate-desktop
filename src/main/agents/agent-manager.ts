@@ -20,7 +20,9 @@ export interface AgentManagerHandler {
 export interface CliAttachmentInput { id: string; name: string; mimeType: string; sizeBytes: number; path: string; }
 
 interface ProcessBinding { key: string; projectRoot: string; sessionId?: string; process: CliAgentProcess; }
-interface CommandEventBuffer { events: DesktopEvent[]; bytes: number; resolve: (events: DesktopEvent[]) => void; operation: Promise<DesktopEvent[]>; timer: ReturnType<typeof setTimeout> }
+interface CommandEventBuffer { events: DesktopEvent[]; bytes: number; truncated: boolean; resolve: (events: DesktopEvent[]) => void; operation: Promise<DesktopEvent[]>; timer: ReturnType<typeof setTimeout> }
+
+interface CommandExecutionResult { content: string; structured?: Record<string, unknown>; truncated: boolean; }
 
 export interface AgentManagerOptions { idleTimeoutMs?: number; computerHost?: boolean; documentHost?: boolean; }
 
@@ -92,40 +94,56 @@ export class AgentManager {
   }
 
   async turnCancel(cwd: string, turnId: string): Promise<unknown> { return this.requestOnBinding(await this.bindingForTurn(cwd, turnId), 'turn.cancel', { turnId }); }
-  async approvalRespond(cwd: string, input: { approvalId: string; approved: boolean }): Promise<unknown> { return this.requestOnBinding(await this.bindingForApproval(cwd, input.approvalId), 'approval.respond', input); }
-  async trustRespond(cwd: string, input: { trustRequestId: string; trusted: boolean }): Promise<unknown> { return this.requestOnBinding(await this.bindingForTrust(cwd, input.trustRequestId), 'trust.respond', input); }
+  async approvalRespond(cwd: string, input: { approvalId: string; approved: boolean }): Promise<unknown> {
+    const binding = await this.bindingForApproval(cwd, input.approvalId);
+    try { return await this.requestOnBinding(binding, 'approval.respond', input); }
+    finally { if (this.approvalBindings.get(input.approvalId) === binding) this.approvalBindings.delete(input.approvalId); }
+  }
+  async trustRespond(cwd: string, input: { trustRequestId: string; trusted: boolean }): Promise<unknown> {
+    const binding = await this.bindingForTrust(cwd, input.trustRequestId);
+    try { return await this.requestOnBinding(binding, 'trust.respond', input); }
+    finally { if (this.trustBindings.get(input.trustRequestId) === binding) this.trustBindings.delete(input.trustRequestId); }
+  }
   async modelList(cwd: string): Promise<unknown> { return this.cachedProtocolResult(cwd, 'models', CACHE_TTL_MS.models, () => this.request(cwd, 'model.list', {})); }
   async commandList(cwd: string): Promise<unknown> { return this.cachedProtocolResult(cwd, 'commands', CACHE_TTL_MS.models, () => this.request(cwd, 'command.list', {})); }
   async commandExecute(cwd: string, input: Record<string, unknown>): Promise<unknown> { return this.request(cwd, 'command.execute', input); }
-  async commandExecuteResult(cwd: string, input: Record<string, unknown>): Promise<{ content: string; structured?: Record<string, unknown> }> {
+  async commandExecuteResult(cwd: string, input: Record<string, unknown>): Promise<CommandExecutionResult> {
     const accepted = await this.commandExecute(cwd, input);
     const commandId = isRecord(accepted) && typeof accepted['commandId'] === 'string' ? accepted['commandId'] : undefined;
     if (commandId === undefined) throw new Error('The CLI did not return a command id.');
     const buffer = this.commandEventBuffers.get(commandId) ?? this.createCommandEventBuffer(commandId);
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      const events = await Promise.race([buffer.operation, new Promise<DesktopEvent[]>((_, reject) => { timeout = setTimeout(() => reject(new Error('The CLI command did not complete.')), DESKTOP_RUNTIME_LIMITS.commandEventBufferTtlMs); })]);
+      const events = await Promise.race([buffer.operation, new Promise<DesktopEvent[]>((_, reject) => { timeout = setTimeout(() => reject(new CommandExecutionTimeoutError()), DESKTOP_RUNTIME_LIMITS.commandEventBufferTtlMs); })]);
       return this.readCommandExecutionResult(commandId, buffer, events);
+    } catch (error) {
+      if (!(error instanceof CommandExecutionTimeoutError)) throw error;
+      this.extendCommandEventBuffer(commandId, buffer, DESKTOP_RUNTIME_LIMITS.commandCancellationGraceMs);
+      await this.cancelTimedOutCommand(cwd, commandId, buffer);
+      throw error;
     } finally {
       if (timeout !== undefined) clearTimeout(timeout);
     }
   }
-  private readCommandExecutionResult(commandId: string, buffer: CommandEventBuffer, events: DesktopEvent[]): { content: string; structured?: Record<string, unknown> } {
+  private readCommandExecutionResult(commandId: string, buffer: CommandEventBuffer, events: DesktopEvent[]): CommandExecutionResult {
     let content = '';
     let structured: Record<string, unknown> | undefined;
     let exitCode: number | undefined;
-    for (const event of events) {
-      if (event.event === 'command.output') {
-        if (typeof event.data['content'] === 'string') content += event.data['content'];
-        if (isRecord(event.data['structured'])) structured = event.data['structured'];
+    try {
+      for (const event of events) {
+        if (event.event === 'command.output') {
+          if (typeof event.data['content'] === 'string') content += event.data['content'];
+          if (isRecord(event.data['structured'])) structured = event.data['structured'];
+        }
+        if (event.event === 'command.completed' && typeof event.data['exitCode'] === 'number') exitCode = event.data['exitCode'];
+        if (event.event === 'command.failed') throw new Error((readCommandError(event.data['error']) ?? content.trim()) || 'Command failed.');
+        if (event.event === 'command.cancelled') throw new Error('Command was cancelled.');
       }
-      if (event.event === 'command.completed' && typeof event.data['exitCode'] === 'number') exitCode = event.data['exitCode'];
-      if (event.event === 'command.failed') throw new Error((readCommandError(event.data['error']) ?? content.trim()) || 'Command failed.');
-      if (event.event === 'command.cancelled') throw new Error('Command was cancelled.');
+      if (exitCode !== undefined && exitCode !== 0) throw new Error(content.trim() || `Command exited with code ${exitCode}.`);
+      return { content, ...(structured === undefined ? {} : { structured }), truncated: buffer.truncated };
+    } finally {
+      this.disposeCommandEventBuffer(commandId, buffer);
     }
-    if (exitCode !== undefined && exitCode !== 0) throw new Error(content.trim() || `Command exited with code ${exitCode}.`);
-    this.disposeCommandEventBuffer(commandId, buffer);
-    return { content, ...(structured === undefined ? {} : { structured }) };
   }
   async commandCancel(cwd: string, commandId: string): Promise<unknown> { return this.request(cwd, 'command.cancel', { commandId }); }
 
@@ -171,7 +189,7 @@ export class AgentManager {
       onDiagnostic: diagnostic => this.handler.onDiagnostic?.(projectRoot, { ...diagnostic, ...(diagnostic.sessionId === undefined && binding.sessionId === undefined ? {} : { sessionId: diagnostic.sessionId ?? binding.sessionId }) }),
       onExit: error => {
         const approvalIds = [...this.approvalBindings.entries()].filter(([, candidate]) => candidate === binding).map(([approvalId]) => approvalId);
-        for (const approvalId of approvalIds) this.approvalBindings.delete(approvalId);
+        this.clearBindingRoutes(binding);
         this.handler.onExit?.(projectRoot, error, binding.sessionId, approvalIds);
         this.scheduleRecovery(binding);
       },
@@ -191,8 +209,9 @@ export class AgentManager {
   private async bindingForApproval(cwd: string, approvalId: string): Promise<ProcessBinding> { return this.bindingForId(await requireDirectory(cwd), this.approvalBindings.get(approvalId), 'approval'); }
   private async bindingForTrust(cwd: string, trustRequestId: string): Promise<ProcessBinding> { return this.bindingForId(await requireDirectory(cwd), this.trustBindings.get(trustRequestId), 'trust'); }
   private async bindingForId(projectRoot: string, binding: ProcessBinding | undefined, kind: string): Promise<ProcessBinding> { if (binding === undefined || binding.projectRoot !== projectRoot) throw new Error(`The requested ${kind} does not belong to this project.`); return binding; }
-  private scheduleRecovery(binding: ProcessBinding): void { const attempt = this.recoveryAttempts.get(binding.key) ?? 0; if (attempt >= 3 || this.recoveryTimers.has(binding.key)) return; const delayMs = 1_000 * 2 ** attempt; this.recoveryAttempts.set(binding.key, attempt + 1); this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', message: `CLI recovery scheduled in ${delayMs}ms (attempt ${attempt + 1}/3).` }); const timer = setTimeout(() => { this.recoveryTimers.delete(binding.key); void binding.process.initialize().then(() => { this.recoveryAttempts.delete(binding.key); }).catch(error => { this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', severity: 'error', message: error instanceof Error ? error.message : 'CLI recovery failed.' }); this.scheduleRecovery(binding); }); }, delayMs); this.recoveryTimers.set(binding.key, timer); }
-  private removeBinding(binding: ProcessBinding): void { this.processes.delete(binding.key); if (binding.sessionId !== undefined) this.sessionBindings.delete(binding.sessionId); for (const [id, candidate] of this.turnBindings) if (candidate === binding) this.turnBindings.delete(id); for (const [id, candidate] of this.approvalBindings) if (candidate === binding) this.approvalBindings.delete(id); for (const [id, candidate] of this.trustBindings) if (candidate === binding) this.trustBindings.delete(id); this.clearIdle(binding.key); }
+  private scheduleRecovery(binding: ProcessBinding): void { const attempt = this.recoveryAttempts.get(binding.key) ?? 0; if (attempt >= 3 || this.recoveryTimers.has(binding.key)) { if (attempt >= 3) { this.removeBinding(binding); void binding.process.shutdown('recovery-exhausted').catch(error => this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', severity: 'error', message: error instanceof Error ? error.message : 'CLI recovery cleanup failed.' })); } return; } const delayMs = 1_000 * 2 ** attempt; this.recoveryAttempts.set(binding.key, attempt + 1); this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', message: `CLI recovery scheduled in ${delayMs}ms (attempt ${attempt + 1}/3).` }); const timer = setTimeout(() => { this.recoveryTimers.delete(binding.key); void binding.process.initialize().then(() => { this.recoveryAttempts.delete(binding.key); }).catch(error => { this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', severity: 'error', message: error instanceof Error ? error.message : 'CLI recovery failed.' }); this.scheduleRecovery(binding); }); }, delayMs); this.recoveryTimers.set(binding.key, timer); }
+  private removeBinding(binding: ProcessBinding): void { this.processes.delete(binding.key); if (binding.sessionId !== undefined) this.sessionBindings.delete(binding.sessionId); this.clearBindingRoutes(binding); this.clearIdle(binding.key); }
+  private clearBindingRoutes(binding: ProcessBinding): void { for (const [id, candidate] of this.turnBindings) if (candidate === binding) this.turnBindings.delete(id); for (const [id, candidate] of this.approvalBindings) if (candidate === binding) this.approvalBindings.delete(id); for (const [id, candidate] of this.trustBindings) if (candidate === binding) this.trustBindings.delete(id); }
   private async shutdownBinding(binding: ProcessBinding, reason: string): Promise<void> { this.removeBinding(binding); this.clearRecovery(binding.key); await binding.process.shutdown(reason); }
   private clearRecovery(key: string): void { const timer = this.recoveryTimers.get(key); if (timer !== undefined) clearTimeout(timer); this.recoveryTimers.delete(key); this.recoveryAttempts.delete(key); }
   private touch(binding: ProcessBinding): void { this.clearIdle(binding.key); const timer = setTimeout(() => { this.idleTimers.delete(binding.key); void this.expireIdle(binding); }, this.idleTimeoutMs); timer.unref?.(); this.idleTimers.set(binding.key, timer); }
@@ -211,7 +230,7 @@ export class AgentManager {
     if (buffer.bytes + eventBytes <= DESKTOP_RUNTIME_LIMITS.commandEventBufferBytes || event.event === 'command.completed' || event.event === 'command.failed' || event.event === 'command.cancelled') {
       buffer.events.push(event);
       buffer.bytes += eventBytes;
-    }
+    } else buffer.truncated = true;
     if (event.event === 'command.completed' || event.event === 'command.failed' || event.event === 'command.cancelled') buffer.resolve(buffer.events);
   }
   private createCommandEventBuffer(commandId: string): CommandEventBuffer {
@@ -219,10 +238,12 @@ export class AgentManager {
     const operation = new Promise<DesktopEvent[]>(nextResolve => { resolve = nextResolve; });
     const timer = setTimeout(() => this.disposeCommandEventBuffer(commandId, this.commandEventBuffers.get(commandId)), DESKTOP_RUNTIME_LIMITS.commandEventBufferTtlMs);
     timer.unref?.();
-    const buffer: CommandEventBuffer = { events: [], bytes: 0, resolve, operation, timer };
+    const buffer: CommandEventBuffer = { events: [], bytes: 0, truncated: false, resolve, operation, timer };
     this.commandEventBuffers.set(commandId, buffer);
     return buffer;
   }
+  private extendCommandEventBuffer(commandId: string, buffer: CommandEventBuffer, durationMs: number): void { if (this.commandEventBuffers.get(commandId) !== buffer) return; clearTimeout(buffer.timer); buffer.timer = setTimeout(() => this.disposeCommandEventBuffer(commandId, buffer), durationMs); buffer.timer.unref?.(); }
+  private async cancelTimedOutCommand(cwd: string, commandId: string, buffer: CommandEventBuffer): Promise<void> { try { await Promise.race([this.commandCancel(cwd, commandId), delay(DESKTOP_RUNTIME_LIMITS.commandCancellationGraceMs)]); await Promise.race([buffer.operation, delay(DESKTOP_RUNTIME_LIMITS.commandCancellationGraceMs)]); } catch (error) { this.handler.onDiagnostic?.(cwd, { kind: 'protocol', severity: 'error', message: error instanceof Error ? `Timed-out CLI command cancellation failed: ${error.message}` : 'Timed-out CLI command cancellation failed.' }); } }
   private disposeCommandEventBuffer(commandId: string, buffer: CommandEventBuffer | undefined): void {
     if (buffer === undefined || this.commandEventBuffers.get(commandId) !== buffer) return;
     clearTimeout(buffer.timer);
@@ -249,3 +270,9 @@ function extractSessionId(value: unknown): string | undefined { if (!isRecord(va
 function extractTurnId(value: unknown): string | undefined { return isRecord(value) && typeof value['turnId'] === 'string' ? value['turnId'] : undefined; }
 function readCommandError(value: unknown): string | undefined { return isRecord(value) && typeof value['message'] === 'string' ? value['message'] : undefined; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
+
+class CommandExecutionTimeoutError extends Error {
+  constructor() { super('The CLI command did not complete before the timeout and cancellation was requested.'); }
+}
+
+function delay(milliseconds: number): Promise<void> { return new Promise(resolve => { setTimeout(resolve, milliseconds); }); }

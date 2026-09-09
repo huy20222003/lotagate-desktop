@@ -12,13 +12,16 @@ interface UseDraftTaskOptions {
 }
 
 export function useDraftTask({ workspace, task, draftTaskRef, draftTaskPromiseRef, setTasks, setTask }: UseDraftTaskOptions) {
-  const createTask = useCallback(async (prompt: string) => {
+  const createTask = useCallback(async (prompt: string, shouldCommitSelection?: () => boolean) => {
     if (workspace === undefined) throw new Error('Select a workspace first.');
     const created = await window.lotagate.tasks.create({ workspaceId: workspace.id, title: sessionSlugFromPrompt(prompt), titleSource: 'automatic', prompt });
     setTasks(current => [created, ...current]);
-    setTask(created);
+    if (shouldCommitSelection?.() !== false) {
+      draftTaskRef.current = created;
+      setTask(created);
+    }
     return created;
-  }, [setTask, setTasks, workspace]);
+  }, [draftTaskRef, setTask, setTasks, workspace]);
 
   const ensureDraftTask = useCallback(async (): Promise<Task | undefined> => {
     if (task !== undefined) { draftTaskRef.current = task; return task; }

@@ -8,6 +8,7 @@ import type { WorkspaceRegistry } from '../workspaces/workspace-registry.js';
 import { assertPathInside, requireDirectory } from '../security/path-policy.js';
 import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
+import { terminateDesktopProcess } from '../process/process-termination.js';
 import { MAX_EVIDENCE_BYTES, MAX_EVIDENCE_RECORDS, MAX_OUTPUT_BYTES } from './terminal-constants.js';
 
 export interface TerminalResult { command: string; args: string[]; cwd: string; stdout: string; stderr: string; exitCode: number | null; truncated: boolean; durationMs: number; }
@@ -36,7 +37,7 @@ export class TerminalService {
     assertPathInside(cwd, workspace.rootPath);
     if (!value.approved && !isReadOnlyCommand(value.command, value.args)) throw new Error('This command requires explicit approval.');
     const started = Date.now();
-    const child = spawn(value.command, value.args, { cwd, shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: safeEnvironment() });
+    const child = spawn(value.command, value.args, { cwd, shell: false, detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: safeEnvironment() });
     let stdout = ''; let stderr = ''; let truncated = false;
     const collect = (chunk: Buffer, target: 'stdout' | 'stderr') => {
       const available = MAX_OUTPUT_BYTES - Buffer.byteLength(stdout + stderr, 'utf8');
@@ -48,9 +49,11 @@ export class TerminalService {
     };
     child.stdout.on('data', chunk => collect(chunk, 'stdout'));
     child.stderr.on('data', chunk => collect(chunk, 'stderr'));
-    const timeout = value.timeoutMs === undefined ? undefined : setTimeout(() => child.kill(), value.timeoutMs);
+    let termination: Promise<void> | undefined;
+    const timeout = value.timeoutMs === undefined ? undefined : setTimeout(() => { termination = terminateDesktopProcess(child); }, value.timeoutMs);
     const exitCode = await new Promise<number | null>((resolve, reject) => { child.on('error', reject); child.on('close', code => resolve(code)); });
     if (timeout !== undefined) clearTimeout(timeout);
+    if (termination !== undefined) await termination;
     const result: TerminalEvidence = { id: randomUUID(), taskId: value.taskId, command: value.command, args: [...value.args], cwd, stdout: redact(stdout), stderr: redact(stderr), exitCode, truncated, durationMs: Date.now() - started, createdAt: new Date().toISOString() };
     await this.evidence.write(await retainEvidence([...(await this.evidence.read()), result], await this.getRetentionDays()));
     return result;

@@ -24,23 +24,14 @@ export function assertPathInside(input: string, root: string): string {
   return candidate;
 }
 
-/** Resolves existing targets and their parent directory before a workspace write. */
+/** Resolves a workspace write target while allowing missing descendants. */
 export async function requireWorkspaceWritePath(input: string, root: string): Promise<string> {
-  const normalizedRoot = await realpath(root);
-  const candidate = isAbsolute(input) ? resolve(input) : resolve(normalizedRoot, input);
-  const parent = await realpath(dirname(candidate));
-  if (parent !== normalizedRoot && !parent.startsWith(`${normalizedRoot}${sep}`)) throw new Error('Path is outside the workspace boundary.');
+  const candidate = await requireWorkspaceMutationPath(input, root);
   const entry = await lstat(candidate).catch(error => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   });
   if (entry?.isSymbolicLink()) throw new Error('Workspace write targets cannot be symbolic links.');
-  try {
-    const existing = await realpath(candidate);
-    if (existing !== normalizedRoot && !existing.startsWith(`${normalizedRoot}${sep}`)) throw new Error('Path is outside the workspace boundary.');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-  }
   return candidate;
 }
 

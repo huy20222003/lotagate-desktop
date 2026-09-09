@@ -134,6 +134,25 @@ describe('ActivityLogStore', () => {
     await reloaded.appendAssistantDelta('task-1', ' delta', { turnId: 'turn-1' });
     expect((await reloaded.read())[0]?.text).toBe('seed delta');
   });
+
+  it('deduplicates identical and cumulative assistant deltas to prevent text duplication', async () => {
+    const directory = await createTemporaryDirectory();
+    const path = join(directory, 'activities.jsonl');
+    const store = new ActivityLogStore(path);
+    await store.append(activity('assistant-1', 'File test.md hiện đã chứa sẵn dòng 987.'));
+
+    // Repeating the exact same sentence should not duplicate it
+    await store.appendAssistantDelta('task-1', 'File test.md hiện đã chứa sẵn dòng 987.', { turnId: 'turn-1' });
+    expect((await store.read())[0]?.text).toBe('File test.md hiện đã chứa sẵn dòng 987.');
+
+    // Cumulative delta that starts with the previous text should only append the difference
+    await store.appendAssistantDelta('task-1', 'File test.md hiện đã chứa sẵn dòng 987. Bổ sung thêm dòng mới.', { turnId: 'turn-1' });
+    expect((await store.read())[0]?.text).toBe('File test.md hiện đã chứa sẵn dòng 987. Bổ sung thêm dòng mới.');
+
+    // Reloading should replay the exact deduplicated text
+    const reloaded = new ActivityLogStore(path);
+    expect((await reloaded.read())[0]?.text).toBe('File test.md hiện đã chứa sẵn dòng 987. Bổ sung thêm dòng mới.');
+  });
 });
 
 async function createTemporaryDirectory(): Promise<string> {

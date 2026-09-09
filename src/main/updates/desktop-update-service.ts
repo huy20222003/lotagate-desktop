@@ -1,5 +1,5 @@
 import { app, net, shell } from 'electron';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createPublicKey, createVerify, randomUUID, type KeyObject } from 'node:crypto';
 import { chmod, mkdir, open, readdir, rename, unlink } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -21,7 +21,7 @@ export class DesktopUpdateService {
   private downloadedPath: string | undefined;
   private downloadedAssetId: string | undefined;
 
-  constructor(private readonly transport: Pick<ApiTransport, 'request'>, private readonly logger?: DesktopLogger) {
+  constructor(private readonly transport: Pick<ApiTransport, 'request'>, private readonly logger?: DesktopLogger, private readonly updateSigningPublicKey = '') {
     const info = this.readInfo();
     this.state = this.createSnapshot('disabled', info);
   }
@@ -82,7 +82,7 @@ export class DesktopUpdateService {
       const belowMinimum = release.minimumSupportedVersion !== null && isDesktopVersionBelow(info.version, release.minimumSupportedVersion);
       const newer = isDesktopVersionNewer(release.version, info.version);
       if (!newer && !belowMinimum) return this.publish({ ...this.createSnapshot('up-to-date', info), release, asset, blocking: false });
-      if (asset === null || asset.downloadUrl === null || asset.sha256 === null) return this.publish({ ...this.createSnapshot('unavailable', info), release, asset, blocking: release.isMandatory || belowMinimum, error: 'A compatible signed installer is not available for this device.' });
+      if (asset === null || asset.downloadUrl === null || asset.sha256 === null || asset.signature === null || this.updateSigningPublicKey.length === 0) return this.publish({ ...this.createSnapshot('unavailable', info), release, asset, blocking: release.isMandatory || belowMinimum, error: 'A compatible signed installer is not available for this device.' });
       return this.publish({ ...this.createSnapshot('available', info), release, asset, blocking: release.isMandatory || belowMinimum });
     } catch (error) {
       this.logger?.warn('updates.check.failed', { message: error instanceof Error ? error.message : 'Unable to check for desktop updates.' });
@@ -135,6 +135,8 @@ export class DesktopUpdateService {
     const handle = await open(partial, 'w');
     const reader = response.body.getReader();
     const hash = createHash('sha256');
+    const verifier = createVerify('sha256');
+    const publicKey = readUpdateSigningPublicKey(this.updateSigningPublicKey);
     let downloaded = 0;
     try {
       while (true) {
@@ -143,6 +145,7 @@ export class DesktopUpdateService {
         downloaded += next.value.byteLength;
         if (downloaded > MAX_DOWNLOAD_BYTES || (asset.sizeBytes !== null && downloaded > Number(asset.sizeBytes))) throw new Error('The desktop update exceeds its declared size.');
         hash.update(next.value);
+        verifier.update(next.value);
         await handle.write(next.value);
         this.publish({ ...this.state, bytesDownloaded: downloaded });
       }
@@ -153,6 +156,7 @@ export class DesktopUpdateService {
     if (downloaded === 0) throw new Error('The desktop update is empty.');
     if (asset.sizeBytes !== null && downloaded !== Number(asset.sizeBytes)) throw new Error('The desktop update size does not match its metadata.');
     if (asset.sha256 === null || hash.digest('hex').toLowerCase() !== asset.sha256.toLowerCase()) throw new Error('The desktop update checksum does not match its metadata.');
+    if (asset.signature === null || !verifier.verify(publicKey, Buffer.from(asset.signature, 'base64url'))) throw new Error('The desktop update signature does not match its metadata.');
   }
 
   private readInfo(): DesktopAppVersionInfo {
@@ -175,9 +179,10 @@ class RetryableDownloadError extends Error {
   constructor(message: string, readonly retryable: boolean) { super(message); }
 }
 
-function isRetryableDownloadError(error: unknown): boolean { return error instanceof RetryableDownloadError ? error.retryable : !(error instanceof Error && error.message.includes('checksum')); }
+function isRetryableDownloadError(error: unknown): boolean { return error instanceof RetryableDownloadError ? error.retryable : !(error instanceof Error && /checksum|signature|size|empty/iu.test(error.message)); }
 function parseSize(value: string | null): number | null { if (value === null) return null; const parsed = Number(value); if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > MAX_DOWNLOAD_BYTES) throw new Error('The desktop update size is invalid.'); return parsed; }
 function safeFileName(value: string): string { const result = basename(value).replace(/[^a-zA-Z0-9._-]/gu, '-'); return result || 'lotagate-update'; }
+function readUpdateSigningPublicKey(value: string): KeyObject { if (!/^[A-Za-z0-9+/]+={0,2}$/u.test(value)) throw new Error('The desktop update signing public key is invalid.'); try { return createPublicKey({ key: Buffer.from(value, 'base64'), format: 'der', type: 'spki' }); } catch { throw new Error('The desktop update signing public key is invalid.'); } }
 function selectAsset(assets: DesktopReleaseAsset[], platform: DesktopReleasePlatform, architecture: DesktopReleaseArchitecture): DesktopReleaseAsset | null {
   const formats: DesktopReleaseFormat[] = platform === 'WINDOWS' ? ['MSI', 'ZIP'] : platform === 'MACOS' ? ['PKG', 'DMG', 'ZIP'] : ['DEB', 'RPM', 'APPIMAGE'];
   return assets.filter(asset => asset.platform === platform && asset.architecture === architecture && formats.includes(asset.format) && asset.status === 'READY').sort((left, right) => Number(right.isRecommended) - Number(left.isRecommended) || formats.indexOf(left.format) - formats.indexOf(right.format))[0] ?? null;

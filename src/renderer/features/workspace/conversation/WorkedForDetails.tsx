@@ -6,10 +6,7 @@ import { activeSubagentActivity } from '../orchestration/subagent-display.js';
 import { AgentMarkdown } from './markdown-renderer.js';
 import { isAssistantProgressActivity } from './conversation-activities.js';
 import { useSmoothStreamingText } from './use-smooth-streaming-text.js';
-import { formatTextClamp } from '../../../utils/text.js';
 import { contextCompactionPhase, isContextCompactionActivity } from './context-compaction-activity.js';
-
-const TOOL_COMMAND_PREVIEW_LENGTH = 96;
 
 interface ToolStep {
   actionId: string;
@@ -173,7 +170,7 @@ function mergeToolSteps(previous: ToolStep, current: ToolStep): ToolStep {
 function toolLabel(step: ToolStep): string {
   const actionName = step.command === undefined
     ? normalizeActionName(step.displayName)
-    : formatTextClamp(TOOL_COMMAND_PREVIEW_LENGTH, normalizeActionName(step.command));
+    : normalizeActionName(step.command);
   if (step.state === 'running') return `Run ${actionName}`;
   if (step.state === 'failed') return `Failed ${actionName}`;
   const counts = step.additions === undefined || step.deletions === undefined ? '' : ` +${step.additions} -${step.deletions}`;

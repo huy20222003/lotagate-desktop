@@ -19,14 +19,15 @@ describe('DocumentHostToolBroker', () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it('rejects document workspaces outside the project root', async () => {
+  it('accepts an existing isolated execution workspace outside the project root', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lotagate-document-broker-'));
     const outside = await mkdtemp(join(tmpdir(), 'lotagate-document-outside-'));
     try {
       const response = await new DocumentHostToolBroker(join(root, 'backend.ps1')).handle(root, request('pdf.validate', { path: 'file.pdf' }), undefined);
       expect(response.ok).toBe(false);
+      await writeFile(join(outside, 'file.pdf'), 'pdf placeholder', 'utf8');
       const outsideResponse = await new DocumentHostToolBroker(join(root, 'backend.ps1')).handle(root, { ...request('pdf.validate', { path: 'file.pdf' }), executionCwd: outside });
-      expect(outsideResponse).toMatchObject({ ok: false, error: { code: 'DOCUMENT_PATH_INVALID' } });
+      expect(outsideResponse).toMatchObject({ ok: false, error: { code: 'DOCUMENT_HOST_ERROR' } });
     } finally { await rm(root, { recursive: true, force: true }); await rm(outside, { recursive: true, force: true }); }
   });
 });

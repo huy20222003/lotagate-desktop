@@ -3,7 +3,6 @@ import { act, cleanup, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Activity, SubagentSnapshot } from '../../../../contracts/ipc/v1/workspace.js';
-import { formatTextClamp } from '../../../utils/text.js';
 import { WorkedForDetails } from './WorkedForDetails.js';
 
 function toolActivity(id: string, text: string, metadata: Record<string, unknown>): Activity {
@@ -61,12 +60,12 @@ describe('WorkedForDetails', () => {
     expect(screen.getByText('Created agent Atlas')).toBeVisible();
   });
 
-  it('clamps long command text without changing the full command metadata', () => {
+  it('keeps the full command available while CSS constrains the one-line preview', () => {
     const command = `powershell.exe -NoProfile -NonInteractive -Command ${'Get-ChildItem -Recurse -Force; '.repeat(12)}`.trim();
     const { container } = render(<WorkedForDetails activities={[toolActivity('tool-start', 'Running shell.exec.', { actionId: 'action-long-shell', toolName: 'shell.exec', displayName: 'shell.exec', command })]} />);
     const label = container.querySelector('.worked-tool > span');
 
-    expect(label).toHaveTextContent(`Run ${formatTextClamp(96, command)}`);
+    expect(label).toHaveTextContent(`Run ${command}`);
     expect(label).toHaveAttribute('title', command);
   });
 

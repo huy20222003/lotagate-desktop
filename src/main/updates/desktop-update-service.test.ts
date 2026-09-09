@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createSign, generateKeyPairSync } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('electron', () => mocks);
 
+const signingKeys = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const publicKey = signingKeys.publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+
 describe('DesktopUpdateService', () => {
   let temporaryDirectory: string;
 
@@ -23,7 +26,7 @@ describe('DesktopUpdateService', () => {
 
   it('selects the current platform asset and reports an available release', async () => {
     const transport = { request: vi.fn().mockResolvedValue(release({ version: '0.2.0' })) };
-    const service = new DesktopUpdateService(transport);
+    const service = new DesktopUpdateService(transport, undefined, publicKey);
     const snapshot = await service.check();
     const asset = currentAsset();
     expect(snapshot.phase).toBe('available');
@@ -37,7 +40,7 @@ describe('DesktopUpdateService', () => {
     const content = Buffer.from('installer-content');
     const asset = release({ version: '0.2.0', sizeBytes: String(content.length), sha256: createHash('sha256').update(content).digest('hex') }).assets[0];
     mocks.net.fetch.mockResolvedValue(new Response(content, { status: 200 }));
-    const service = new DesktopUpdateService({ request: vi.fn().mockResolvedValue(release({ version: '0.2.0', sizeBytes: String(content.length), sha256: asset?.sha256 ?? '' })) });
+    const service = new DesktopUpdateService({ request: vi.fn().mockResolvedValue(release({ version: '0.2.0', sizeBytes: String(content.length), sha256: asset?.sha256 ?? '' })) }, undefined, publicKey);
     await service.check();
     const ready = await service.download();
     const expectedAsset = currentAsset();
@@ -50,14 +53,28 @@ describe('DesktopUpdateService', () => {
     expect(mocks.shell.openPath).toHaveBeenCalledOnce();
     expect(mocks.app.quit).toHaveBeenCalledOnce();
   });
+
+  it('rejects an artifact with an invalid detached signature', async () => {
+    temporaryDirectory = await mkdtemp(join(tmpdir(), 'lotagate-update-'));
+    mocks.app.getPath.mockReturnValue(temporaryDirectory);
+    const content = Buffer.from('installer-content');
+    const service = new DesktopUpdateService({ request: vi.fn().mockResolvedValue(release({ version: '0.2.0', sizeBytes: String(content.length), signature: 'invalid-signature' })) }, undefined, publicKey);
+    mocks.net.fetch.mockResolvedValue(new Response(content, { status: 200 }));
+    await service.check();
+    await expect(service.download()).rejects.toThrow('signature does not match');
+    expect(service.getState().phase).toBe('available');
+    expect(mocks.shell.openPath).not.toHaveBeenCalled();
+  });
 });
 
-function release(overrides: { version?: string; sizeBytes?: string; sha256?: string } = {}) {
+function release(overrides: { version?: string; sizeBytes?: string; sha256?: string; signature?: string } = {}) {
   const content = Buffer.from('installer-content');
   const asset = currentAsset();
+  const signer = createSign('sha256');
+  signer.update(content);
   return {
     id: 'release-1', productCode: 'lotagate-desktop', version: overrides.version ?? '0.2.0', channel: 'STABLE', status: 'PUBLISHED', title: 'LotaGate update', releaseNotes: 'Updates', minimumSupportedVersion: null, isMandatory: false, publishedAt: '2026-09-05T00:00:00.000Z', createdAt: '2026-09-05T00:00:00.000Z', updatedAt: '2026-09-05T00:00:00.000Z',
-    assets: [{ id: 'asset-1', platform: asset.platform, architecture: asset.architecture, format: asset.format, fileName: asset.fileName, contentType: asset.contentType, sizeBytes: overrides.sizeBytes ?? String(content.length), sha256: overrides.sha256 ?? createHash('sha256').update(content).digest('hex'), status: 'READY', isRecommended: true, downloadUrl: `https://cdn.example.test/${asset.fileName}`, uploadedAt: '2026-09-05T00:00:00.000Z', createdAt: '2026-09-05T00:00:00.000Z', updatedAt: '2026-09-05T00:00:00.000Z' }],
+    assets: [{ id: 'asset-1', platform: asset.platform, architecture: asset.architecture, format: asset.format, fileName: asset.fileName, contentType: asset.contentType, sizeBytes: overrides.sizeBytes ?? String(content.length), sha256: overrides.sha256 ?? createHash('sha256').update(content).digest('hex'), signature: overrides.signature ?? signer.sign(signingKeys.privateKey).toString('base64url'), status: 'READY', isRecommended: true, downloadUrl: `https://cdn.example.test/${asset.fileName}`, uploadedAt: '2026-09-05T00:00:00.000Z', createdAt: '2026-09-05T00:00:00.000Z', updatedAt: '2026-09-05T00:00:00.000Z' }],
   };
 }
 

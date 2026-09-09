@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { access, mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, extname, relative } from 'node:path';
 import type { DesktopHostRequest, DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
-import { requireWorkspaceMutationPath, requireExistingPath } from '../security/path-policy.js';
+import { requireDirectory, requireWorkspaceMutationPath, requireExistingPath } from '../security/path-policy.js';
 import { runDocumentBackend } from './document-process-runner.js';
 import { FORMAT_EXTENSIONS, type DocumentFormat } from './document-constants.js';
 
@@ -17,10 +17,10 @@ export class DocumentHostToolBroker {
   constructor(private readonly backendPath: string) {}
 
   async handle(cwd: string, request: DesktopHostRequest, signal?: AbortSignal): Promise<DesktopHostResponse> {
-    const key = `${cwd}\u0000${request.sessionId}`;
     let executionRoot: string;
-    try { executionRoot = request.executionCwd === undefined ? cwd : await requireExistingPath(request.executionCwd, cwd); }
+    try { executionRoot = request.executionCwd === undefined ? await requireDirectory(cwd) : await requireDirectory(request.executionCwd); }
     catch (error) { return this.error(request, 'DOCUMENT_PATH_INVALID', error instanceof Error ? error.message : 'The document execution workspace is invalid.'); }
+    const key = `${cwd}\u0000${request.sessionId}\u0000${executionRoot}`;
     const previous = this.serial.get(key) ?? Promise.resolve();
     const operation = previous.catch(() => undefined).then(() => this.execute(executionRoot, request, key, signal));
     const barrier = operation.then(() => undefined, () => undefined);
@@ -31,14 +31,20 @@ export class DocumentHostToolBroker {
   }
 
   async closeForSession(cwd: string, sessionId: string): Promise<void> {
-    const key = `${cwd}\u0000${sessionId}`;
-    for (const handleId of this.sessions.get(key) ?? []) this.handles.delete(handleId);
-    this.sessions.delete(key);
-    this.serial.delete(key);
+    const prefix = `${cwd}\u0000${sessionId}\u0000`;
+    for (const key of [...this.sessions.keys()]) if (key.startsWith(prefix)) {
+      for (const handleId of this.sessions.get(key) ?? []) this.handles.delete(handleId);
+      this.sessions.delete(key);
+      this.serial.delete(key);
+    }
   }
 
   async closeForWorkspace(cwd: string): Promise<void> {
-    for (const key of [...this.sessions.keys()]) if (key.startsWith(`${cwd}\u0000`)) await this.closeForSession(cwd, key.slice(cwd.length + 1));
+    for (const key of [...this.sessions.keys()]) if (key.startsWith(`${cwd}\u0000`)) {
+      for (const handleId of this.sessions.get(key) ?? []) this.handles.delete(handleId);
+      this.sessions.delete(key);
+      this.serial.delete(key);
+    }
   }
 
   private async execute(cwd: string, request: DesktopHostRequest, sessionKey: string, signal?: AbortSignal): Promise<DesktopHostResponse> {

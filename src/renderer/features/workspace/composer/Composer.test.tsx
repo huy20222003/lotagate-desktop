@@ -188,7 +188,7 @@ describe('Composer overlays', () => {
     resolveSend?.();
   });
 
-  it('reveals the selected picker menu on hover and uses the shared scrollbar', () => {
+  it('opens reasoning effort card, controls effort via slider, and separates model selection popover', () => {
     const onModel = vi.fn();
     const onEffort = vi.fn();
     render(<Composer
@@ -218,19 +218,43 @@ describe('Composer overlays', () => {
       onApproval={vi.fn().mockResolvedValue(undefined)}
     />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Select model and effort' }));
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: 'Select model and effort' });
+    expect(trigger).toHaveTextContent('Friendly model');
+    expect(trigger).toHaveTextContent('medium');
 
-    fireEvent.mouseEnter(screen.getByRole('button', { name: /Model Friendly model/u }));
+    fireEvent.click(trigger);
+
+    expect(screen.getByText(/Medium/u)).toBeInTheDocument();
+    const modelBtn = screen.getByRole('button', { name: 'Select model' });
+    expect(modelBtn).toHaveTextContent('Friendly model');
+
+    const slider = screen.getByRole('slider', { name: 'Reasoning effort' });
+    expect(slider).toBeInTheDocument();
+    expect(slider).toHaveAttribute('aria-valuenow', '1');
+    expect(slider).toHaveAttribute('aria-valuetext', 'medium');
+
+    fireEvent.keyDown(slider, { key: 'ArrowRight' });
+    expect(onEffort).toHaveBeenCalledWith('high');
+
+    fireEvent.keyDown(slider, { key: 'ArrowLeft' });
+    expect(onEffort).toHaveBeenCalledWith('low');
+
+    const resetBtn = screen.getByRole('button', { name: 'Reset reasoning effort' });
+    fireEvent.click(resetBtn);
+    expect(onEffort).toHaveBeenCalledWith('medium');
+
+    expect(screen.queryByRole('menu', { name: 'Models' })).not.toBeInTheDocument();
+    fireEvent.click(modelBtn);
     const modelMenu = screen.getByRole('menu', { name: 'Models' });
     expect(modelMenu).toBeVisible();
     expect(within(modelMenu).getByText('Friendly model')).toBeVisible();
-    expect(document.querySelector('.composer-model-options .scrollbar-viewport')).toBeInTheDocument();
 
-    fireEvent.mouseEnter(screen.getByRole('button', { name: /Effort medium/u }));
-    expect(screen.getByRole('menu', { name: 'Reasoning effort' })).toBeVisible();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'high' }));
-    expect(onEffort).toHaveBeenCalledWith('high');
-    expect(onModel).not.toHaveBeenCalled();
+    fireEvent.click(within(modelMenu).getByRole('menuitem', { name: 'Friendly model' }));
+    expect(onModel).toHaveBeenCalledWith('internal-model-id');
+    expect(screen.queryByRole('menu', { name: 'Models' })).not.toBeInTheDocument();
+
+    // Closing the effort card via Escape key
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('slider', { name: 'Reasoning effort' })).not.toBeInTheDocument();
   });
 });

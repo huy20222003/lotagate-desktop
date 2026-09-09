@@ -67,6 +67,7 @@ export class DesktopHostExecutionBroker {
 
   private async filesystem(root: string, action: string, params: Record<string, unknown>): Promise<unknown> {
     const pathValue = action === 'filesystem.list' ? optionalWorkspacePath(params['path']) : requiredString(params, 'path');
+    if (action === 'filesystem.exists') return this.pathExists(root, pathValue);
     const target = action === 'filesystem.write' ? await requireWorkspaceWritePath(pathValue, root) : await this.resolveExistingPath(root, pathValue);
     if (action === 'filesystem.read') {
       const info = await stat(target);
@@ -84,7 +85,6 @@ export class DesktopHostExecutionBroker {
       }
       return entries;
     }
-    if (action === 'filesystem.exists') return true;
     if (action === 'filesystem.write') {
       const content = params['content'];
       if (typeof content !== 'string') throw new Error('filesystem.write requires string content.');
@@ -123,6 +123,11 @@ export class DesktopHostExecutionBroker {
     assertInside(canonical, canonicalRoot);
     await access(canonical);
     return canonical;
+  }
+
+  private async pathExists(root: string, input: string): Promise<boolean> {
+    try { await this.resolveExistingPath(root, input); return true; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
   }
 
   private async exists(path: string): Promise<boolean> { try { await access(path); return true; } catch { return false; } }

@@ -11,6 +11,7 @@ export const DESKTOP_RUNTIME_LIMITS = {
   minExecutionTimeoutMs: 100,
   defaultExecutionTimeoutMs: 30_000,
   maxExecutionTimeoutMs: 120_000,
+  commandCancellationGraceMs: 5_000,
   containerCleanupTimeoutMs: 10_000,
   commandEventBufferTtlMs: 30_000,
   sandboxDefaultOutputBytes: 2 * 1024 * 1024,

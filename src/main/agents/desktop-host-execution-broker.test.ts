@@ -56,6 +56,25 @@ describe('DesktopHostExecutionBroker', () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it('returns false for a missing filesystem.exists target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-host-exists-'));
+    try {
+      const broker = new DesktopHostExecutionBroker();
+      const result = await broker.handle(root, request('filesystem', 'filesystem.exists', { path: 'missing/nested.txt' }));
+      expect(result).toMatchObject({ ok: true, result: false });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('creates missing parent directories for filesystem.write', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-host-write-parent-'));
+    try {
+      const broker = new DesktopHostExecutionBroker();
+      const result = await broker.handle(root, request('filesystem', 'filesystem.write', { path: 'missing/nested.txt', content: 'created' }));
+      expect(result).toMatchObject({ ok: true, result: 'Wrote 7 bytes.' });
+      expect(await readFile(join(root, 'missing', 'nested.txt'), 'utf8')).toBe('created');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it('runs structured host commands without shell interpolation', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lotagate-host-broker-'));
     try {

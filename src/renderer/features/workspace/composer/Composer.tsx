@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Folder, Paperclip, Send, Square } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Folder, Paperclip, RotateCcw, Send, Square, Zap } from 'lucide-react';
 import type { Task, Workspace, WorkspaceFileSuggestion } from '../../../../contracts/ipc/v1/workspace.js';
 import type { DesktopApprovalRequest } from '../../../../contracts/ipc/v1/approval.js';
 import { Button, Dropdown, Icon, IconButton, Modal, Spinner, TextArea } from '../../../components/ui.js';
@@ -38,40 +38,225 @@ type ComposerModelPickerProps = {
   disabled: boolean;
 };
 
+const EFFORT_OPTIONS: readonly DesktopReasoningEffort[] = DESKTOP_REASONING_EFFORTS;
+
+function ReasoningEffortSlider({
+  selectedEffort,
+  onEffort,
+  disabled
+}: {
+  selectedEffort: DesktopReasoningEffort;
+  onEffort: (effort: DesktopReasoningEffort) => void;
+  disabled?: boolean;
+}) {
+  const currentIndex = EFFORT_OPTIONS.indexOf(selectedEffort);
+  const activeIndex = currentIndex === -1 ? 1 : currentIndex;
+  const trackRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+
+  const updateFromClientX = useCallback((clientX: number) => {
+    if (!trackRef.current || disabled) return;
+    const rect = trackRef.current.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const targetIndex = Math.round(ratio * (EFFORT_OPTIONS.length - 1));
+    const target = EFFORT_OPTIONS[targetIndex];
+    if (target && target !== selectedEffort) {
+      onEffort(target);
+    }
+  }, [disabled, onEffort, selectedEffort]);
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    event.preventDefault();
+    isDragging.current = true;
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    updateFromClientX(event.clientX);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging.current || disabled) return;
+    updateFromClientX(event.clientX);
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+    try {
+      (event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId);
+    } catch {}
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      const nextIndex = Math.max(0, activeIndex - 1);
+      const nextEffort = EFFORT_OPTIONS[nextIndex];
+      if (nextEffort) onEffort(nextEffort);
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const nextIndex = Math.min(EFFORT_OPTIONS.length - 1, activeIndex + 1);
+      const nextEffort = EFFORT_OPTIONS[nextIndex];
+      if (nextEffort) onEffort(nextEffort);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      const first = EFFORT_OPTIONS[0];
+      if (first) onEffort(first);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      const last = EFFORT_OPTIONS[EFFORT_OPTIONS.length - 1];
+      if (last) onEffort(last);
+    }
+  };
+
+  const progressFraction = activeIndex / (EFFORT_OPTIONS.length - 1);
+
+  return (
+    <div
+      ref={trackRef}
+      className="composer-effort-slider-track"
+      role="slider"
+      tabIndex={disabled ? -1 : 0}
+      aria-label="Reasoning effort"
+      aria-valuemin={0}
+      aria-valuemax={EFFORT_OPTIONS.length - 1}
+      aria-valuenow={activeIndex}
+      aria-valuetext={selectedEffort}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onKeyDown={handleKeyDown}
+    >
+      <div
+        className="composer-effort-slider-fill"
+        style={{ width: `calc(14px + ${progressFraction} * (100% - 28px))` }}
+      />
+      {EFFORT_OPTIONS.map((effort, index) => {
+        const dotFraction = index / (EFFORT_OPTIONS.length - 1);
+        return (
+          <div
+            key={effort}
+            className={`composer-effort-slider-dot${index <= activeIndex ? ' active' : ''}`}
+            style={{ left: `calc(14px + ${dotFraction} * (100% - 28px))` }}
+          />
+        );
+      })}
+      <div
+        className="composer-effort-slider-thumb"
+        style={{ left: `calc(14px + ${progressFraction} * (100% - 28px))` }}
+      />
+    </div>
+  );
+}
+
 function ComposerModelPicker({ models, selectedModel, selectedEffort, onModel, onEffort, disabled }: ComposerModelPickerProps) {
   const [open, setOpen] = useState(false);
-  const [activeMenu, setActiveMenu] = useState<'model' | 'effort'>();
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const modelLabel = (models.find(model => model.id === selectedModel)?.label ?? selectedModel) || 'Model';
-  const close = () => setOpen(false);
+  const close = useCallback(() => {
+    setOpen(false);
+    setModelMenuOpen(false);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const closeOnOutsideClick = (event: PointerEvent) => {
       if (!pickerRef.current?.contains(event.target as Node)) close();
     };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
     document.addEventListener('pointerdown', closeOnOutsideClick);
-    return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
-  }, [open]);
-  return <div ref={pickerRef} className={`composer-model-picker${open ? ' open' : ''}`}>
-    <button type="button" className="composer-model-trigger" aria-label="Select model and effort" aria-expanded={open} disabled={disabled} onClick={() => setOpen(current => !current)}>
-      <span className="composer-model-trigger-name">{modelLabel}</span><span className="composer-model-trigger-effort">{selectedEffort}</span><Icon icon={ChevronDown} size={14} />
-    </button>
-    {open ? <div className={`composer-model-popover${activeMenu === undefined ? '' : ' has-options'}`} onMouseLeave={() => setActiveMenu(undefined)}>
-      <div className="composer-model-popover-menu">
-        <button type="button" className={`composer-model-popover-row${activeMenu === 'model' ? ' active' : ''}`} onMouseEnter={() => setActiveMenu('model')} onFocus={() => setActiveMenu('model')} onClick={() => setActiveMenu('model')}>
-          <span>Model</span><span className="composer-model-popover-value">{modelLabel}</span><Icon icon={ChevronRight} size={14} />
-        </button>
-        <button type="button" className={`composer-model-popover-row${activeMenu === 'effort' ? ' active' : ''}`} onMouseEnter={() => setActiveMenu('effort')} onFocus={() => setActiveMenu('effort')} onClick={() => setActiveMenu('effort')}>
-          <span>Effort</span><span className="composer-model-popover-value">{selectedEffort}</span><Icon icon={ChevronRight} size={14} />
-        </button>
-      </div>
-      {activeMenu !== undefined ? <Scrollbar className="composer-model-options">
-        <div role="menu" aria-label={activeMenu === 'model' ? 'Models' : 'Reasoning effort'}>
-          {(activeMenu === 'model' ? models.map(model => ({ value: model.id, label: model.label })) : DESKTOP_REASONING_EFFORTS.map(value => ({ value, label: value }))).map(option => <button type="button" role="menuitem" className="composer-model-option" key={option.value} onClick={() => { if (activeMenu === 'model') onModel(option.value); else onEffort(option.value as DesktopReasoningEffort); close(); }}><span>{option.label}</span>{((activeMenu === 'model' && option.value === selectedModel) || (activeMenu === 'effort' && option.value === selectedEffort)) ? <Icon icon={Check} size={14} /> : null}</button>)}
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [close, open]);
+
+  const effortText = selectedEffort.charAt(0).toUpperCase() + selectedEffort.slice(1);
+
+  return (
+    <div ref={pickerRef} className={`composer-model-picker${open ? ' open' : ''}`}>
+      <button
+        type="button"
+        className="composer-model-trigger"
+        aria-label="Select model and effort"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen(current => !current)}
+      >
+        <span className="composer-model-trigger-name">{modelLabel}</span>
+        <span className="composer-model-trigger-effort">{selectedEffort}</span>
+        <Icon icon={ChevronDown} size={14} />
+      </button>
+      {open ? (
+        <div className="composer-effort-card">
+          <div className="composer-effort-header">
+            <div className="composer-effort-header-left">
+              <Icon icon={Zap} size={15} />
+            </div>
+            <button
+              type="button"
+              className={`composer-effort-header-center${modelMenuOpen ? ' active' : ''}`}
+              aria-label="Select model"
+              aria-expanded={modelMenuOpen}
+              onClick={() => setModelMenuOpen(current => !current)}
+            >
+              <span className="composer-effort-level">
+                {effortText} <Icon icon={ChevronRight} size={12} />
+              </span>
+              <span className="composer-effort-model-name">
+                {modelLabel}
+              </span>
+            </button>
+            <div className="composer-effort-header-right">
+              <button
+                type="button"
+                className="composer-effort-reset"
+                aria-label="Reset reasoning effort"
+                title="Reset effort to default"
+                onClick={() => onEffort('medium')}
+              >
+                <Icon icon={RotateCcw} size={14} />
+              </button>
+            </div>
+          </div>
+          <ReasoningEffortSlider
+            selectedEffort={selectedEffort}
+            onEffort={onEffort}
+            disabled={disabled}
+          />
+          {modelMenuOpen ? (
+            <div className="composer-model-flyout">
+              <Scrollbar className="composer-model-options">
+                <div role="menu" aria-label="Models">
+                  {models.map(model => (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={`composer-model-option${model.id === selectedModel ? ' active' : ''}`}
+                      key={model.id}
+                      onClick={() => {
+                        onModel(model.id);
+                        setModelMenuOpen(false);
+                      }}
+                    >
+                      <span>{model.label}</span>
+                      {model.id === selectedModel ? <Icon icon={Check} size={14} /> : null}
+                    </button>
+                  ))}
+                </div>
+              </Scrollbar>
+            </div>
+          ) : null}
         </div>
-      </Scrollbar> : null}
-    </div> : null}
-  </div>;
+      ) : null}
+    </div>
+  );
 }
 
 export function Composer({ disabled, workspace, thinking, task, attachments, queuedMessages, models, selectedModel, onModel, selectedEffort, onEffort, busy, error, onSend, onRunCommand, onCancel, onDraft, onAttach, onAttachImage, onRemoveAttachment, onSteerQueued, onRemoveQueued, onEditQueued, approval, approvalMode, onApprovalMode, onApproval, showContextWindowUsage = false, contextUsage }: { disabled: boolean; workspace?: Workspace | undefined; thinking: boolean; task?: Task | undefined; attachments: AttachmentPreview[]; queuedMessages: readonly QueuedMessage[]; models: WorkspaceModelOption[]; selectedModel: string; onModel: (model: string) => void; selectedEffort: DesktopReasoningEffort; onEffort: (effort: DesktopReasoningEffort) => void; busy: boolean; error?: string | undefined; onSend: (prompt: string, options?: PromptSendOptions) => Promise<void>; onRunCommand: (invocation: DesktopCommandInvocation, preview: string) => Promise<boolean>; onCancel: () => Promise<void>; onDraft: (draft: string) => Promise<void>; onAttach: () => Promise<void>; onAttachImage: (name: string, bytes: Uint8Array) => Promise<void>; onRemoveAttachment: (attachmentId: string) => Promise<void>; onSteerQueued: (id: string) => Promise<void>; onRemoveQueued: (id: string) => Promise<void>; onEditQueued: (id: string) => Promise<QueuedMessage | undefined>; approval?: DesktopApprovalRequest | undefined; approvalMode: ApprovalMode; onApprovalMode: (mode: ApprovalMode) => void; onApproval: (approved: boolean) => Promise<void>; showContextWindowUsage?: boolean; contextUsage?: ContextWindowUsage }) {

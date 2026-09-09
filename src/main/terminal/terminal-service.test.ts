@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { access, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { TaskStore } from '../tasks/task-store.js';
 import type { WorkspaceRegistry } from '../workspaces/workspace-registry.js';
@@ -39,6 +41,20 @@ describe('TerminalService', () => {
     const result = await service.execute({ cwd: process.cwd(), command: process.execPath, args: ['-e', 'process.stdout.write("ok")'], taskId: 'task-1', approved: true });
     expect(result.stdout).toBe('ok');
     expect(result.taskId).toBe('task-1');
+  });
+
+  it('terminates descendants when a command exceeds its timeout', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'lotagate-terminal-')));
+    const marker = join(root, 'descendant-survived.txt');
+    const registry = { require: vi.fn(async () => ({ id: 'workspace-1', rootPath: root, trusted: true })) } as unknown as WorkspaceRegistry;
+    const service = new TerminalService(registry, taskStore, createEvidenceStore());
+    const childScript = `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'survived'), 750);`;
+    const parentScript = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(childScript)}], { stdio: 'ignore' }); setTimeout(() => undefined, 5000);`;
+    try {
+      await service.execute({ cwd: root, command: process.execPath, args: ['-e', parentScript], taskId: 'task-1', approved: true, timeoutMs: 100 });
+      await new Promise(resolve => setTimeout(resolve, 900));
+      await expect(access(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
   it('removes terminal evidence outside the configured retention window', async () => {

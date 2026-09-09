@@ -10,6 +10,7 @@ export interface DesktopRuntimeConfig {
   remoteServerUrl: string;
   remoteServerGlobalPrefix: string;
   remoteServerEnrollmentToken: string;
+  updateSigningPublicKey: string;
   authPartition: string;
 }
 
@@ -50,6 +51,7 @@ export function readRuntimeConfig(): DesktopRuntimeConfig {
     remoteServerUrl: process.env['LOTAGATE_REMOTE_SERVER_URL']?.trim() ?? '',
     remoteServerGlobalPrefix: process.env['LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX']?.trim() || 'api/v1',
     remoteServerEnrollmentToken: process.env['LOTAGATE_REMOTE_SERVER_ENROLLMENT_TOKEN']?.trim() ?? '',
+    updateSigningPublicKey: process.env['LOTAGATE_DESKTOP_UPDATE_PUBLIC_KEY']?.trim() ?? '',
     authPartition: 'persist:lotagate-auth',
   };
 }

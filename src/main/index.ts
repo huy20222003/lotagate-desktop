@@ -129,7 +129,7 @@ app.whenReady().then(async () => {
   });
   const operations = new DesktopOperations(undefined, async () => ({ defaultFileOpenDestination: (await settings.get()).defaultFileOpenDestination }));
   const speech = new WhisperCppSpeechTranscriptionService();
-  const updates = new DesktopUpdateService(transport, logger);
+  const updates = new DesktopUpdateService(transport, logger, runtimeConfig.updateSigningPublicKey);
   if (!automationDispatchRequested) { operations.initializeDeepLinks(); operations.initializeTray(); }
   const automations = new AutomationService();
   automationService = automations;

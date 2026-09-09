@@ -4,10 +4,11 @@ export interface RendererOperationOwner {
   workspaceId: string;
   taskId?: string;
   taskResolved: boolean;
+  selectionRevision: number;
 }
 
-export function createRendererOperationOwner(workspace: Workspace, task: Task | undefined): RendererOperationOwner {
-  return { workspaceId: workspace.id, ...(task === undefined ? {} : { taskId: task.id }), taskResolved: task !== undefined };
+export function createRendererOperationOwner(workspace: Workspace, task: Task | undefined, selectionRevision: number): RendererOperationOwner {
+  return { workspaceId: workspace.id, ...(task === undefined ? {} : { taskId: task.id }), taskResolved: task !== undefined, selectionRevision };
 }
 
 export function resolveRendererOperationOwner(owner: RendererOperationOwner, taskId: string): void {
@@ -15,7 +16,8 @@ export function resolveRendererOperationOwner(owner: RendererOperationOwner, tas
   owner.taskResolved = true;
 }
 
-export function isRendererOperationCurrent(owner: RendererOperationOwner, workspace: Workspace | undefined, task: Task | undefined): boolean {
+export function isRendererOperationCurrent(owner: RendererOperationOwner, workspace: Workspace | undefined, task: Task | undefined, selectionRevision: number): boolean {
   if (workspace?.id !== owner.workspaceId) return false;
+  if (selectionRevision !== owner.selectionRevision) return false;
   return owner.taskResolved ? task?.id === owner.taskId : task === undefined;
 }

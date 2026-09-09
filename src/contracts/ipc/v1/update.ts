@@ -13,6 +13,7 @@ export const desktopReleaseAssetSchema = z.object({
   contentType: z.string().min(1),
   sizeBytes: z.string().regex(/^\d+$/u).nullable(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/iu).nullable(),
+  signature: z.string().regex(/^[A-Za-z0-9_-]+$/u).nullable(),
   status: z.string().min(1),
   isRecommended: z.boolean(),
   downloadUrl: z.string().url().nullable(),

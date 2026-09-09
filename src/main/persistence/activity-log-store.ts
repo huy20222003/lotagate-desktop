@@ -125,7 +125,7 @@ export class ActivityLogStore {
         const previous = actualIndex < 0 ? undefined : activitySchema.parse(next[actualIndex]);
         const nextActivity = previous === undefined
           ? activitySchema.parse({ id: `streaming:${randomUUID()}`, taskId, kind: 'assistant', text: delta.text, metadata: delta.metadata, createdAt: new Date().toISOString() })
-          : activitySchema.parse({ ...previous, text: `${previous.text}${delta.text}`, metadata: { ...previous.metadata, ...delta.metadata } });
+          : activitySchema.parse({ ...previous, text: mergeAssistantText(previous.text, delta.text), metadata: { ...previous.metadata, ...delta.metadata } });
         if (actualIndex < 0) next.push(nextActivity);
         else next[actualIndex] = nextActivity;
         const record: ActivityLogRecord = previous === undefined
@@ -340,11 +340,20 @@ function findAssistantIndex(activities: Activity[], taskId: string, turnId: unkn
   return -1;
 }
 
+function mergeAssistantText(previousText: string, incomingDelta: string): string {
+  if (incomingDelta.length === 0) return previousText;
+  if (previousText === incomingDelta) return previousText;
+  if (incomingDelta.startsWith(previousText)) return incomingDelta;
+  if (previousText.endsWith(incomingDelta) && incomingDelta.length > 20) return previousText;
+  return `${previousText}${incomingDelta}`;
+}
+
 function applyAssistantDelta(activities: Activity[], taskId: string, turnId: unknown, text: string, metadata: Record<string, unknown>): Activity[] {
   const actualIndex = findAssistantIndex(activities, taskId, turnId, metadata['segmentId']);
   if (actualIndex < 0) throw new Error('Activity log delta has no matching assistant activity.');
   const previous = activitySchema.parse(activities[actualIndex]);
-  const updated = activitySchema.parse({ ...previous, text: `${previous.text}${text}`, metadata: { ...previous.metadata, ...metadata } });
+  const mergedText = mergeAssistantText(previous.text, text);
+  const updated = activitySchema.parse({ ...previous, text: mergedText, metadata: { ...previous.metadata, ...metadata } });
   const next = [...activities];
   next[actualIndex] = updated;
   return next;

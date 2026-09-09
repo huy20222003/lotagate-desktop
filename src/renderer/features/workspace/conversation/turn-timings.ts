@@ -3,6 +3,22 @@ import { DESKTOP_TURN_TIMING_METADATA_KEY } from '../../../../contracts/ipc/v1/w
 
 export interface TurnTiming { startedAt: number; endedAt?: number }
 
+/**
+ * Activity hydration can race the live terminal event. Preserve a terminal
+ * timing already received from the event stream when the persisted snapshot
+ * still contains only the start marker.
+ */
+export function mergeTurnTimings(persisted: Record<string, TurnTiming>, live: Record<string, TurnTiming>): Record<string, TurnTiming> {
+  const merged = { ...persisted };
+  for (const [turnId, liveTiming] of Object.entries(live)) {
+    const persistedTiming = merged[turnId];
+    if (persistedTiming !== undefined && persistedTiming.endedAt === undefined && liveTiming.endedAt !== undefined) {
+      merged[turnId] = { ...persistedTiming, endedAt: liveTiming.endedAt };
+    }
+  }
+  return merged;
+}
+
 export function turnTimingsFromActivities(activities: readonly Activity[]): Record<string, TurnTiming> {
   const timings: Record<string, TurnTiming> = {};
   for (const activity of activities) {
