@@ -295,6 +295,24 @@ function commandExists(command) {
   return spawnSync(lookup, [command], { stdio: 'ignore' }).status === 0;
 }
 
+function runNodeScript(scriptPath, label, environment = {}) {
+  return new Promise((resolvePromise, reject) => {
+    console.log(`\n==> ${label}`);
+    const child = spawn(process.execPath, [scriptPath], {
+      cwd: desktopRoot,
+      env: { ...process.env, ...environment },
+      shell: false,
+      stdio: 'inherit',
+      windowsHide: true,
+    });
+    child.once('error', reject);
+    child.once('exit', code => {
+      if (code === 0) resolvePromise();
+      else reject(new Error(`${label} failed with exit code ${String(code)}.`));
+    });
+  });
+}
+
 function runNpm(args, label) {
   return new Promise((resolvePromise, reject) => {
     console.log(`\n==> ${label}`);
