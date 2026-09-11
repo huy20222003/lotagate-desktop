@@ -2,11 +2,8 @@ name: Desktop Release Build and Google Drive Upload
 
 on:
   push:
-    # Temporary branch trigger for validation. Restore the tag trigger after testing.
-    branches:
-      - main
-    # tags:
-    #   - 'desktop-v*'
+    tags:
+      - 'desktop-v*'
 
 permissions:
   contents: read
@@ -39,19 +36,17 @@ jobs:
           desktop_version="$(node -p 'require("./package.json").version')"
           echo "version=$desktop_version" >> "$GITHUB_OUTPUT"
 
-      # Temporary bypass while validating branch-triggered releases. Restore this
-      # validation together with the tag-only trigger after the test run.
-      # - name: Validate release tag
-      #   shell: bash
-      #   env:
-      #     PACKAGE_VERSION: ${{ steps.targets.outputs.version }}
-      #   run: |
-      #     set -euo pipefail
-      #     expected_tag="desktop-v${PACKAGE_VERSION}"
-      #     if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
-      #       echo "::error::Expected tag ${expected_tag}, received ${GITHUB_REF_NAME}."
-      #       exit 1
-      #     fi
+      - name: Validate release tag
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ steps.targets.outputs.version }}
+        run: |
+          set -euo pipefail
+          expected_tag="desktop-v${PACKAGE_VERSION}"
+          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+            echo "::error::Expected tag ${expected_tag}, received ${GITHUB_REF_NAME}."
+            exit 1
+          fi
 
   build:
     name: Build Desktop (${{ matrix.id }})

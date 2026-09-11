@@ -19,8 +19,6 @@ export const COMPUTER_HOST_OPERATIONS = [
   'computer.writeClipboard', 'computer.waitForState', 'computer.manageFileDialog',
 ] as const;
 
-export type ComputerHostOperation = typeof COMPUTER_HOST_OPERATIONS[number];
-
 const PDF_OPERATIONS = [
   'pdf.open', 'pdf.create', 'pdf.inspect', 'pdf.validate', 'pdf.readText',
   'pdf.render', 'pdf.extractTables', 'pdf.recognizeText', 'pdf.search',
