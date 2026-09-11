@@ -63,5 +63,11 @@ handle('updates.check', async event => { assertTrustedRenderer(event); return up
 handle('updates.download', async event => { assertTrustedRenderer(event); return updates.download(); });
 handle('updates.cancel', async event => { assertTrustedRenderer(event); return updates.cancel(); });
 handle('updates.install', async event => { assertTrustedRenderer(event); return updates.install(); });
-updates.onState(snapshot => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('updates.state', snapshot); });
+updates.onState(snapshot => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed() && window.isFocusable()) {
+      window.webContents.send('updates.state', snapshot);
+    }
+  }
+});
 }

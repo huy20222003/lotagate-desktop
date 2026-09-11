@@ -1,6 +1,7 @@
 /** Runtime limits shared by the Desktop host boundary and its CLI bridge. */
 export const DESKTOP_RUNTIME_LIMITS = {
-  agentIdleTimeoutMs: 30 * 60 * 1_000,
+  agentIdleTimeoutMs: 5 * 60 * 1_000,
+  maxConcurrentSessionProcesses: 3,
   commandEventBufferBytes: 256 * 1024,
   cliJsonlLineBytes: 4 * 1024 * 1024,
   cliAttachmentChunkBytes: 512 * 1024,

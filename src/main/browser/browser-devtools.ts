@@ -10,7 +10,7 @@ export async function setViewport(contents: WebContents, viewport: BrowserViewpo
       width: viewport.width,
       height: viewport.height,
       mobile: viewport.mobile,
-      deviceScaleFactor: viewport.deviceScaleFactor === 1 && !viewport.mobile ? 0 : viewport.deviceScaleFactor
+      deviceScaleFactor: viewport.deviceScaleFactor,
     });
   });
 }

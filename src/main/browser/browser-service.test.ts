@@ -39,7 +39,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('electron', () => ({ BrowserWindow: class {}, WebContentsView: mocks.WebContentsView, session: mocks.session }));
 
 import { BrowserService } from './browser-service.js';
-import { viewportForBounds, viewportForSettings } from './browser-service-support.js';
+import { viewportForSettings } from './browser-service-support.js';
 
 describe('BrowserService layout lifecycle', () => {
   it('uses the dimensions shown by each viewport profile', () => {
@@ -50,13 +50,6 @@ describe('BrowserService layout lifecycle', () => {
     expect(viewportForSettings({ ...base, viewportProfile: 'tablet' })).toEqual({ width: 1_024, height: 768, mobile: true, deviceScaleFactor: 2 });
   });
 
-  it('fits an emulated viewport to a narrower browser drawer', () => {
-    const viewport = { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 };
-
-    expect(viewportForBounds(viewport, { x: 400, y: 120, width: 592, height: 626 })).toEqual({ width: 592, height: 626, mobile: false, deviceScaleFactor: 1 });
-    expect(viewportForBounds(viewport, { x: 0, y: 0, width: 1_440, height: 900 })).toEqual(viewport);
-  });
-
   it('applies the configured desktop viewport instead of falling back to the drawer width', async () => {
     const settings: BrowserSettings = { viewportProfile: 'desktop', customViewport: { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 }, downloadDirectory: '', sessionRetention: 'persistent', sessionRetentionMinutes: 60, originAllowlist: [], clearDataOnClose: false, evidenceRetentionDays: 30 };
     const service = new BrowserService(undefined, async () => settings);
@@ -64,7 +57,23 @@ describe('BrowserService layout lifecycle', () => {
     const view = mocks.views.at(-1)!;
     const sendCommand = view.webContents.debugger.sendCommand;
 
-    expect(sendCommand).toHaveBeenCalledWith('Emulation.setDeviceMetricsOverride', { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 0 });
+    expect(sendCommand).toHaveBeenCalledWith('Emulation.setDeviceMetricsOverride', { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 });
+    await service.close(snapshot.id);
+  });
+
+  it('reapplies the configured viewport when the native page view receives real bounds', async () => {
+    const settings: BrowserSettings = { viewportProfile: 'desktop', customViewport: { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 }, downloadDirectory: '', sessionRetention: 'persistent', sessionRetentionMinutes: 60, originAllowlist: [], clearDataOnClose: false, evidenceRetentionDays: 30 };
+    const service = new BrowserService(undefined, async () => settings);
+    service.attachWindow({ contentView: { addChildView: vi.fn(), removeChildView: vi.fn() }, on: vi.fn() } as never);
+    const snapshot = await service.create();
+    const view = mocks.views.at(-1)!;
+    view.webContents.getURL = vi.fn(() => 'https://example.test/');
+    await service.navigate(snapshot.id, snapshot.activeTabId, 'https://example.test/', true);
+
+    service.setViewBounds(snapshot.id, snapshot.activeTabId, { x: 10, y: 20, width: 519, height: 664 }, true);
+
+    expect(view.webContents.debugger.sendCommand).toHaveBeenCalledTimes(2);
+    expect(view.webContents.debugger.sendCommand).toHaveBeenLastCalledWith('Emulation.setDeviceMetricsOverride', { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 });
     await service.close(snapshot.id);
   });
 

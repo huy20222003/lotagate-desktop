@@ -20,17 +20,22 @@ export function MermaidDiagram({ definition }: { definition: string }) {
   useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading' });
-    void loadMermaid().then(mermaid => {
-      if (cancelled) return;
-      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'base', htmlLabels: false, themeVariables: themeVariables(theme) });
-      return mermaid.render(renderId, definition);
-    }).then(result => {
-      if (cancelled || result === undefined) return;
-      setState({ status: 'ready', src: svgDataUri(result.svg) });
-    }).catch(error => {
-      if (!cancelled) setState({ status: 'error', message: errorMessage(error) });
-    });
-    return () => { cancelled = true; };
+    const timer = setTimeout(() => {
+      void loadMermaid().then(mermaid => {
+        if (cancelled) return;
+        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'base', htmlLabels: false, themeVariables: themeVariables(theme) });
+        return mermaid.render(renderId, definition);
+      }).then(result => {
+        if (cancelled || result === undefined) return;
+        setState({ status: 'ready', src: svgDataUri(result.svg) });
+      }).catch(error => {
+        if (!cancelled) setState({ status: 'error', message: errorMessage(error) });
+      });
+    }, 150);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [definition, renderId, theme]);
 
   const diagramItem: LightBoxMediaItem | undefined = state.status === 'ready' ? { id: renderId, name: 'Mermaid diagram', src: state.src, kind: 'image', downloadName: 'diagram.svg' } : undefined;

@@ -25,6 +25,7 @@ export const desktopRequestSchema = z.discriminatedUnion('method', [
   requestBase.extend({ method: z.literal('extension.readDetail'), params }),
   requestBase.extend({ method: z.literal('extension.readPluginIcon'), params }),
   requestBase.extend({ method: z.literal('title.generate'), params }),
+  requestBase.extend({ method: z.literal('speech.synthesize'), params }),
   requestBase.extend({ method: z.literal('attachment.begin'), params }),
   requestBase.extend({ method: z.literal('attachment.chunk'), params }),
   requestBase.extend({ method: z.literal('attachment.complete'), params }),

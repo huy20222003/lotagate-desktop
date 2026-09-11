@@ -11,6 +11,7 @@ import type { ExtensionProtocol, PluginIconInput } from '../extensions/extension
 import type { ExtensionDetailInput, PublicPluginContributionInput } from '../../contracts/ipc/v1/extensions.js';
 import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 import type { DesktopHostCapabilities } from '../../contracts/agent-protocol/v1/host-capabilities.js';
+import { speechSynthesisAgentResultSchema, SPEECH_SYNTHESIS_MAX_BYTES, type SpeechSynthesisInput, type SpeechSynthesisResult } from '../../contracts/ipc/v1/speech.js';
 
 export interface AgentManagerHandler {
   onEvent(projectRoot: string, event: DesktopEvent): void;
@@ -80,10 +81,33 @@ export class AgentManager {
   }
 
   private async openSession(projectRoot: string, sessionId: string): Promise<unknown> {
+    this.evictExcessIdleSessions();
     const binding = this.createProcess(projectRoot, `session:${sessionId}`);
     await binding.process.initialize();
     try { const result = await binding.process.request('session.resume', { sessionId }); binding.sessionId = sessionId; this.sessionBindings.set(sessionId, binding); this.touch(binding); return result; }
     catch (error) { this.removeBinding(binding); await binding.process.shutdown('session-resume-failed'); throw error; }
+  }
+
+  private evictExcessIdleSessions(): void {
+    const maxSessions = DESKTOP_RUNTIME_LIMITS.maxConcurrentSessionProcesses;
+    if (this.sessionBindings.size < maxSessions) return;
+    const activeBindings = new Set([
+      ...this.turnBindings.values(),
+      ...this.approvalBindings.values(),
+      ...this.trustBindings.values(),
+    ]);
+    for (const [, candidate] of this.sessionBindings) {
+      if (this.sessionBindings.size < maxSessions) break;
+      if (!activeBindings.has(candidate)) {
+        void this.shutdownBinding(candidate, 'lru-eviction').catch(error =>
+          this.handler.onDiagnostic?.(candidate.projectRoot, {
+            kind: 'protocol',
+            severity: 'error',
+            message: error instanceof Error ? error.message : 'LRU session eviction failed.',
+          })
+        );
+      }
+    }
   }
 
   async turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; reasoningEffort?: DesktopReasoningEffort; runId?: string; taskId?: string; sessionName?: string; execution?: DesktopExecutionPolicy; skills?: DesktopSkillSelection; attachments?: CliAttachmentInput[] }): Promise<unknown> {
@@ -129,6 +153,14 @@ export class AgentManager {
   async modelList(cwd: string): Promise<unknown> { return this.cachedProtocolResult(cwd, 'models', CACHE_TTL_MS.models, () => this.request(cwd, 'model.list', {})); }
   async commandList(cwd: string): Promise<unknown> { return this.cachedProtocolResult(cwd, 'commands', CACHE_TTL_MS.models, () => this.request(cwd, 'command.list', {})); }
   async commandExecute(cwd: string, input: Record<string, unknown>): Promise<unknown> { return this.request(cwd, 'command.execute', input); }
+  async speechSynthesize(cwd: string, input: SpeechSynthesisInput): Promise<SpeechSynthesisResult> {
+    const process = await this.initializedProcess(await requireDirectory(cwd), undefined);
+    if (!process.supportsCapability('speech-synthesis')) throw new Error('The installed CLI does not support speech synthesis.');
+    const parsed = speechSynthesisAgentResultSchema.parse(await process.request('speech.synthesize', input));
+    const bytes = Buffer.from(parsed.bytesBase64, 'base64');
+    if (bytes.byteLength === 0 || bytes.byteLength > SPEECH_SYNTHESIS_MAX_BYTES) throw new Error('The generated speech exceeds the supported size limit.');
+    return { audio: new Uint8Array(bytes), mimeType: parsed.contentType };
+  }
   async commandExecuteResult(cwd: string, input: Record<string, unknown>): Promise<CommandExecutionResult> {
     const accepted = await this.commandExecute(cwd, input);
     const commandId = isRecord(accepted) && typeof accepted['commandId'] === 'string' ? accepted['commandId'] : undefined;

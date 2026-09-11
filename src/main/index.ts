@@ -81,10 +81,18 @@ else app.on('second-instance', (_event, commandLine) => {
     return;
   }
   const deepLink = commandLine.find(argument => argument.startsWith('lotagate://'));
-  if (deepLink) for (const window of BrowserWindow.getAllWindows()) window.webContents.send('operations.deepLink', deepLink);
+  if (deepLink) broadcastToActiveWindows('operations.deepLink', deepLink);
   const window = BrowserWindow.getAllWindows()[0];
   if (window !== undefined) { if (window.isMinimized()) window.restore(); window.focus(); }
 });
+
+function broadcastToActiveWindows(channel: string, ...args: unknown[]): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed() && window.isFocusable()) {
+      window.webContents.send(channel, ...args);
+    }
+  }
+}
 
 app.whenReady().then(async () => {
   logger.info('app.ready', { platform: process.platform, arch: process.arch });
@@ -97,7 +105,7 @@ app.whenReady().then(async () => {
     partition: runtimeConfig.authPartition,
     logger,
     cache,
-    onSessionExpired: async () => { userContext.resetSession(); await remoteControlService?.stop(); await approvalCoordinator?.cancelAll(); await agentManager?.shutdownAll('auth.session-expired'); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('auth.sessionExpired'); },
+    onSessionExpired: async () => { userContext.resetSession(); await remoteControlService?.stop(); await approvalCoordinator?.cancelAll(); await agentManager?.shutdownAll('auth.session-expired'); broadcastToActiveWindows('auth.sessionExpired'); },
   });
   userContext = new DesktopUserContextService(transport, cache);
   const workspaces = new WorkspaceRegistry();
@@ -110,17 +118,17 @@ app.whenReady().then(async () => {
   const settings = new SettingsService();
   const approvals = new ApprovalCoordinator();
   approvalCoordinator = approvals;
-  approvals.onRequest(request => { remoteControlService?.publishApprovalRequest(request); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('approval.requested', request); });
-  approvals.onResolved(resolution => { remoteControlService?.publishApprovalResolution(resolution); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('approval.resolved', resolution); });
+  approvals.onRequest(request => { remoteControlService?.publishApprovalRequest(request); broadcastToActiveWindows('approval.requested', request); });
+  approvals.onResolved(resolution => { remoteControlService?.publishApprovalResolution(resolution); broadcastToActiveWindows('approval.resolved', resolution); });
   taskProjector = new TaskEventProjector(tasks, (error, cwd) => logger.error('task.event.persist.failed', { cwd, message: error instanceof Error ? error.message : 'Unable to persist agent event.' }));
   const browser = new BrowserService(snapshot => {
-    for (const window of BrowserWindow.getAllWindows()) window.webContents.send('browser.state', snapshot);
+    broadcastToActiveWindows('browser.state', snapshot);
   }, async () => (await settings.get()).browser);
   browserService = browser;
   const browserHost = new BrowserHostToolBroker(browser, (cwd, activity) => {
     logger.debug('agent.browser', { cwd, event: activity.event, action: activity.data['action'] });
     const event = { version: 1 as const, type: 'event' as const, scope: 'session' as const, event: activity.event, data: activity.data };
-    for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd, event });
+    broadcastToActiveWindows('agent.event', { cwd, event });
   });
   const hostExecution = new DesktopHostExecutionBroker({
     sandbox: new ContainerSandboxExecutionProvider(async () => {
@@ -170,8 +178,8 @@ app.whenReady().then(async () => {
     getRemoteControlService: () => remoteControlService,
     logEvent: fields => logger.debug('agent.event', fields),
     onPersistenceError: fields => logger.error('task.event.persist.failed', fields),
-    onTaskUpdated: updated => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('task.updated', updated); },
-    onAgentEvent: (projectRoot, event) => { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.event', { cwd: projectRoot, event }); },
+    onTaskUpdated: updated => { broadcastToActiveWindows('task.updated', updated); },
+    onAgentEvent: (projectRoot, event) => { broadcastToActiveWindows('agent.event', { cwd: projectRoot, event }); },
   });
   const agents = new AgentManager({
     onEvent: (projectRoot, event) => {
@@ -200,7 +208,7 @@ app.whenReady().then(async () => {
         }
       }
     },
-    onDiagnostic: (projectRoot, diagnostic) => { logger[diagnostic.severity === 'error' ? 'error' : 'warn']('agent.diagnostic', { projectRoot, kind: diagnostic.kind, message: diagnostic.message, ...(diagnostic.sessionId === undefined ? {} : { sessionId: diagnostic.sessionId }), ...(diagnostic.turnId === undefined ? {} : { turnId: diagnostic.turnId }) }); for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic }); },
+    onDiagnostic: (projectRoot, diagnostic) => { logger[diagnostic.severity === 'error' ? 'error' : 'warn']('agent.diagnostic', { projectRoot, kind: diagnostic.kind, message: diagnostic.message, ...(diagnostic.sessionId === undefined ? {} : { sessionId: diagnostic.sessionId }), ...(diagnostic.turnId === undefined ? {} : { turnId: diagnostic.turnId }) }); broadcastToActiveWindows('agent.diagnostic', { cwd: projectRoot, diagnostic }); },
     onHostRequest: async (projectRoot, request, signal) => {
       if (request.tool === 'browser') return browserHost.handle(projectRoot, request, signal);
       if (request.tool === 'computer') {
@@ -225,7 +233,7 @@ app.whenReady().then(async () => {
         taskTurns.releaseSession(sessionId);
       }
       logger.error('agent.process.exit', { projectRoot, sessionId, approvalCount: approvalIds.length, error: error.message });
-      for (const window of BrowserWindow.getAllWindows()) window.webContents.send('agent.diagnostic', { cwd: projectRoot, diagnostic: { kind: 'protocol', severity: 'error', message: error.message, ...(sessionId === undefined ? {} : { sessionId }) } });
+      broadcastToActiveWindows('agent.diagnostic', { cwd: projectRoot, diagnostic: { kind: 'protocol', severity: 'error', message: error.message, ...(sessionId === undefined ? {} : { sessionId }) } });
     },
   }, cache, async () => {
     const configured = await settings.get();
@@ -247,7 +255,7 @@ app.whenReady().then(async () => {
   const remoteControl = new RemoteControlService({ serverUrl: runtimeConfig.remoteServerUrl, globalPrefix: runtimeConfig.remoteServerGlobalPrefix, enrollmentToken: runtimeConfig.remoteServerEnrollmentToken, tasks, taskTurns, workspaces, workspaceFileSuggestions, agents, approvals, artifacts, settings, logger });
   remoteControlService = remoteControl;
   remoteControl.onState(event => {
-    for (const window of BrowserWindow.getAllWindows()) window.webContents.send('remote-control.state', event);
+    broadcastToActiveWindows('remote-control.state', event);
   });
   const executeAutomation = (automation: Parameters<AutomationExecutionService['execute']>[0], run: AutomationRun, signal: AbortSignal) => automationExecution.execute(automation, run, signal);
   const runAutomation = (id: string): Promise<AutomationRun> => automations.runNow(id, executeAutomation);
@@ -256,7 +264,7 @@ app.whenReady().then(async () => {
   automations.onState(event => {
     remoteControl.publishAutomationState(event);
     void automations.list().then(items => osScheduler.sync(items)).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
-    for (const window of BrowserWindow.getAllWindows()) window.webContents.send('automation.state', event);
+    broadcastToActiveWindows('automation.state', event);
     const run = event.run;
     if (event.type === 'reviewed' && run?.worktreePath !== undefined) void workspaces.require(event.automationId).then(workspace => cleanupAutomationWorkspace(git, workspace, run)).catch(error => logger.warn('automation.review.worktree.cleanup.failed', { runId: run?.id, message: error instanceof Error ? error.message : 'Unable to clean reviewed automation worktree.' }));
     if (run !== undefined && event.automation?.notifications) {
@@ -299,6 +307,13 @@ app.on('before-quit', (event) => {
   shuttingDown = true;
   automationService?.stop();
   logger.info('app.before-quit', { windowCount: BrowserWindow.getAllWindows().length });
+
+  const shutdownWatchdog = setTimeout(() => {
+    logger.warn('app.shutdown.watchdog.expired', { timeoutMs: 5000 });
+    app.exit(0);
+  }, 5000);
+  shutdownWatchdog.unref?.();
+
   void (async () => {
     await approvalCoordinator?.cancelAll();
     await remoteControlService?.stop();
@@ -307,5 +322,9 @@ app.on('before-quit', (event) => {
     await documentBroker?.closeForWorkspace(process.cwd());
     await taskProjector?.flush();
     await browserService?.closeAll();
-  })().catch(error => logger.error('app.shutdown.failed', { message: error instanceof Error ? error.message : 'Desktop shutdown failed.' })).finally(async () => { await logger.close().catch(() => undefined); app.quit(); });
+  })().catch(error => logger.error('app.shutdown.failed', { message: error instanceof Error ? error.message : 'Desktop shutdown failed.' })).finally(async () => {
+    clearTimeout(shutdownWatchdog);
+    await logger.close().catch(() => undefined);
+    app.quit();
+  });
 });

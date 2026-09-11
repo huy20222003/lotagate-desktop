@@ -216,3 +216,74 @@
 .file-content-media-video { width: min(100%, 760px); }
 .file-content-media-preview > .source-audio-waveform { width: min(760px, 100%); }
 .file-content-media-state { color: var(--color-text-tertiary); font-size: 12px; }
+
+.live-chat-panel { min-width: 340px; display: flex; flex-direction: column; background: var(--color-surface); }
+.live-chat-panel-header { align-items: center; }
+.live-chat-title { display: flex; align-items: center; gap: 8px; color: var(--color-text); font-size: 13px; font-weight: 600; }
+
+/* Center Stage for Voice Orb */
+.live-chat-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding: 24px 20px; min-height: 0; user-select: none; }
+.live-orb-container { position: relative; width: 200px; height: 200px; display: flex; align-items: center; justify-content: center; }
+
+/* Ambient glow around the orb */
+.live-orb-ambient-glow { position: absolute; width: 220px; height: 220px; border-radius: 50%; background: radial-gradient(circle, rgba(118, 119, 245, 0.45) 0%, rgba(100, 105, 240, 0.18) 45%, transparent 70%); filter: blur(28px); pointer-events: none; animation: live-orb-breathe 4s ease-in-out infinite alternate; transition: transform 0.2s ease-out, opacity 0.3s ease; }
+
+/* Core sphere */
+.live-orb-sphere { position: relative; width: 190px; height: 190px; border-radius: 50%; overflow: hidden; background: #0d0f28; box-shadow: 0 0 45px -8px rgba(118, 119, 245, 0.65), 0 0 90px -15px rgba(95, 105, 240, 0.35), inset 0 0 15px rgba(255, 255, 255, 0.15); transform: translateZ(0); transition: transform 0.15s ease-out, box-shadow 0.3s ease; }
+
+/* Dynamic status variations on the orb */
+.live-chat-stage.is-speaking .live-orb-ambient-glow { animation: live-orb-speaking-glow 1.2s ease-in-out infinite alternate; }
+.live-chat-stage.is-waiting .live-orb-ambient-glow,
+.live-chat-stage.is-transcribing .live-orb-ambient-glow { animation: live-orb-waiting-glow 2s ease-in-out infinite; }
+.live-chat-stage.is-error .live-orb-ambient-glow { background: radial-gradient(circle, rgba(239, 68, 68, 0.4) 0%, rgba(220, 38, 38, 0.15) 50%, transparent 70%); }
+.live-chat-stage.is-error .live-orb-sphere { box-shadow: 0 0 35px -8px rgba(239, 68, 68, 0.5), 0 0 70px -15px rgba(220, 38, 38, 0.25), inset 0 0 15px rgba(255, 255, 255, 0.1); }
+
+/* Fluid layers inside orb */
+.live-orb-layer { position: absolute; border-radius: 50%; will-change: transform; }
+
+/* Layer 1: Top-Left Periwinkle / Violet Base */
+.live-orb-layer-base { width: 220px; height: 220px; top: -30px; left: -30px; background: radial-gradient(circle at 35% 30%, #7677f5 0%, #6869f0 45%, #4a4cd6 85%); filter: blur(16px); animation: live-orb-drift-1 10s ease-in-out infinite alternate; }
+
+/* Layer 2: Bottom-Right Pearlescent White Mist */
+.live-orb-layer-white { width: 170px; height: 170px; bottom: -25px; right: -25px; background: radial-gradient(circle at 65% 65%, #ffffff 0%, #eef0fa 35%, rgba(205, 215, 252, 0.85) 60%, transparent 85%); filter: blur(18px); animation: live-orb-drift-2 8s ease-in-out infinite alternate; }
+
+/* Layer 3: Floating Lavender Cloud */
+.live-orb-layer-cloud { width: 140px; height: 140px; top: 35px; right: 15px; background: radial-gradient(circle at center, rgba(245, 247, 255, 0.95) 0%, rgba(185, 196, 248, 0.7) 50%, transparent 80%); filter: blur(16px); animation: live-orb-drift-3 12s ease-in-out infinite alternate; }
+
+/* Layer 4: Deep Indigo Swirl */
+.live-orb-layer-swirl { width: 150px; height: 150px; top: 5px; left: 10px; background: radial-gradient(circle at center, rgba(135, 145, 248, 0.8) 0%, rgba(95, 98, 235, 0.4) 60%, transparent 80%); filter: blur(20px); animation: live-orb-drift-4 9s ease-in-out infinite alternate; }
+
+/* Rim overlay with soft specular highlight */
+.live-orb-rim { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.25) 0%, transparent 40%), radial-gradient(circle at 75% 75%, rgba(255, 255, 255, 0.35) 0%, transparent 50%); pointer-events: none; }
+
+/* Keyframes */
+@keyframes live-orb-breathe { 0% { transform: scale(0.96); opacity: 0.75; } 100% { transform: scale(1.05); opacity: 1; } }
+@keyframes live-orb-speaking-glow { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(1.15); opacity: 1; filter: blur(32px); } }
+@keyframes live-orb-waiting-glow { 0% { transform: scale(0.95) rotate(0deg); opacity: 0.6; } 50% { transform: scale(1.05) rotate(180deg); opacity: 0.9; } 100% { transform: scale(0.95) rotate(360deg); opacity: 0.6; } }
+@keyframes live-orb-drift-1 { 0% { transform: translate(0, 0) scale(1) rotate(0deg); } 50% { transform: translate(12px, 14px) scale(1.06) rotate(30deg); } 100% { transform: translate(-6px, 8px) scale(0.96) rotate(60deg); } }
+@keyframes live-orb-drift-2 { 0% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-10px, -12px) scale(1.08); } 100% { transform: translate(6px, -4px) scale(0.95); } }
+@keyframes live-orb-drift-3 { 0% { transform: translate(0, 0) scale(1); } 50% { transform: translate(8px, 10px) scale(1.05); } 100% { transform: translate(-8px, -6px) scale(0.94); } }
+@keyframes live-orb-drift-4 { 0% { transform: translate(0, 0) rotate(0deg); } 50% { transform: translate(-10px, 8px) rotate(45deg); } 100% { transform: translate(10px, -8px) rotate(-30deg); } }
+
+/* Status Indicator */
+.live-chat-status-container { margin-top: 32px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; min-height: 44px; }
+.live-chat-status { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-secondary); font-size: 13px; font-weight: 500; letter-spacing: 0.1px; }
+.live-chat-status-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 8px var(--color-accent); }
+.live-chat-status-listening .live-chat-status-dot, .live-chat-status-starting .live-chat-status-dot, .live-chat-status-speaking .live-chat-status-dot { animation: live-chat-dot-pulse 1.4s ease-in-out infinite; }
+.live-chat-status-idle .live-chat-status-dot { background: var(--color-text-tertiary); box-shadow: none; }
+.live-chat-status-error .live-chat-status-dot { background: var(--color-danger); box-shadow: 0 0 8px var(--color-danger); }
+.live-chat-error-message { font-size: 12px; color: var(--color-danger); max-width: 280px; line-height: 1.4; }
+@keyframes live-chat-dot-pulse { 0%, 100% { opacity: 0.45; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.2); } }
+
+/* Footer & Controls */
+.live-chat-footer { display: flex; min-height: 80px; align-items: center; justify-content: center; position: relative; padding: 16px 20px 24px; border-top: 1px solid var(--color-border); }
+.live-chat-mic-wrapper { position: relative; display: flex; align-items: center; justify-content: center; }
+.live-chat-mic-pulse { position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--color-accent); opacity: 0; pointer-events: none; }
+.live-chat-mic-wrapper.is-recording .live-chat-mic-pulse { animation: live-chat-pulse-ring 2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+@keyframes live-chat-pulse-ring { 0% { transform: scale(0.92); opacity: 0.8; } 100% { transform: scale(1.4); opacity: 0; } }
+.live-chat-mic-btn { width: 56px; height: 56px; border-radius: 50%; border: 1.5px solid var(--color-border-focus); background: var(--color-surface-elevated); color: var(--color-text); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25); transition: all 0.2s ease; }
+.live-chat-mic-btn:hover:not(:disabled) { background: var(--color-surface-hover, var(--color-border)); transform: scale(1.06); color: var(--color-accent); }
+.live-chat-mic-btn.is-active { background: var(--color-accent); border-color: var(--color-accent); color: #ffffff; box-shadow: 0 0 20px color-mix(in srgb, var(--color-accent) 65%, transparent); }
+.live-chat-mic-btn.is-stop { background: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface-elevated)); border-color: var(--color-danger); color: var(--color-danger); }
+.live-chat-mic-btn.is-stop:hover:not(:disabled) { background: var(--color-danger); color: #ffffff; }
+.live-chat-mic-btn:disabled { cursor: not-allowed; opacity: 0.45; }

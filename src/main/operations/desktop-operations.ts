@@ -76,7 +76,8 @@ export class DesktopOperations {
     const details = await stat(file);
     if (kind === 'image' || kind === 'audio' || kind === 'video') {
       if (details.size > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new Error('The media file exceeds the supported preview size.');
-      return { kind, media: { mimeType: artifactMimeType({ kind, name: basename(file) }), bytes: Uint8Array.from(await readFile(file)) } };
+      const buffer = await readFile(file);
+      return { kind, media: { mimeType: artifactMimeType({ kind, name: basename(file) }), bytes: new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength) } };
     }
     if (kind === 'text' || kind === 'markdown' || kind === 'patch' || kind === 'json') {
       if (details.size > DESKTOP_RUNTIME_LIMITS.hostFileBytes) throw new Error('The selected file is too large to preview.');
@@ -84,7 +85,13 @@ export class DesktopOperations {
     }
     return { kind };
   }
-  emitDeepLink(url: string): void { for (const window of BrowserWindow.getAllWindows()) window.webContents.send('operations.deepLink', url); }
+  emitDeepLink(url: string): void {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed() && window.isFocusable()) {
+        window.webContents.send('operations.deepLink', url);
+      }
+    }
+  }
   async exportDiagnostics(input: { version: string; settings: Record<string, unknown> }): Promise<string> { const directory = join(app.getPath('downloads'), 'lotagate-diagnostics'); await mkdir(directory, { recursive: true }); const path = join(directory, `diagnostics-${Date.now()}.json`); await writeFile(path, JSON.stringify({ appVersion: input.version, platform: process.platform, arch: process.arch, createdAt: new Date().toISOString(), settings: input.settings }, null, 2), 'utf8'); return path; }
 }
 

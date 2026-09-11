@@ -173,14 +173,6 @@ export class TaskStore {
   async appendAssistantDeltas(taskId: string, deltas: readonly { text: string; metadata: Record<string, unknown> }[]): Promise<Activity[]> {
     return this.withExclusive(async () => {
       const updated = await this.activityStore.appendAssistantDeltas(taskId, deltas);
-      if (updated.length === 0) return updated;
-      await this.taskStore.update(current => {
-        const index = current.findIndex(task => task.id === taskId);
-        if (index < 0) throw new Error('Task was not found.');
-        const next = [...current];
-        next[index] = taskSchema.parse({ ...next[index], updatedAt: updated[updated.length - 1]!.createdAt });
-        return next;
-      });
       return updated;
     });
   }

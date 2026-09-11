@@ -63,6 +63,10 @@ export class CliAgentProcess {
     }
   }
 
+  supportsCapability(capability: string): boolean {
+    return this.initializationResult?.capabilities.includes(capability) === true;
+  }
+
   private async performInitialization(): Promise<DesktopAgentResult> {
     if (this.initialized && this.initializationResult !== undefined) return this.initializationResult;
     this.ensureStarted();
@@ -206,6 +210,9 @@ export class CliAgentProcess {
       }
       this.consumeLine(line.toString('utf8').replace(/\r$/u, ''), child, generation);
       newline = this.lineBuffer.indexOf(0x0a);
+    }
+    if (this.lineBuffer.byteLength > 0) {
+      this.lineBuffer = Buffer.from(this.lineBuffer);
     }
   }
 

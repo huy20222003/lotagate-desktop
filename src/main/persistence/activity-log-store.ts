@@ -88,7 +88,7 @@ export class ActivityLogStore {
     for (let index = startIndex; index >= 0; index -= 1) {
       const activity = this.activitiesCache![index]!;
       if (activity.taskId !== taskId) continue;
-      collected.push(activitySchema.parse(activity));
+      collected.push(activity);
       if (collected.length > limit) break;
     }
     const hasMore = collected.length > limit;
@@ -138,7 +138,7 @@ export class ActivityLogStore {
         records.push(record);
         updated.push(nextActivity);
       }
-      await this.appendRecords(records);
+      await this.appendRecords(records, { sync: false });
       this.activitiesCache = next;
       this.sequence = records[records.length - 1]?.sequence ?? this.sequence;
       for (const record of records) this.recordOperation(record);
@@ -323,13 +323,15 @@ export class ActivityLogStore {
     await this.appendRecords([record]);
   }
 
-  private async appendRecords(records: readonly ActivityLogRecord[]): Promise<void> {
+  private async appendRecords(records: readonly ActivityLogRecord[], options: { sync?: boolean } = {}): Promise<void> {
     if (records.length === 0) return;
     await mkdir(dirname(this.filePath), { recursive: true });
     const handle = await open(this.filePath, 'a');
     try {
       await handle.write(`${records.map(record => JSON.stringify(record)).join('\n')}\n`, null, 'utf8');
-      await handle.sync();
+      if (options.sync !== false) {
+        await handle.sync();
+      }
     } finally {
       await handle.close();
     }

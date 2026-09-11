@@ -26,6 +26,7 @@ export function terminateDesktopProcess(child: ChildProcess): Promise<void> {
       if (graceTimer !== undefined) clearTimeout(graceTimer);
       if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
       child.removeListener('close', onClose);
+      child.removeListener('exit', onExit);
       child.removeListener('error', onError);
       if (treeKiller !== undefined && treeKiller.exitCode === null && treeKiller.signalCode === null) {
         try { treeKiller.kill(); } catch { /* The child termination result is already authoritative. */ }
@@ -44,7 +45,10 @@ export function terminateDesktopProcess(child: ChildProcess): Promise<void> {
       reject(error);
     };
     const forceChild = (): void => {
-      if (childClosed || child.exitCode !== null || child.signalCode !== null) return;
+      if (childClosed || child.exitCode !== null || child.signalCode !== null) {
+        childClosed = true;
+        return;
+      }
       try { child.kill(process.platform === 'win32' ? undefined : 'SIGKILL'); } catch { /* The bounded deadline reports an unconfirmed termination. */ }
     };
     const terminateUnixGroup = (signal: 'SIGTERM' | 'SIGKILL'): boolean => {
@@ -58,9 +62,16 @@ export function terminateDesktopProcess(child: ChildProcess): Promise<void> {
       }
     };
     const onClose = (): void => { childClosed = true; settleIfReady(); };
+    const onExit = (): void => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        childClosed = true;
+        settleIfReady();
+      }
+    };
     const onError = (error: Error): void => { childClosed = true; terminationError ??= error; settleIfReady(); };
 
     child.once('close', onClose);
+    child.once('exit', onExit);
     child.once('error', onError);
     if (process.platform === 'win32') {
       try {

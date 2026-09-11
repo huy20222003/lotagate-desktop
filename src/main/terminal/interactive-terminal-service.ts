@@ -14,7 +14,17 @@ import { createChildProcessEnvironment } from '../process/process-environment.js
 type NodePtyModule = typeof import('node-pty');
 type IPty = import('node-pty').IPty;
 
-const nodePty = loadNodePty();
+let cachedNodePty: NodePtyModule | undefined;
+
+function getNodePty(): NodePtyModule {
+  if (cachedNodePty !== undefined) return cachedNodePty;
+  try {
+    cachedNodePty = loadNodePty();
+    return cachedNodePty;
+  } catch (error) {
+    throw new Error('Interactive terminal is unavailable: native terminal module could not be loaded.', { cause: error });
+  }
+}
 
 interface InteractiveSession {
   ownerId: number;
@@ -32,6 +42,7 @@ export class InteractiveTerminalService {
     const cwd = await this.workspaces.requireRegisteredRoot(value.cwd);
 
     const launch = resolveTerminalShell((await this.settings.get()).terminalShell);
+    const nodePty = getNodePty();
     const child = nodePty.spawn(launch.command, launch.args, { cwd, name: 'xterm-256color', cols: 120, rows: 30, env: createChildProcessEnvironment({ overrides: { FORCE_COLOR: '1', TERM: 'xterm-256color', COLORTERM: 'truecolor' } }) });
     const id = randomUUID();
     this.sessions.set(id, { ownerId, cwd, child });

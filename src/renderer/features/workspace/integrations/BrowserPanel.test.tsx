@@ -25,6 +25,7 @@ describe('BrowserPanel', () => {
     fireEvent.change(address, { target: { value: 'example.com' } });
     fireEvent.submit(address.closest('form')!);
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('browser-1', 'tab-1', 'https://example.com', true));
+    expect(document.querySelector('.browser-panel-content')).toBeInTheDocument();
     expect(document.querySelector('.browser-view-host')).toBeInTheDocument();
   });
 

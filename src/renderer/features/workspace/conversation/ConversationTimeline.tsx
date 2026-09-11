@@ -63,14 +63,35 @@ export function ConversationTimeline({ activities, onSelect, viewportRef }: { ac
     setScrollState({ canScrollUp: timelineViewport.scrollTop > 1, canScrollDown: timelineViewport.scrollTop + timelineViewport.clientHeight < timelineViewport.scrollHeight - 1 });
   }, []);
 
+  const rafIdRef = useRef<number | undefined>(undefined);
+
+  const scheduleUpdateActiveMessage = useCallback(() => {
+    if (typeof requestAnimationFrame === 'undefined') {
+      updateActiveMessage();
+      return;
+    }
+    if (rafIdRef.current !== undefined) return;
+    rafIdRef.current = requestAnimationFrame(() => {
+      rafIdRef.current = undefined;
+      updateActiveMessage();
+    });
+  }, [updateActiveMessage]);
+
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     updateActiveMessage();
-    viewport.addEventListener('scroll', updateActiveMessage, { passive: true });
-    window.addEventListener('resize', updateActiveMessage);
-    return () => { viewport.removeEventListener('scroll', updateActiveMessage); window.removeEventListener('resize', updateActiveMessage); };
-  }, [updateActiveMessage, viewportRef]);
+    viewport.addEventListener('scroll', scheduleUpdateActiveMessage, { passive: true });
+    window.addEventListener('resize', scheduleUpdateActiveMessage);
+    return () => {
+      if (rafIdRef.current !== undefined && typeof cancelAnimationFrame !== 'undefined') {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = undefined;
+      }
+      viewport.removeEventListener('scroll', scheduleUpdateActiveMessage);
+      window.removeEventListener('resize', scheduleUpdateActiveMessage);
+    };
+  }, [scheduleUpdateActiveMessage, updateActiveMessage, viewportRef]);
 
   useLayoutEffect(() => {
     const timelineViewport = timelineViewportRef.current;

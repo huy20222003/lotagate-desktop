@@ -35,6 +35,7 @@ import { firstTaskForWorkspace } from '../task-order.js';
 import { contextUsageFromValue, latestContextUsage, type ContextWindowUsage } from '../context-window-usage.js';
 import { useWorkspaceAttachmentActions } from './use-workspace-attachment-actions.js';
 import { useWorkspaceModelPreferences } from './use-workspace-model-preferences.js';
+import { finalAssistantResponseForTurn, type AssistantFinalResponse } from '../conversation/assistant-response.js';
 export function useWorkspaceController() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspace, setWorkspace] = useState<Workspace | undefined>();
@@ -59,6 +60,7 @@ export function useWorkspaceController() {
   const [busy, setBusy] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [finalResponseReceived, setFinalResponseReceived] = useState(false);
+  const [assistantFinalResponse, setAssistantFinalResponse] = useState<AssistantFinalResponse | undefined>();
   const [thinkingStartedAt, setThinkingStartedAt] = useState<number | undefined>();
   const [agentStatus, setAgentStatus] = useState<string | undefined>();
   const [contextUsage, setContextUsage] = useState<ContextWindowUsage | undefined>();
@@ -227,7 +229,7 @@ export function useWorkspaceController() {
   useEffect(() => {
     let mounted = true;
     activityRequestRef.current += 1;
-    if (!task) { activitiesRef.current = []; activityPageCursorRef.current = null; pendingAssistantStreamsRef.current.clear(); publishActivities([]); setHasOlderActivities(false); setLoadingOlderActivities(false); setTurnTimings({}); setActivityAttachments({}); setActivityArtifacts({}); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(undefined); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); setFinalResponseReceived(false); return; }
+    if (!task) { activitiesRef.current = []; activityPageCursorRef.current = null; pendingAssistantStreamsRef.current.clear(); publishActivities([]); setHasOlderActivities(false); setLoadingOlderActivities(false); setTurnTimings({}); setActivityAttachments({}); setActivityArtifacts({}); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(undefined); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); setFinalResponseReceived(false); setAssistantFinalResponse(undefined); return; }
     activityPageCursorRef.current = null;
     setHasOlderActivities(false);
     setActivitiesLoading(true);
@@ -270,7 +272,7 @@ export function useWorkspaceController() {
       if (envelope.event.event === 'turn.started') setAgentStatus(undefined);
       else if (status !== undefined) setAgentStatus(status);
       if (envelope.event.event === 'turn.started') {
-        setThinking(true); setFinalResponseReceived(false);
+        setThinking(true); setFinalResponseReceived(false); setAssistantFinalResponse(undefined);
         setThinkingStartedAt(current => current ?? Date.now());
       }
       if (terminal && currentTurn) {
@@ -308,7 +310,10 @@ export function useWorkspaceController() {
         const nextActivities = markAssistantSegmentPhase(activitiesRef.current, { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), segmentId: data['segmentId'], phase: data['phase'] });
         activitiesRef.current = nextActivities;
         publishActivities(nextActivities);
-        if (data['phase'] === 'final') setFinalResponseReceived(true);
+        if (data['phase'] === 'final') {
+          setFinalResponseReceived(true);
+          if (turnId !== undefined) setAssistantFinalResponse(finalAssistantResponseForTurn(nextActivities, eventTask.id, turnId));
+        }
       }
       if (currentTurn && (envelope.event.event === 'turn.failed' || envelope.event.event === 'turn.cancelled') && turnId !== undefined) {
         let nextActivities = markAssistantTurnCompleted(activitiesRef.current, eventTask.id, turnId);
@@ -361,7 +366,7 @@ export function useWorkspaceController() {
     draftTaskRef.current = nextTask;
     setTask(current => current?.workspaceId === next.id ? current : nextTask);
     const nextLiveState = selectedTaskLiveState(nextTask);
-    setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setError(undefined); setThinking(nextLiveState.thinking); setFinalResponseReceived(false); setThinkingStartedAt(nextLiveState.thinking ? Date.now() : undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(nextLiveState.turnId); activeTurnRef.current = nextLiveState.turnId === undefined || nextTask === undefined ? undefined : { taskId: nextTask.id, cwd: nextTask.cwd, turnId: nextLiveState.turnId }; messageQueueServiceRef.current.clear(); steeringQueueIdRef.current = undefined;
+    setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setError(undefined); setThinking(nextLiveState.thinking); setFinalResponseReceived(false); setAssistantFinalResponse(undefined); setThinkingStartedAt(nextLiveState.thinking ? Date.now() : undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(nextLiveState.turnId); activeTurnRef.current = nextLiveState.turnId === undefined || nextTask === undefined ? undefined : { taskId: nextTask.id, cwd: nextTask.cwd, turnId: nextLiveState.turnId }; messageQueueServiceRef.current.clear(); steeringQueueIdRef.current = undefined;
   }, [activities, task, tasks]);
   const selectTask = useCallback((next: Task) => {
     selectionRevisionRef.current += 1;
@@ -371,7 +376,7 @@ export function useWorkspaceController() {
     setTask(next);
     setApproval(undefined); setError(undefined); messageQueueServiceRef.current.clear(); steeringQueueIdRef.current = undefined;
     const nextLiveState = selectedTaskLiveState(next);
-    setTrust(undefined); setAgentStatus(undefined); setThinking(nextLiveState.thinking); setFinalResponseReceived(false); setThinkingStartedAt(nextLiveState.thinking ? Date.now() : undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(nextLiveState.turnId); activeTurnRef.current = nextLiveState.turnId === undefined ? undefined : { taskId: next.id, cwd: next.cwd, turnId: nextLiveState.turnId };
+    setTrust(undefined); setAgentStatus(undefined); setThinking(nextLiveState.thinking); setFinalResponseReceived(false); setAssistantFinalResponse(undefined); setThinkingStartedAt(nextLiveState.thinking ? Date.now() : undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(nextLiveState.turnId); activeTurnRef.current = nextLiveState.turnId === undefined ? undefined : { taskId: next.id, cwd: next.cwd, turnId: nextLiveState.turnId };
   }, [activities, task, workspaces]);
   const newTask = useCallback(async (targetWorkspace?: Workspace) => {
     const target = targetWorkspace ?? workspace;
@@ -387,6 +392,7 @@ export function useWorkspaceController() {
     setAgentStatus(undefined);
     setThinking(false);
     setFinalResponseReceived(false);
+    setAssistantFinalResponse(undefined);
     setThinkingStartedAt(undefined);
     setPlan(undefined);
     setSubagents([]);
@@ -423,7 +429,7 @@ export function useWorkspaceController() {
     setTasks(current => current.filter(item => item.workspaceId !== workspaceId));
     setWorkspace(current => current?.id === workspaceId ? undefined : current);
     setTask(current => current?.workspaceId === workspaceId ? undefined : current);
-    activitiesRef.current = []; activityPageCursorRef.current = null; pendingAssistantStreamsRef.current.clear(); publishActivities([]); setHasOlderActivities(false); setLoadingOlderActivities(false); setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setFinalResponseReceived(false); setActiveTurnId(undefined); activeTurnRef.current = undefined; setThinking(false); setThinkingStartedAt(undefined);
+    activitiesRef.current = []; activityPageCursorRef.current = null; pendingAssistantStreamsRef.current.clear(); publishActivities([]); setHasOlderActivities(false); setLoadingOlderActivities(false); setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setFinalResponseReceived(false); setAssistantFinalResponse(undefined); setActiveTurnId(undefined); activeTurnRef.current = undefined; setThinking(false); setThinkingStartedAt(undefined);
   }, [publishActivities]);
   const { createTask, ensureDraftTask } = useDraftTask({ workspace, task, draftTaskRef, draftTaskPromiseRef, setTasks, setTask });
   const { updateDraft, flushDraft } = useDraftPersistence({ taskRef: draftTaskRef, onError: reportControllerError });
@@ -433,7 +439,7 @@ export function useWorkspaceController() {
     if (!prompt.trim() || workspace === undefined) return false;
     const operationOwner = createRendererOperationOwner(workspace, task ?? draftTaskRef.current, selectionRevisionRef.current);
     const isCurrentOperation = (): boolean => isRendererOperationCurrent(operationOwner, workspaceRef.current, draftTaskRef.current, selectionRevisionRef.current);
-    setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setActiveTurnId(undefined); activeTurnRef.current = undefined; setPlan(undefined); setSubagents([]); setFinalResponseReceived(false); setApproval(undefined); setTrust(undefined); suppressQueueRef.current = false; steeringQueueIdRef.current = undefined;
+    setBusy(true); setError(undefined); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setActiveTurnId(undefined); activeTurnRef.current = undefined; setPlan(undefined); setSubagents([]); setFinalResponseReceived(false); setAssistantFinalResponse(undefined); setApproval(undefined); setTrust(undefined); suppressQueueRef.current = false; steeringQueueIdRef.current = undefined;
     let failedTaskId: string | undefined;
     let turnClaimToken: string | undefined;
     let turnStarted = false;
@@ -615,5 +621,5 @@ export function useWorkspaceController() {
     setTasks(current => current.map(item => item.id === updated.id ? updated : item));
     setTask(current => current?.id === updated.id ? updated : current);
   }, []);
-  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, activeTurnId, checkpointStatuses, undoingTurns, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode: updateApprovalMode, trust, models, selectedModel, contextUsage, setSelectedModel: selectModel, selectedEffort, setSelectedEffort: selectEffort, loading, busy, thinking, finalResponseReceived, thinkingStartedAt, agentStatus, turnTimings, runningTaskIds, unreadTaskIds, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, attachText, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, undoFileChanges, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, activeTurnId, checkpointStatuses, approvalMode, trust, models, selectedModel, contextUsage, selectModel, selectedEffort, selectEffort, loading, busy, thinking, finalResponseReceived, thinkingStartedAt, agentStatus, turnTimings, runningTaskIds, unreadTaskIds, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, attachText, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, undoFileChanges, retryTask, archiveTask, pinTask, pinTaskById, updateApprovalMode]);
+  return useMemo(() => ({ workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, activeTurnId, checkpointStatuses, undoingTurns, plan, subagents, attachments, queuedMessages, approval, approvalMode, setApprovalMode: updateApprovalMode, trust, models, selectedModel, contextUsage, setSelectedModel: selectModel, selectedEffort, setSelectedEffort: selectEffort, loading, busy, thinking, finalResponseReceived, assistantFinalResponse, thinkingStartedAt, agentStatus, turnTimings, runningTaskIds, unreadTaskIds, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, attachText, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, undoFileChanges, retryTask, archiveTask, pinTask, pinTaskById }), [workspaces, workspace, tasks, task, activities, activityAttachments, activityArtifacts, activitiesLoading, hasOlderActivities, loadingOlderActivities, loadOlderActivities, fileChanges, fileChangesByTurn, activeTurnId, checkpointStatuses, approvalMode, trust, models, selectedModel, contextUsage, selectModel, selectedEffort, selectEffort, loading, busy, thinking, finalResponseReceived, assistantFinalResponse, thinkingStartedAt, agentStatus, turnTimings, runningTaskIds, unreadTaskIds, error, selectWorkspace, selectTask, newTask, addWorkspace, trustWorkspace, renameWorkspace, renameTask, removeWorkspace, sendPrompt, runCommand, respondApproval, respondTrust, updateDraft, pickArtifact, attachImage, attachText, removeAttachment, editQueuedMessage, removeQueuedMessage, steerQueuedMessage, cancelTask, undoFileChanges, retryTask, archiveTask, pinTask, pinTaskById, updateApprovalMode]);
 }

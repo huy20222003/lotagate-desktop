@@ -14,6 +14,10 @@ describe('Desktop JSONL contract', () => {
     expect(desktopRequestSchema.parse({ version: 1, id: 'request-1', method: 'title.generate', params: { prompt: 'Summarize this request.' } })).toMatchObject({ method: 'title.generate' });
   });
 
+  it('accepts the Desktop-only speech synthesis request', () => {
+    expect(desktopRequestSchema.parse({ version: 1, id: 'request-speech', method: 'speech.synthesize', params: { input: 'Read this aloud.', voice: 'alloy', responseFormat: 'mp3' } })).toMatchObject({ method: 'speech.synthesize' });
+  });
+
   it('accepts extension requests forwarded to the CLI agent', () => {
     const methods = ['extension.listPublicPlugins', 'extension.resolvePublicPluginSource', 'extension.readPublicPluginContribution', 'extension.readDetail', 'extension.readPluginIcon'] as const;
     for (const method of methods) expect(desktopRequestSchema.parse({ version: 1, id: `request-${method}`, method, params: {} })).toMatchObject({ method });
