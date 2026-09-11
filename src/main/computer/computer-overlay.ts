@@ -7,7 +7,6 @@ export class ComputerOverlay {
   private activeCount = 0;
 
   show(): void {
-    if (process.platform !== 'win32') return;
     this.activeCount += 1;
     const display = screen.getPrimaryDisplay();
     const { x, y, width, height } = display.workArea;

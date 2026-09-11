@@ -1,8 +1,8 @@
 {
   "name": "excel",
   "displayName": "Excel",
-  "version": "1.0.0",
-  "description": "Read, update, calculate, and export Excel workbooks through LotaGate Desktop.",
+  "version": "1.1.0",
+  "description": "Read, update, calculate, and export workbooks through LotaGate's platform-native document host.",
   "author": "LotaGate",
   "license": "MIT",
   "homepage": "https://lotagate.com/",

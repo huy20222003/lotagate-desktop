@@ -53,11 +53,11 @@ describe('ActivityLogStore', () => {
     const store = new ActivityLogStore(path);
     await store.append({ ...activity('assistant-1', 'Final'), metadata: { turnId: 'turn-1', segmentId: 'run-1:1', assistantPhase: 'progress' } });
 
-    await store.completeAssistantSegment('task-1', 'run-1:1', 'final');
+    await store.completeAssistantSegment('task-1', 'run-1:1', 'final', { artifactIds: ['artifact-1'] });
 
-    expect((await store.read())[0]?.metadata['assistantPhase']).toBe('final');
+    expect((await store.read())[0]?.metadata).toMatchObject({ assistantPhase: 'final', artifactIds: ['artifact-1'] });
     const reloaded = new ActivityLogStore(path);
-    expect((await reloaded.read())[0]?.metadata['assistantPhase']).toBe('final');
+    expect((await reloaded.read())[0]?.metadata).toMatchObject({ assistantPhase: 'final', artifactIds: ['artifact-1'] });
   });
 
   it('replaces a provisional turn response atomically and preserves the correction after reload', async () => {
@@ -152,6 +152,31 @@ describe('ActivityLogStore', () => {
     // Reloading should replay the exact deduplicated text
     const reloaded = new ActivityLogStore(path);
     expect((await reloaded.read())[0]?.text).toBe('File test.md hiện đã chứa sẵn dòng 987. Bổ sung thêm dòng mới.');
+  });
+
+  it('collapses a repeated assistant fragment delivered in one delta', async () => {
+    const directory = await createTemporaryDirectory();
+    const path = join(directory, 'activities.jsonl');
+    const store = new ActivityLogStore(path);
+    const fragment = 'Trang About vẫn kẹt ở "Loading". ';
+    await store.append(activity('assistant-1', 'Before.'));
+
+    await store.appendAssistantDelta('task-1', `${fragment}${fragment}`, { turnId: 'turn-1' });
+
+    expect((await store.read())[0]?.text).toBe(`Before.${fragment}`);
+    const reloaded = new ActivityLogStore(path);
+    expect((await reloaded.read())[0]?.text).toBe(`Before.${fragment}`);
+  });
+
+  it('normalizes a repeated fragment when it is the first assistant delta', async () => {
+    const directory = await createTemporaryDirectory();
+    const path = join(directory, 'activities.jsonl');
+    const store = new ActivityLogStore(path);
+    const fragment = 'Trang About vẫn kẹt ở "Loading". ';
+
+    await store.appendAssistantDelta('task-1', `${fragment}${fragment}`, { turnId: 'turn-1' });
+
+    expect((await store.read())[0]?.text).toBe(fragment);
   });
 });
 

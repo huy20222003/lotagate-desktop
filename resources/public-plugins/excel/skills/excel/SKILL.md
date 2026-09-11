@@ -41,14 +41,16 @@ allowed-tools:
 
 Use the `excel.*` tools only when the user explicitly asks LotaGate to inspect,
 create, read, modify, calculate, render, or export a workbook. These tools use
-the governed Desktop document host and a bounded Windows Office backend; they
-operate on workbook structures and ranges rather than simulating Excel UI
-clicks and keystrokes.
+the governed Desktop document host and the provider negotiated for the current
+platform; they operate on workbook structures and ranges rather than
+simulating Excel UI clicks and keystrokes.
 
 ## Preconditions and permissions
 
-- This skill is available through LotaGate Desktop on Windows and does not
-  grant access to a workbook by itself.
+- This skill is available through LotaGate Desktop when a compatible workbook
+  provider is available and does not grant access to a workbook by itself.
+- The tool catalog is authoritative: the host may expose only the workbook
+  operations supported by the current provider and installed helpers.
 - Confirm the exact workbook path, worksheet, range, and requested mutation.
 - Supported Excel paths are `.xlsx`, `.xls`, and `.csv`. Excel-specific
   operations may not apply to CSV files or legacy workbook features.

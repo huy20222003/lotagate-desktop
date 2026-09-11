@@ -16,7 +16,7 @@ import { toUserErrorMessage as toMessage } from '../../../utils/errors.js';
 import { formatTurnFailure } from '../../../../shared/turn-failure.js';
 import { agentStatusForEvent, commandStatusForAction } from './agent-status.js';
 import { mergeTurnTimings, turnTimingsFromActivities } from '../conversation/turn-timings.js';
-import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, markAssistantSegmentPhase, reconcilePendingAssistantStreams, type PendingAssistantStream } from '../conversation/streaming-activity.js';
+import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, markAssistantSegmentPhase, markAssistantTurnCompleted, reconcilePendingAssistantStreams, type PendingAssistantStream } from '../conversation/streaming-activity.js';
 import { upsertContextCompactionActivity } from '../conversation/context-compaction-activity.js';
 import { applyAssistantReplacementEvent, discardQueuedAttachments, extractSessionId, extractTurnId, loadActivityArtifactPreviews, loadActivityAttachmentPreviews, loadAttachmentPreviews, mergeActivities, readAgentError } from './workspace-controller-helpers.js';
 import { allowsUnscopedTaskFallback, shouldSurfaceAgentDiagnostic } from './agent-event-routing.js';
@@ -92,7 +92,10 @@ export function useWorkspaceController() {
   const { models, selectedModel, setSelectedModel: setSelectedModelValue, selectedEffort, setSelectedEffort: setSelectedEffortValue } = useWorkspaceModelCatalog(workspace, task);
   const selectedModelContextWindow = models.find(model => model.id === selectedModel)?.contextWindow;
   useEffect(() => { setContextUsage(latestContextUsage(activities, selectedModelContextWindow, selectedModel || undefined) ?? (selectedModelContextWindow === undefined ? undefined : { usedTokens: 0, contextWindow: selectedModelContextWindow })); }, [activities, selectedModel, selectedModelContextWindow]);
-  const reportControllerError = useCallback((reason: unknown) => setError(toMessage(reason)), []);
+  const reportControllerError = useCallback((reason: unknown, taskId?: string) => {
+    if (taskId !== undefined && draftTaskRef.current?.id !== taskId) return;
+    setError(toMessage(reason));
+  }, []);
   useEffect(() => { void window.lotagate.settings.get().then(settings => { setApprovalMode(settings.approvalMode); }).catch(() => undefined); }, []);
   useEffect(() => {
     const unsubscribe = window.lotagate.approvals.onRequest(request => {
@@ -127,7 +130,7 @@ export function useWorkspaceController() {
     if (taskReloadTimerRef.current !== undefined) return;
     taskReloadTimerRef.current = setTimeout(() => {
       taskReloadTimerRef.current = undefined;
-      void reloadTasks(workspaceId).catch(reason => setError(toMessage(reason)));
+      void reloadTasks(workspaceId).catch(reason => { if (workspaceRef.current?.id === workspaceId) setError(toMessage(reason)); });
     }, 75);
   }, [reloadTasks]);
   useEffect(() => {
@@ -141,7 +144,10 @@ export function useWorkspaceController() {
         setWorkspaces(nextWorkspaces);
         setTasks(nextTasks);
         setWorkspace(preferredWorkspace);
-        setTask(preferredWorkspace === undefined ? undefined : firstTaskForWorkspace(nextTasks, preferredWorkspace.id));
+        // Startup opens the same empty-chat surface as the explicit New chat action.
+        // Existing sessions remain available in the sidebar and are selected only
+        // when the user chooses one.
+        setTask(undefined);
       } catch (reason) {
         if (mounted) setError(toMessage(reason));
       } finally {
@@ -153,7 +159,8 @@ export function useWorkspaceController() {
   useEffect(() => {
     if (!workspace) return;
     if (!initialTasksLoadedRef.current) { initialTasksLoadedRef.current = true; return; }
-    void reloadTasks(workspace.id).catch(reason => setError(toMessage(reason)));
+    const workspaceId = workspace.id;
+    void reloadTasks(workspaceId).catch(reason => { if (workspaceRef.current?.id === workspaceId) setError(toMessage(reason)); });
   }, [workspace, reloadTasks]);
   const loadActivities = useCallback(async (taskId: string, reset = true, restorePlan = true): Promise<void> => {
     const requestId = ++activityRequestRef.current;
@@ -224,7 +231,7 @@ export function useWorkspaceController() {
     activityPageCursorRef.current = null;
     setHasOlderActivities(false);
     setActivitiesLoading(true);
-    void loadActivities(task.id, true).catch(reason => { if (mounted) setError(toMessage(reason)); }).finally(() => { if (mounted) setActivitiesLoading(false); });
+    void loadActivities(task.id, true).catch(reason => { if (mounted && draftTaskRef.current?.id === task.id) setError(toMessage(reason)); }).finally(() => { if (mounted) setActivitiesLoading(false); });
     void loadAttachmentPreviews(task.id, task.draftAttachmentIds).then(next => { if (mounted) setAttachments(next); }).catch(() => { if (mounted) setAttachments([]); });
     return () => {
       mounted = false;
@@ -303,6 +310,26 @@ export function useWorkspaceController() {
         publishActivities(nextActivities);
         if (data['phase'] === 'final') setFinalResponseReceived(true);
       }
+      if (currentTurn && (envelope.event.event === 'turn.failed' || envelope.event.event === 'turn.cancelled') && turnId !== undefined) {
+        let nextActivities = markAssistantTurnCompleted(activitiesRef.current, eventTask.id, turnId);
+        if (envelope.event.event === 'turn.failed') {
+          const errorText = formatTurnFailure(readAgentError(data['error']));
+          const errorActivity: Activity = {
+            id: `error:${eventTask.id}:${turnId}`,
+            taskId: eventTask.id,
+            kind: 'error',
+            text: errorText,
+            metadata: {
+              turnId,
+              ...(typeof data['sessionId'] === 'string' ? { sessionId: data['sessionId'] } : {}),
+            },
+            createdAt: new Date().toISOString(),
+          };
+          nextActivities = [...nextActivities, errorActivity];
+        }
+        activitiesRef.current = nextActivities;
+        publishActivities(nextActivities);
+      }
       if (currentTurn && (envelope.event.event === 'context.compacting' || envelope.event.event === 'context.compacted') && turnId !== undefined) {
         const phase = envelope.event.event === 'context.compacting' ? 'compacting' : 'compacted';
         const nextActivities = upsertContextCompactionActivity(activitiesRef.current, eventTask.id, turnId, phase);
@@ -334,7 +361,7 @@ export function useWorkspaceController() {
     draftTaskRef.current = nextTask;
     setTask(current => current?.workspaceId === next.id ? current : nextTask);
     const nextLiveState = selectedTaskLiveState(nextTask);
-    setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setThinking(nextLiveState.thinking); setFinalResponseReceived(false); setThinkingStartedAt(nextLiveState.thinking ? Date.now() : undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(nextLiveState.turnId); activeTurnRef.current = nextLiveState.turnId === undefined || nextTask === undefined ? undefined : { taskId: nextTask.id, cwd: nextTask.cwd, turnId: nextLiveState.turnId }; messageQueueServiceRef.current.clear(); steeringQueueIdRef.current = undefined;
+    setApproval(undefined); setTrust(undefined); setAgentStatus(undefined); setError(undefined); setThinking(nextLiveState.thinking); setFinalResponseReceived(false); setThinkingStartedAt(nextLiveState.thinking ? Date.now() : undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(nextLiveState.turnId); activeTurnRef.current = nextLiveState.turnId === undefined || nextTask === undefined ? undefined : { taskId: nextTask.id, cwd: nextTask.cwd, turnId: nextLiveState.turnId }; messageQueueServiceRef.current.clear(); steeringQueueIdRef.current = undefined;
   }, [activities, task, tasks]);
   const selectTask = useCallback((next: Task) => {
     selectionRevisionRef.current += 1;
@@ -342,7 +369,7 @@ export function useWorkspaceController() {
     setWorkspace(current => workspaces.find(item => item.id === next.workspaceId) ?? current);
     draftTaskRef.current = next;
     setTask(next);
-    setApproval(undefined); messageQueueServiceRef.current.clear(); steeringQueueIdRef.current = undefined;
+    setApproval(undefined); setError(undefined); messageQueueServiceRef.current.clear(); steeringQueueIdRef.current = undefined;
     const nextLiveState = selectedTaskLiveState(next);
     setTrust(undefined); setAgentStatus(undefined); setThinking(nextLiveState.thinking); setFinalResponseReceived(false); setThinkingStartedAt(nextLiveState.thinking ? Date.now() : undefined); setPlan(undefined); setSubagents([]); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(nextLiveState.turnId); activeTurnRef.current = nextLiveState.turnId === undefined ? undefined : { taskId: next.id, cwd: next.cwd, turnId: nextLiveState.turnId };
   }, [activities, task, workspaces]);

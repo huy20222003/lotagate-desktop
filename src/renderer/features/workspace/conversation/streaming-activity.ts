@@ -1,4 +1,5 @@
 import type { Activity } from '../../../../contracts/ipc/v1/workspace.js';
+import { mergeAssistantText, normalizeAssistantText } from '../../../../shared/assistant-stream-text.js';
 
 export interface PendingAssistantStream {
   taskId: string;
@@ -42,7 +43,7 @@ export function appendAssistantDelta(activities: readonly Activity[], input: Ass
     const activity = activities[index];
     if (activity === undefined) return [...activities];
     const next = [...activities];
-    next[index] = { ...activity, text: `${activity.text}${input.content}`, metadata: { ...activity.metadata, ...input.metadata, ...(input.turnId === undefined ? {} : { turnId: input.turnId }), ...(input.segmentId === undefined ? {} : { segmentId: input.segmentId, assistantPhase: 'progress' }), ...(input.iteration === undefined ? {} : { iteration: input.iteration }) } };
+    next[index] = { ...activity, text: mergeAssistantText(activity.text, input.content), metadata: { ...activity.metadata, ...input.metadata, ...(input.turnId === undefined ? {} : { turnId: input.turnId }), ...(input.segmentId === undefined ? {} : { segmentId: input.segmentId, assistantPhase: 'progress' }), ...(input.iteration === undefined ? {} : { iteration: input.iteration }) } };
     return next;
   }
   return [...activities, {
@@ -86,6 +87,16 @@ export function markAssistantSegmentPhase(activities: readonly Activity[], input
   return next;
 }
 
+export function markAssistantTurnCompleted(activities: readonly Activity[], taskId: string, turnId: string): Activity[] {
+  let changed = false;
+  const next = activities.map(activity => {
+    if (activity.taskId !== taskId || activity.kind !== 'assistant' || activity.metadata['turnId'] !== turnId || activity.metadata['assistantPhase'] !== 'progress') return activity;
+    changed = true;
+    return { ...activity, metadata: { ...activity.metadata, assistantPhase: 'progress', assistantInterrupted: true } };
+  });
+  return changed ? next : [...activities];
+}
+
 export function replaceAssistantResponse(activities: readonly Activity[], input: AssistantReplacementInput): Activity[] {
   const replacementId = assistantReplacementId(input.taskId, input.segmentId);
   const retained = activities.filter(activity => !(activity.taskId === input.taskId && activity.kind === 'assistant' && readTurnId(activity) === input.turnId));
@@ -93,7 +104,7 @@ export function replaceAssistantResponse(activities: readonly Activity[], input:
     id: replacementId,
     taskId: input.taskId,
     kind: 'assistant',
-    text: input.content,
+    text: normalizeAssistantText(input.content),
     metadata: { ...input.metadata, turnId: input.turnId, segmentId: input.segmentId, assistantPhase: 'final', assistantReplacement: true },
     createdAt: input.createdAt,
   }];

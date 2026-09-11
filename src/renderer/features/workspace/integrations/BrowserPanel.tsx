@@ -1,10 +1,10 @@
-import { ArrowLeft, ArrowRight, Camera, Globe2, Plus, RefreshCw, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bug, Camera, Globe2, Plus, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import type { BrowserSessionSnapshot, BrowserTabSnapshot } from '../../../../contracts/ipc/v1/workspace.js';
 import { Icon, IconButton } from '../../../components/ui.js';
 import { Scrollbar } from '../../../components/Scrollbar.js';
 import { createComposerApprovalInput } from './approval-request.js';
-import { useResizableSidePanel } from '../state/use-resizable-panel.js';
+import { FILE_PANEL_DEFAULT_WIDTH, useResizableSidePanel } from '../state/use-resizable-panel.js';
 
 export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: string; sessionId?: string; cwd?: string; onClose: () => void }) {
   const [browserSession, setBrowserSession] = useState<BrowserSessionSnapshot>();
@@ -12,8 +12,27 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const hostRef = useRef<HTMLDivElement>(null);
-  const { panelWidth, resizing, startResize, handleResizeKeyDown } = useResizableSidePanel();
+  const panelRef = useRef<HTMLElement>(null);
+  const { panelWidth, setPanelWidth, resizing, startResize, handleResizeKeyDown } = useResizableSidePanel({
+    initialWidth: FILE_PANEL_DEFAULT_WIDTH,
+    minWidth: 360,
+  });
   const activeTab = browserSession?.tabs.find(tab => tab.id === browserSession.activeTabId);
+
+  useEffect(() => {
+    let active = true;
+    void window.lotagate.settings?.get?.().then(settings => {
+      if (!active) return;
+      const profile = settings.browser.viewportProfile;
+      const maxPanelWidth = Math.floor(window.innerWidth * 0.55);
+      if (profile === 'mobile') {
+        setPanelWidth(Math.max(360, Math.min(390, maxPanelWidth)));
+      } else if (profile === 'custom' && typeof settings.browser.customViewport?.width === 'number') {
+        setPanelWidth(Math.max(360, Math.min(settings.browser.customViewport.width, maxPanelWidth)));
+      }
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [setPanelWidth]);
 
   useEffect(() => {
     let disposed = false;
@@ -53,17 +72,32 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
     const session = browserSession;
     if (!host || !session || !activeTab) return;
     const rect = host.getBoundingClientRect();
-    void window.lotagate.browser.setViewBounds(session.id, activeTab.id, { x: rect.left, y: rect.top, width: rect.width, height: rect.height }, true).catch(() => undefined);
-  }, [activeTab, browserSession]);
+    const width = Math.round(rect.width > 0 ? rect.width : panelWidth);
+    const bounds = { x: Math.round(rect.left), y: Math.round(rect.top), width, height: Math.round(rect.height) };
+    void window.lotagate.browser.setViewBounds(session.id, activeTab.id, bounds, true).catch(() => undefined);
+  }, [activeTab, browserSession, panelWidth]);
 
   useLayoutEffect(() => {
     syncViewBounds();
     const host = hostRef.current;
+    const panel = panelRef.current;
     if (!host) return;
     const observer = new ResizeObserver(syncViewBounds);
     observer.observe(host);
+    if (panel) observer.observe(panel);
     window.addEventListener('resize', syncViewBounds);
-    return () => { observer.disconnect(); window.removeEventListener('resize', syncViewBounds); };
+    panel?.addEventListener('animationend', syncViewBounds);
+    panel?.addEventListener('transitionend', syncViewBounds);
+    const frameId = window.requestAnimationFrame(syncViewBounds);
+    const timerId = window.setTimeout(syncViewBounds, 200);
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timerId);
+      window.removeEventListener('resize', syncViewBounds);
+      panel?.removeEventListener('animationend', syncViewBounds);
+      panel?.removeEventListener('transitionend', syncViewBounds);
+    };
   }, [syncViewBounds]);
 
   const runAction = useCallback(async (action: () => Promise<unknown>) => {
@@ -90,6 +124,7 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
   const selectTab = useCallback((tab: BrowserTabSnapshot) => { if (browserSession && tab.id !== browserSession.activeTabId) void runAction(() => window.lotagate.browser.selectTab(browserSession.id, tab.id)); }, [browserSession, runAction]);
   const history = useCallback((direction: 'back' | 'forward') => { if (!browserSession || !activeTab) return; const action = direction === 'back' ? window.lotagate.browser.goBack : window.lotagate.browser.goForward; void runAction(() => action(browserSession.id, activeTab.id)); }, [activeTab, browserSession, runAction]);
   const reload = useCallback(() => { if (browserSession && activeTab) void runAction(() => window.lotagate.browser.reload(browserSession.id, activeTab.id)); }, [activeTab, browserSession, runAction]);
+  const openDevTools = useCallback(() => { if (browserSession && activeTab) void runAction(() => window.lotagate.browser.openDevTools(browserSession.id, activeTab.id)); }, [activeTab, browserSession, runAction]);
   const captureScreenshot = useCallback(() => {
     if (!browserSession || !activeTab) return;
     void runAction(async () => {
@@ -106,16 +141,22 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
     onClose();
   }, [browserSession, onClose]);
 
-  return <aside className={`browser-panel${resizing ? ' is-resizing' : ''}`} style={{ width: `${panelWidth}px` }} aria-label="Browser">
+  return <aside ref={panelRef} className={`browser-panel${resizing ? ' is-resizing' : ''}`} style={{ width: `${panelWidth}px` }} aria-label="Browser">
     <div className="browser-resize-handle" role="separator" aria-label="Resize browser panel" aria-orientation="vertical" tabIndex={0} onPointerDown={startResize} onKeyDown={handleResizeKeyDown} />
     <header className="browser-panel-header">
-      <div className="browser-panel-heading"><span>AGENT BROWSER</span><strong>Browser</strong></div>
-      <Scrollbar axis="horizontal" className="browser-tabs-scrollbar"><div className="browser-tabs" role="tablist" aria-label="Browser tabs">{browserSession?.tabs.map(tab => <div className="browser-tab-shell" key={tab.id}><button type="button" role="tab" aria-selected={tab.id === browserSession.activeTabId} className={`browser-tab${tab.id === browserSession.activeTabId ? ' is-active' : ''}`} onClick={() => selectTab(tab)}><Icon icon={Globe2} size={13} /><span title={tab.title}>{tab.title}</span></button>{browserSession.tabs.length > 1 ? <IconButton icon={X} iconSize={12} className="browser-tab-close" label={`Close ${tab.title}`} onClick={() => closeTab(tab)} /> : null}</div>)}</div></Scrollbar>
-      <div className="browser-panel-actions"><IconButton icon={Camera} iconSize={15} label="Capture screenshot" disabled={!activeTab || activeTab.url === 'about:blank' || busy} onClick={captureScreenshot} /><IconButton icon={Plus} iconSize={15} label="New browser tab" onClick={createTab} /><IconButton icon={X} iconSize={16} label="Close browser" onClick={closePanel} /></div>
+      <Scrollbar axis="horizontal" className="browser-tabs-scrollbar"><div className="browser-tabs" role="tablist" aria-label="Browser tabs">{browserSession?.tabs.map(tab => <div className="browser-tab-shell" key={tab.id}><button type="button" role="tab" aria-selected={tab.id === browserSession.activeTabId} className={`browser-tab${tab.id === browserSession.activeTabId ? ' is-active' : ''}`} onClick={() => selectTab(tab)}><BrowserTabIcon favicon={tab.favicon} /><span title={tab.title}>{tab.title}</span></button>{browserSession.tabs.length > 1 ? <IconButton icon={X} iconSize={12} className="browser-tab-close" label={`Close ${tab.title}`} onClick={() => closeTab(tab)} /> : null}</div>)}</div></Scrollbar>
+      <div className="browser-panel-actions"><IconButton icon={Camera} iconSize={15} label="Capture screenshot" disabled={!activeTab || activeTab.url === 'about:blank' || busy} onClick={captureScreenshot} /><IconButton icon={Bug} iconSize={15} label="Open webpage DevTools" disabled={!activeTab || activeTab.url === 'about:blank' || busy} onClick={openDevTools} /><IconButton icon={Plus} iconSize={15} label="New browser tab" onClick={createTab} /><IconButton icon={X} iconSize={16} label="Close browser" onClick={closePanel} /></div>
     </header>
     <form className="browser-toolbar" onSubmit={navigate}><div className="browser-nav-actions"><IconButton icon={ArrowLeft} iconSize={15} label="Go back" disabled={!activeTab?.canGoBack || busy} onClick={() => history('back')} /><IconButton icon={ArrowRight} iconSize={15} label="Go forward" disabled={!activeTab?.canGoForward || busy} onClick={() => history('forward')} /><IconButton icon={RefreshCw} iconSize={14} label="Reload page" disabled={!activeTab || busy} onClick={reload} /></div><input className="browser-address" value={address} onChange={event => setAddress(event.target.value)} placeholder="Enter an HTTP(S) address" aria-label="Browser address" disabled={!activeTab || busy} /></form>
-    <div className="browser-panel-content">{error ? <p className="browser-error" role="alert">{error}</p> : null}<div ref={hostRef} className="browser-view-host" aria-label={activeTab?.title ?? 'Browser page'}>{!activeTab || activeTab.url === 'about:blank' ? <div className="browser-empty"><Icon icon={Globe2} size={28} /><strong>Open a page</strong><span>Enter an HTTP(S) address above.</span></div> : null}</div></div>
+    {error ? <p className="browser-error" role="alert">{error}</p> : null}<div className="browser-panel-content"><div ref={hostRef} className="browser-view-host" aria-label={activeTab?.title ?? 'Browser page'}>{!activeTab || activeTab.url === 'about:blank' ? <div className="browser-empty"><Icon icon={Globe2} size={28} /><strong>Open a page</strong><span>Enter an HTTP(S) address above.</span></div> : null}</div></div>
   </aside>;
+}
+
+function BrowserTabIcon({ favicon }: { favicon: string | undefined }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [favicon]);
+  if (favicon !== undefined && !failed) return <img className="browser-tab-favicon" src={favicon} alt="" aria-hidden="true" onError={() => setFailed(true)} />;
+  return <Icon icon={Globe2} size={16} className="browser-tab-site-icon" />;
 }
 
 function toBrowserError(reason: unknown, fallback: string): string { return reason instanceof Error && reason.message.trim().length > 0 ? reason.message : fallback; }

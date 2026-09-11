@@ -6,6 +6,7 @@ import { cliRequestTimeout, CLI_DEFAULT_REQUEST_TIMEOUT_MS } from './cli-agent-t
 import { terminateDesktopProcess } from '../process/process-termination.js';
 import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 import { REQUIRED_DESKTOP_CAPABILITIES } from './agent-constants.js';
+import type { DesktopHostCapabilities } from '../../contracts/agent-protocol/v1/host-capabilities.js';
 
 export interface CliAgentProcessOptions {
   cwd: string;
@@ -14,6 +15,7 @@ export interface CliAgentProcessOptions {
   environment?: NodeJS.ProcessEnv;
   computerHost?: boolean;
   documentHost?: boolean;
+  hostCapabilities?: DesktopHostCapabilities;
 }
 
 export interface CliAgentEventHandler {
@@ -64,7 +66,7 @@ export class CliAgentProcess {
   private async performInitialization(): Promise<DesktopAgentResult> {
     if (this.initialized && this.initializationResult !== undefined) return this.initializationResult;
     this.ensureStarted();
-    const result = await this.request('initialize', { client: 'lotagate-desktop', version: 1, browserHost: true, executionBroker: true, computerHost: this.options.computerHost === true, documentHost: this.options.documentHost === true });
+    const result = await this.request('initialize', { client: 'lotagate-desktop', version: 1, browserHost: true, executionBroker: true, computerHost: this.options.computerHost === true, documentHost: this.options.documentHost === true, ...(this.options.hostCapabilities === undefined ? {} : { hostCapabilities: this.options.hostCapabilities }) });
     if (!isDesktopAgentResult(result)) throw new CliAgentProcessError('The CLI returned an invalid Desktop protocol handshake.');
     if (result.version !== 1) throw new CliAgentProcessError(`Unsupported Desktop protocol version: ${String(result.version)}.`);
     const missing = [...REQUIRED_DESKTOP_CAPABILITIES, ...(this.options.computerHost === true ? ['computer-host'] : []), ...(this.options.documentHost === true ? ['document-host'] : [])].filter(capability => !result.capabilities.includes(capability));

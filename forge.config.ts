@@ -45,6 +45,7 @@ const config: ForgeConfig = {
       'resources/public-plugins',
       'resources/computer-use',
       'resources/document-use',
+      'resources/native-dependencies',
       'resources/speech',
       packagedCliExecutable,
       'node_modules/node-pty',

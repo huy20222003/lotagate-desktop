@@ -44,8 +44,11 @@ are file and document operations, not simulated PDF viewer UI interaction.
 
 ## Preconditions and permissions
 
-- This skill is available through LotaGate Desktop on Windows and does not
-  grant access to a PDF by itself.
+- This skill is available through LotaGate Desktop when a compatible PDF
+  provider is available and does not grant access to a PDF by itself.
+- The host negotiates the available operations from the installed provider and
+  utilities. Do not assume that every operation in this guide is available on
+  every operating system.
 - Confirm the exact input path, page selection, output path, and mutation scope.
 - PDF paths must remain inside the active workspace boundary unless the host
   explicitly authorizes an allowed absolute path.

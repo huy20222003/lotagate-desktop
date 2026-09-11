@@ -1,6 +1,6 @@
 ---
 name: computer-use
-description: Control approved Windows applications through LotaGate's native Computer Use tools.
+description: Control approved desktop applications through LotaGate's native Computer Use tools.
 allowed-tools:
   - computer.listWindows
   - computer.inspect
@@ -36,13 +36,14 @@ allowed-tools:
 
 # Computer Use
 
-Use the `computer.*` tools only when the user explicitly asks LotaGate to interact with a Windows application. These tools operate the real Windows desktop through the LotaGate Desktop host, so every action must be deliberate, observable, and limited to the user's stated goal.
+Use the `computer.*` tools only when the user explicitly asks LotaGate to interact with a desktop application. These tools operate the real desktop through the LotaGate Desktop host, so every action must be deliberate, observable, and limited to the user's stated goal.
 
 ## Preconditions and permissions
 
-- This skill is available only in LotaGate Desktop on Windows. It does not grant access by itself.
+- This skill is available only in LotaGate Desktop when the current platform exposes a compatible native Computer Use provider. It does not grant access by itself.
+- The Desktop handshake determines which `computer.*` operations are available. Do not assume that an operation exposed on another platform is available here.
 - The user must explicitly request computer interaction. Do not open, inspect, or manipulate an application merely because it is visible.
-- `computer.launch` is restricted by the user's Computer Use application allowlist in Settings > Integrations > Computer Use. The setting accepts executable names or executable paths separated by commas. Matching is case-insensitive and `.exe` may be omitted.
+- `computer.launch` is restricted by the user's Computer Use application allowlist in Settings > Integrations > Computer Use. The setting accepts application names or paths separated by commas. Matching is case-insensitive and a Windows `.exe` suffix may be omitted.
 - All mutating computer actions use the shared Composer approval policy. If approval is declined, stop the workflow and explain that the requested action was not completed; do not retry or work around the decision.
 - Never attempt to bypass the allowlist with `shell.exec`, another launcher, a script, a shortcut, or a different executable name. If an application is not allowed, ask the user to update the allowlist themselves.
 

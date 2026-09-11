@@ -19,6 +19,18 @@ describe('mergeChatActivities', () => {
     expect(result[1]?.kind).toBe('error');
   });
 
+  it('keeps interrupted progress in Worked For instead of moving it into the final response', () => {
+    const result = mergeChatActivities([
+      activity('user', 'Open Paint'),
+      { ...activity('assistant', 'I am checking the canvas.', 'turn-3'), metadata: { turnId: 'turn-3', segmentId: 'run-3:1', assistantPhase: 'progress', assistantInterrupted: true } },
+      activity('error', 'The response could not be completed.', 'turn-3'),
+    ]);
+
+    expect(result).toHaveLength(2);
+    expect(result[1]?.kind).toBe('error');
+    expect(result[1]?.text).toBe('The response could not be completed.');
+  });
+
   it('does not restore transient command statuses into the transcript', () => {
     const result = mergeChatActivities([
       activity('user', 'Run the check'),
@@ -51,5 +63,27 @@ describe('mergeChatActivities', () => {
     ]);
 
     expect(result.map(item => item.text)).toEqual(['Inspect the route', 'The route is correct.']);
+  });
+
+  it('merges partial assistant segments from one failed turn into one response', () => {
+    const result = mergeChatActivities([
+      activity('user', 'Create the file'),
+      { ...activity('assistant', 'I am creating it.', 'turn-1'), metadata: { turnId: 'turn-1', segmentId: 'run-1:1', assistantPhase: 'final', assistantInterrupted: true } },
+      { ...activity('assistant', 'The file is ready.', 'turn-1'), metadata: { turnId: 'turn-1', segmentId: 'run-1:2', assistantPhase: 'final', assistantInterrupted: true } },
+      activity('error', 'The response could not be completed.', 'turn-1'),
+    ]);
+
+    expect(result).toHaveLength(2);
+    expect(result[1]?.text).toBe('I am creating it.\n\nThe file is ready.\n\nThe response could not be completed.');
+  });
+
+  it('keeps completed assistant segments independent', () => {
+    const result = mergeChatActivities([
+      activity('user', 'Run the task'),
+      { ...activity('assistant', 'Before the tool.', 'turn-1'), metadata: { turnId: 'turn-1', segmentId: 'run-1:1', assistantPhase: 'final' } },
+      { ...activity('assistant', 'After the tool.', 'turn-1'), metadata: { turnId: 'turn-1', segmentId: 'run-1:2', assistantPhase: 'final' } },
+    ]);
+
+    expect(result.map(item => item.text)).toEqual(['Run the task', 'Before the tool.', 'After the tool.']);
   });
 });

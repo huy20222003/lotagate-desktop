@@ -145,6 +145,10 @@
 .source-preview-loading { color: var(--color-text-tertiary); font-size: 12px; }
 .source-preview-skeleton { width: min(520px, 92%); height: min(320px, 52vh); }
 .agent-media-response { display: grid; gap: 12px; margin-top: 12px; }
+.agent-file-response { display: grid; width: min(520px, 100%); gap: 8px; margin-top: 12px; }
+.agent-file-response .source-file-list { grid-template-columns: minmax(0, 1fr); }
+.agent-file-response .source-file-row { padding: 8px 10px; }
+.agent-file-error { margin: 0; color: var(--color-danger); font-size: 11px; }
 .agent-media-gallery { width: min(460px, 100%); overflow: hidden; border: 1px solid var(--color-border-subtle); border-radius: 9px; background: var(--color-surface); }
 .agent-media-gallery-single { width: fit-content; max-width: 100%; }
 .agent-media-gallery .swiper { width: 100%; }

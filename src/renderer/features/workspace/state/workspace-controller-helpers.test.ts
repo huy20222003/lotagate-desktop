@@ -19,6 +19,13 @@ describe('workspace controller activity merging', () => {
 
     expect(mergeActivities([streaming], [persisted])).toEqual([persisted]);
   });
+
+  it('removes the live error activity when the persisted error arrives', () => {
+    const liveError: Activity = { id: 'error:task-1:turn-1', taskId: 'task-1', kind: 'error', text: 'Failed', metadata: { turnId: 'turn-1' }, createdAt: '2026-08-29T00:00:01.000Z' };
+    const persistedError: Activity = { id: 'persisted-error-1', taskId: 'task-1', kind: 'error', text: 'Failed', metadata: { turnId: 'turn-1' }, createdAt: '2026-08-29T00:00:01.000Z' };
+
+    expect(mergeActivities([liveError], [persistedError])).toEqual([persistedError]);
+  });
 });
 
 describe('workspace controller queued attachment cleanup', () => {

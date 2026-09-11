@@ -1,4 +1,4 @@
-import { copyFile, mkdir, open, readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { artifactSchema, type Artifact } from '../../contracts/ipc/v1/workspace.js';
@@ -63,7 +63,7 @@ export class ArtifactService {
   async importFile(taskId: string, sourcePath: string, kind: Artifact['kind']): Promise<Artifact> {
     const details = await stat(sourcePath);
     if (!details.isFile()) throw new Error('The selected artifact must be a file.');
-    if (details.size <= 0 || details.size > DESKTOP_RUNTIME_LIMITS.attachmentBytes) throw new Error('The selected artifact exceeds the supported size limit.');
+    if (details.size <= 0 || details.size > DESKTOP_RUNTIME_LIMITS.artifactFileBytes) throw new Error('The selected artifact exceeds the supported size limit.');
     const destinationDirectory = join(desktopDataPath('artifacts'), taskId);
     await mkdir(destinationDirectory, { recursive: true });
     const destination = join(destinationDirectory, `${randomUUID()}-${basename(sourcePath)}`);
@@ -76,6 +76,26 @@ export class ArtifactService {
       await unlink(destination).catch(() => undefined);
       throw error;
     }
+  }
+
+  async replaceFile(taskId: string, artifactId: string, sourcePath: string): Promise<Artifact> {
+    const artifact = await this.requireActive(taskId, artifactId);
+    const details = await stat(sourcePath);
+    if (!details.isFile()) throw new Error('The selected artifact must be a file.');
+    if (details.size <= 0 || details.size > DESKTOP_RUNTIME_LIMITS.artifactFileBytes) throw new Error('The selected artifact exceeds the supported size limit.');
+    const temporary = `${artifact.path}.${randomUUID()}.tmp`;
+    try {
+      await copyFile(sourcePath, temporary);
+      await rename(temporary, artifact.path);
+      let updated: Artifact | undefined;
+      await this.store.update(current => current.map(item => {
+        if (item.taskId !== taskId || item.id !== artifactId || item.deletedAt !== undefined) return item;
+        updated = artifactSchema.parse({ ...item, size: details.size });
+        return updated;
+      }));
+      if (updated === undefined) throw new Error('Artifact was not found.');
+      return updated;
+    } finally { await unlink(temporary).catch(() => undefined); }
   }
 
   async createText(taskId: string, name: string, content: string, kind: Extract<Artifact['kind'], 'text' | 'markdown' | 'patch' | 'json'> = 'text', source?: Artifact['source']): Promise<Artifact> {

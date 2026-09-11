@@ -40,6 +40,31 @@ describe('agent markdown renderer', () => {
     expect(screen.getByText('First item').closest('.agent-markdown')).toBeInTheDocument();
   });
 
+  it('renders GFM tables as a bounded table with header and cell elements', () => {
+    render(<AgentMarkdown content={'| Name | Value |\n| --- | --- |\n| Long value | 123 |'} />);
+
+    expect(document.querySelector('.agent-markdown table')).toBeInTheDocument();
+    expect(document.querySelectorAll('.agent-markdown th')).toHaveLength(2);
+    expect(document.querySelectorAll('.agent-markdown td')).toHaveLength(2);
+  });
+
+  it('links bare domains with an https URL in paragraphs, headings, and table cells', () => {
+    render(<AgentMarkdown content={'# See developers.openai.com/api/docs/models/gpt-6-astra\n\n| Docs |\n| --- |\n| developers.openai.com/api/docs |'} />);
+
+    const links = screen.getAllByRole('link', { name: 'developers.openai.com' });
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute('href', 'https://developers.openai.com/api/docs/models/gpt-6-astra');
+    expect(links[1]).toHaveAttribute('href', 'https://developers.openai.com/api/docs');
+  });
+
+  it('normalizes a Markdown link whose href omits the protocol', () => {
+    render(<AgentMarkdown content={'[OpenAI docs](developers.openai.com/api/docs)'} />);
+
+    const link = screen.getByRole('link', { name: 'OpenAI docs' });
+    expect(link).toHaveAttribute('href', 'https://developers.openai.com/api/docs');
+    expect(link.querySelector('img')).toHaveAttribute('src', 'https://developers.openai.com/favicon.ico');
+  });
+
   it('keeps a fenced code block embedded in a Markdown file response together', () => {
     const content = ['Nội dung của file test.md như sau:', '', '```markdown', 'hello', '', '```javascript', 'function total(arr) {', '  return arr.reduce((acc, value) => acc + value, 0);', '}', '```', ''].join('\n');
     render(<AgentMarkdown content={content} />);

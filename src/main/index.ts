@@ -46,14 +46,16 @@ import { DesktopUpdateService } from './updates/desktop-update-service.js';
 import { ComputerHostToolBroker } from './computer/computer-host-tool-broker.js';
 import { DocumentHostToolBroker } from './documents/document-host-tool-broker.js';
 import { ComputerOverlay } from './computer/computer-overlay.js';
-import { COMPUTER_ACTION_TIMEOUT_MS, WindowsComputerService } from './computer/windows-computer-service.js';
+import { createNativeHostProviders } from './host/native-host-provider-factory.js';
 import { PublicPluginBootstrapService } from './extensions/public-plugin-bootstrap-service.js';
 import { WhisperCppSpeechTranscriptionService } from './speech/whisper-cpp-speech-transcription-service.js';
 import { AgentEventCoordinator } from './agents/agent-event-coordinator.js';
+import { NativeDependencyService } from './dependencies/native-dependency-service.js';
 
 loadRuntimeEnvironment();
 const runtimeConfig = readRuntimeConfig();
 const automationDispatchRequested = process.argv.includes('--automation-dispatch');
+const nativeDependencyRestarted = process.argv.includes('--native-dependencies-restarted');
 let agentManager: AgentManager | undefined;
 let browserService: BrowserService | undefined;
 let computerBroker: ComputerHostToolBroker | undefined;
@@ -134,10 +136,32 @@ app.whenReady().then(async () => {
   const automations = new AutomationService();
   automationService = automations;
   const automationSessions = new Map<string, { runId: string; cwd: string }>();
-  if (process.platform === 'win32') {
-    computerBroker = new ComputerHostToolBroker(new WindowsComputerService(desktopResourcePath('computer-use', 'windows-computer.ps1'), COMPUTER_ACTION_TIMEOUT_MS, async () => (await settings.get()).computer.applicationAllowlist), new ComputerOverlay());
-    documentBroker = new DocumentHostToolBroker(desktopResourcePath('document-use', 'windows-document.ps1'));
+  const nativeDependencies = new NativeDependencyService({
+    manifestPath: desktopResourcePath('native-dependencies', 'manifest.json'),
+    log: (message, fields) => logger.warn(message, fields),
+  });
+  const dependencyReport = await nativeDependencies.ensureInstalled(!nativeDependencyRestarted && (app.isPackaged || process.env['LOTAGATE_AUTO_INSTALL_NATIVE_DEPENDENCIES'] === '1'));
+  if (dependencyReport.manual.length > 0 || dependencyReport.missing.length > 0 || dependencyReport.failed.length > 0) {
+    logger.warn('native-dependency.bootstrap.incomplete', {
+      platform: dependencyReport.platform,
+      missing: dependencyReport.missing,
+      manual: dependencyReport.manual,
+      failed: dependencyReport.failed,
+    });
   }
+  if (dependencyReport.restartRequired) {
+    logger.info('native-dependency.bootstrap.restart', { platform: dependencyReport.platform });
+    app.relaunch({ args: [...process.argv.slice(1), '--native-dependencies-restarted'] });
+    app.exit(0);
+    return;
+  }
+  const nativeHostProviders = await createNativeHostProviders({
+    resourcePath: desktopResourcePath,
+    getApplicationAllowlist: async () => (await settings.get()).computer.applicationAllowlist,
+  });
+  computerBroker = new ComputerHostToolBroker(nativeHostProviders.computer, new ComputerOverlay());
+  documentBroker = new DocumentHostToolBroker(nativeHostProviders.documents, artifacts);
+  const hostCapabilities = nativeHostProviders.capabilities;
   const eventCoordinator = new AgentEventCoordinator({
     taskTurns,
     checkpoints,
@@ -206,7 +230,7 @@ app.whenReady().then(async () => {
   }, cache, async () => {
     const configured = await settings.get();
     return buildInteractiveDesktopExecutionPolicy(configured.sandbox.hostFallback);
-  }, { computerHost: computerBroker !== undefined, documentHost: documentBroker !== undefined });
+  }, { computerHost: nativeHostProviders.capabilities.computer?.available === true, documentHost: Object.values(nativeHostProviders.capabilities.documents ?? {}).some(capability => capability?.available === true), hostCapabilities });
   agentManager = agents;
   const extensionFiles = new ExtensionFileService(workspaces, desktopResourcePath('public-plugins'), {
     listPublicPlugins: root => agents.extensionListPublicPlugins(root),
@@ -241,7 +265,7 @@ app.whenReady().then(async () => {
     }
   });
   const auth = new DesktopAuthService(transport, async () => { await remoteControl.stop(); await approvals.cancelAll(); await agents.shutdownAll(); await computerBroker?.close(); }, () => userContext.resetSession());
-  registerIpc({ auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, taskTurns, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, speech, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); taskTurns.releaseWorkspace(removedWorkspace.rootPath); await browserHost.closeForWorkspace(removedWorkspace.rootPath); } });
+  registerIpc({ auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, taskTurns, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, speech, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); taskTurns.releaseWorkspace(removedWorkspace.rootPath); await browserHost.closeForWorkspace(removedWorkspace.rootPath); await documentBroker?.closeForWorkspace(removedWorkspace.rootPath); } });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }

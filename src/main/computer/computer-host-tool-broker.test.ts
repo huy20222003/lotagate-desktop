@@ -46,6 +46,14 @@ describe('ComputerHostToolBroker', () => {
     expect(runtime.execute).not.toHaveBeenCalled();
   });
 
+  it('rejects an action outside the negotiated native capability', async () => {
+    const runtime = { capabilities: { available: true, provider: 'test', operations: ['computer.readClipboard'] }, execute: vi.fn() };
+    const broker = new ComputerHostToolBroker(runtime);
+    const response = await broker.handle('C:/workspace', request('computer.click'));
+    expect(response).toMatchObject({ ok: false, error: { code: 'COMPUTER_CAPABILITY_UNAVAILABLE' } });
+    expect(runtime.execute).not.toHaveBeenCalled();
+  });
+
   it('aborts an active native action when the caller cancels', async () => {
     let runtimeAborted = false;
     const runtime = {

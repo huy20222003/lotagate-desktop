@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { clamp, FILE_PANEL_DEFAULT_WIDTH, FILE_PANEL_MAX_WIDTH, FILE_PANEL_MIN_WIDTH } from '../review/file-change-view.js';
+export { FILE_PANEL_DEFAULT_WIDTH, FILE_PANEL_MAX_WIDTH, FILE_PANEL_MIN_WIDTH };
 
 const SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.55;
 
 type ResizeSide = 'left' | 'right';
-interface ResizableSidePanelOptions { side?: ResizeSide; initialWidth?: number; minWidth?: number; maxWidth?: number }
+interface ResizableSidePanelOptions { side?: ResizeSide; initialWidth?: number; minWidth?: number; maxWidth?: number; maxViewportRatio?: number }
 
-function getMaxSidePanelWidth(minWidth: number, maxWidth: number): number {
-  const viewportMax = typeof window === 'undefined' ? maxWidth : Math.floor(window.innerWidth * SIDE_PANEL_MAX_VIEWPORT_RATIO);
+function getMaxSidePanelWidth(minWidth: number, maxWidth: number, maxViewportRatio = SIDE_PANEL_MAX_VIEWPORT_RATIO): number {
+  const viewportMax = typeof window === 'undefined' ? maxWidth : Math.floor(window.innerWidth * maxViewportRatio);
   return Math.max(minWidth, Math.min(maxWidth, viewportMax));
 }
 
-export function useResizableSidePanel({ side = 'right', initialWidth = FILE_PANEL_DEFAULT_WIDTH, minWidth = FILE_PANEL_MIN_WIDTH, maxWidth = FILE_PANEL_MAX_WIDTH }: ResizableSidePanelOptions = {}) {
+export function useResizableSidePanel({ side = 'right', initialWidth = FILE_PANEL_DEFAULT_WIDTH, minWidth = FILE_PANEL_MIN_WIDTH, maxWidth = FILE_PANEL_MAX_WIDTH, maxViewportRatio = SIDE_PANEL_MAX_VIEWPORT_RATIO }: ResizableSidePanelOptions = {}) {
   const [panelWidth, setPanelWidth] = useState(initialWidth);
   const [resizing, setResizing] = useState(false);
   const resizeStart = useRef<{ clientX: number; width: number } | undefined>();
@@ -21,8 +22,8 @@ export function useResizableSidePanel({ side = 'right', initialWidth = FILE_PANE
     if (!start) return;
     const delta = clientX - start.clientX;
     const nextWidth = side === 'left' ? start.width + delta : start.width - delta;
-    setPanelWidth(clamp(nextWidth, minWidth, getMaxSidePanelWidth(minWidth, maxWidth)));
-  }, [maxWidth, minWidth, side]);
+    setPanelWidth(clamp(nextWidth, minWidth, getMaxSidePanelWidth(minWidth, maxWidth, maxViewportRatio)));
+  }, [maxWidth, maxViewportRatio, minWidth, side]);
 
   useEffect(() => {
     if (!resizing) return;
@@ -49,10 +50,10 @@ export function useResizableSidePanel({ side = 'right', initialWidth = FILE_PANE
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
     const grows = side === 'left' ? event.key === 'ArrowRight' : event.key === 'ArrowLeft';
-    setPanelWidth(current => clamp(current + (grows ? 16 : -16), minWidth, getMaxSidePanelWidth(minWidth, maxWidth)));
+    setPanelWidth(current => clamp(current + (grows ? 16 : -16), minWidth, getMaxSidePanelWidth(minWidth, maxWidth, maxViewportRatio)));
   };
 
-  return { panelWidth, resizing, startResize, handleResizeKeyDown };
+  return { panelWidth, setPanelWidth, resizing, startResize, handleResizeKeyDown };
 }
 
 interface ResizableBottomPanelOptions { initialHeight?: number; minHeight?: number; maxHeight?: number }

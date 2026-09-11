@@ -5,6 +5,7 @@ export const DESKTOP_RUNTIME_LIMITS = {
   cliJsonlLineBytes: 4 * 1024 * 1024,
   cliAttachmentChunkBytes: 512 * 1024,
   attachmentBytes: 10 * 1024 * 1024,
+  artifactFileBytes: 512 * 1024 * 1024,
   hostOutputBytes: 2 * 1024 * 1024,
   hostFileBytes: 10 * 1024 * 1024,
   hostScriptBytes: 512 * 1024,

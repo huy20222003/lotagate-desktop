@@ -35,13 +35,17 @@ allowed-tools:
 
 Use the `pptx.*` tools only when the user explicitly asks LotaGate to inspect,
 create, modify, render, or export a PowerPoint presentation. The tools operate
-through the governed Desktop document host and Windows Office backend; they
-modify presentation structures rather than simulating PowerPoint UI actions.
+through the governed Desktop document host and the provider negotiated for the
+current platform; they modify presentation structures rather than simulating
+PowerPoint UI actions.
 
 ## Preconditions and permissions
 
-- This skill is available through LotaGate Desktop on Windows and does not
-  grant presentation access by itself.
+- This skill is available through LotaGate Desktop when a compatible
+  presentation provider is available and does not grant presentation access by
+  itself.
+- The provider may expose only a subset of operations. Treat the tool catalog
+  as authoritative instead of assuming every listed operation is available.
 - Confirm the exact `.pptx` path, slide number, element target, output path,
   and requested mutation before acting.
 - Presentation paths are restricted to the active workspace. Do not search for

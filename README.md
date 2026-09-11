@@ -125,6 +125,44 @@ reuse the existing approval card before retrying the exact action on the host;
 `deny` policies fail closed. Standalone CLI execution remains local because it
 does not receive the Desktop host bridge.
 
+## Portable native providers
+
+Desktop negotiates native capabilities during the JSONL handshake. On macOS,
+Computer Use uses the operating-system accessibility and screen utilities and
+may require Accessibility permission in System Settings. On Linux, the
+available Computer Use operations depend on desktop helpers present on `PATH`,
+such as `wmctrl`, `xdotool`, `xclip`/`xsel`/`wl-paste`/`wl-copy`, `xrandr`, and a
+supported screen-capture utility. Linux accessibility-tree operations additionally
+use Python AT-SPI (`pyatspi`) when it is available; macOS uses System Events and
+requires the application to be granted Accessibility permission.
+
+Portable document operations use helpers installed by the user or by the
+manifest-driven first-run bootstrap:
+LibreOffice (`soffice` or `libreoffice`) for office conversion, and Poppler
+utilities (`pdfinfo`, `pdftotext`, `pdftoppm`, and `pdfunite`) for PDF work.
+The richer Office editing bridge requires a Python runtime able to import
+LibreOffice UNO (`uno`); optional PDF editing, attachments, optimization, and OCR
+operations use `pdftk`/`qpdf`, Ghostscript, and Tesseract when present.
+Packaged Desktop runs the same dependency manifest on first launch after
+installation. It uses only the host package manager when available (`winget` on
+Windows, Homebrew on macOS, and the detected Linux package manager), invokes it
+without a shell, and restarts once after a successful installation so capability
+detection sees the refreshed PATH. Missing managers or manual prerequisites are
+reported and never prevent Desktop from starting. Microsoft Office and macOS
+Accessibility permission remain user-managed because they are proprietary or
+protected by the operating system. Developers can inspect or install the host
+set with `npm run native:check` and `npm run native:install` (or
+`npm run native:install:windows`).
+
+All native providers use one Desktop host path. `src/main/host/native-host-provider-factory.ts`
+selects the platform adapters, `src/main/host/host-capability-registry.ts` creates
+the single capability snapshot, and the Computer/Document brokers own the shared
+request lifecycle, session cleanup, validation, cancellation, and error boundary.
+Platform adapters only implement native operations behind their provider ports;
+they do not define a second public tool catalog or a second JSONL protocol. This
+keeps Windows, macOS, and Linux capability differences explicit without creating
+parallel host workflows.
+
 The same v3 contract also requires CLI capabilities for the Intent runtime,
 host-attested evidence, conversational progress, and local-memory commands.
 Desktop never stores a second copy of agent memory: Settings → Memory resolves

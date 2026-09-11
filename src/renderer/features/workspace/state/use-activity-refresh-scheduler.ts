@@ -5,7 +5,7 @@ const ACTIVITY_REFRESH_MIN_INTERVAL_MS = 250;
 type LoadActivities = (taskId: string, reset?: boolean) => Promise<void>;
 
 /** Coalesces lifecycle refreshes while keeping streaming deltas on the local render path. */
-export function useActivityRefreshScheduler(loadActivities: LoadActivities, onError: (reason: unknown) => void, scopeKey?: string): (taskId: string) => void {
+export function useActivityRefreshScheduler(loadActivities: LoadActivities, onError: (reason: unknown, taskId: string) => void, scopeKey?: string): (taskId: string) => void {
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const inFlightRef = useRef<Promise<void> | undefined>();
   const pendingTaskIdRef = useRef<string | undefined>();
@@ -20,7 +20,7 @@ export function useActivityRefreshScheduler(loadActivities: LoadActivities, onEr
       pendingTaskIdRef.current = undefined;
       if (refreshTaskId === undefined) return;
       lastRefreshAtRef.current = Date.now();
-      const refresh = loadActivities(refreshTaskId, false).catch(reason => { onError(reason); });
+      const refresh = loadActivities(refreshTaskId, false).catch(reason => { onError(reason, refreshTaskId); });
       inFlightRef.current = refresh;
       void refresh.finally(() => {
         if (inFlightRef.current === refresh) inFlightRef.current = undefined;

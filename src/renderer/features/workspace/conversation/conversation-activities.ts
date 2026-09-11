@@ -21,9 +21,11 @@ export function mergeChatActivities(activities: Activity[]): Activity[] {
     const previousTurnId = previous === undefined ? undefined : readTurnId(previous);
     const currentSegmentId = readSegmentId(activity);
     const previousSegmentId = previous === undefined ? undefined : readSegmentId(previous);
-    const sameSegment = activity.kind === 'error' || currentSegmentId === previousSegmentId;
+    const sameSegment = activity.kind === 'error'
+      || currentSegmentId === previousSegmentId
+      || (activity.kind === 'assistant' && previous?.kind === 'assistant' && isInterruptedAssistantActivity(activity) && isInterruptedAssistantActivity(previous));
     if (currentTurnId !== undefined && currentTurnId === previousTurnId && sameSegment && (activity.kind === 'assistant' || activity.kind === 'error') && previous?.kind === 'assistant') {
-      const separator = activity.kind === 'error' ? `\n\n${activity.text}` : activity.text;
+      const separator = activity.kind === 'error' || isInterruptedAssistantActivity(activity) ? `\n\n${activity.text}` : activity.text;
       transcript[transcript.length - 1] = { ...previous, text: `${previous.text}${separator}`, metadata: { ...previous.metadata, ...activity.metadata } };
     } else transcript.push(activity);
   }
@@ -32,6 +34,10 @@ export function mergeChatActivities(activities: Activity[]): Activity[] {
 
 export function isAssistantProgressActivity(activity: Activity): boolean {
   return activity.kind === 'assistant' && activity.metadata['assistantPhase'] === 'progress';
+}
+
+function isInterruptedAssistantActivity(activity: Activity): boolean {
+  return activity.kind === 'assistant' && activity.metadata['assistantInterrupted'] === true;
 }
 
 export function readSegmentId(activity: Activity): string | undefined {

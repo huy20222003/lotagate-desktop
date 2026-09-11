@@ -10,6 +10,7 @@ import { buildInteractiveDesktopExecutionPolicy } from './desktop-execution-poli
 import type { ExtensionProtocol, PluginIconInput } from '../extensions/extension-protocol.js';
 import type { ExtensionDetailInput, PublicPluginContributionInput } from '../../contracts/ipc/v1/extensions.js';
 import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
+import type { DesktopHostCapabilities } from '../../contracts/agent-protocol/v1/host-capabilities.js';
 
 export interface AgentManagerHandler {
   onEvent(projectRoot: string, event: DesktopEvent): void;
@@ -25,7 +26,7 @@ interface CommandEventBuffer { events: DesktopEvent[]; bytes: number; truncated:
 
 interface CommandExecutionResult { content: string; structured?: Record<string, unknown>; truncated: boolean; }
 
-export interface AgentManagerOptions { idleTimeoutMs?: number; computerHost?: boolean; documentHost?: boolean; }
+export interface AgentManagerOptions { idleTimeoutMs?: number; computerHost?: boolean; documentHost?: boolean; hostCapabilities?: DesktopHostCapabilities; }
 
 /** Owns one CLI process per Desktop session; project-level calls use a separate control process. */
 export class AgentManager {
@@ -215,7 +216,7 @@ export class AgentManager {
         this.scheduleRecovery(binding);
       },
     };
-    binding = { key, projectRoot, process: new CliAgentProcess({ cwd: projectRoot, ...resolveCliInvocation(), computerHost: this.options.computerHost === true, documentHost: this.options.documentHost === true }, eventHandler) }; this.processes.set(key, binding); this.touch(binding); return binding;
+    binding = { key, projectRoot, process: new CliAgentProcess({ cwd: projectRoot, ...resolveCliInvocation(), computerHost: this.options.computerHost === true, documentHost: this.options.documentHost === true, ...(this.options.hostCapabilities === undefined ? {} : { hostCapabilities: this.options.hostCapabilities }) }, eventHandler) }; this.processes.set(key, binding); this.touch(binding); return binding;
   }
 
   private async sessionProcess(projectRoot: string, sessionId: string): Promise<ProcessBinding> {

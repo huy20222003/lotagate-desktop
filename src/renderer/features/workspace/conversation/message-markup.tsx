@@ -1,4 +1,4 @@
-import { Children, type ReactNode } from 'react';
+import { Children, useState, type ReactNode } from 'react';
 import { Globe2 } from 'lucide-react';
 import type { Artifact } from '../../../../contracts/ipc/v1/workspace.js';
 import { Icon, Tooltip } from '../../../components/ui.js';
@@ -30,7 +30,13 @@ export function MessageExternalLink({ href, children }: { href: string; children
   const parsed = parseExternalUrl(href);
   if (parsed === undefined) return <span>{children ?? href}</span>;
   const label = textContent(children) || websiteLabel(href);
-  return <Tooltip label={parsed.toString()}><a className="message-external-link" href={parsed.toString()} target="_blank" rel="noreferrer"><Icon icon={Globe2} size={13} /><span>{label}</span></a></Tooltip>;
+  return <Tooltip label={parsed.toString()}><a className="message-external-link" href={parsed.toString()} target="_blank" rel="noreferrer"><MessageLinkIcon url={parsed} /><span>{label}</span></a></Tooltip>;
+}
+
+function MessageLinkIcon({ url }: { url: URL }) {
+  const [failed, setFailed] = useState(false);
+  if (!failed) return <img className="message-link-favicon" src={`${url.origin}/favicon.ico`} alt="" aria-hidden="true" loading="lazy" decoding="async" onError={() => setFailed(true)} />;
+  return <Icon icon={Globe2} size={13} />;
 }
 
 function MessageFileLink({ reference }: { reference: MessageFileReference }) {
@@ -62,6 +68,11 @@ function findNextToken(content: string, cursor: number, references: readonly Mes
     }
   }
   for (const match of content.slice(cursor).matchAll(/https?:\/\/[^\s<>()]+/giu)) {
+    const raw = match[0];
+    const url = trimUrlPunctuation(raw);
+    if (url.length > 0 && parseExternalUrl(url) !== undefined) candidates.push({ index: cursor + (match.index ?? 0), length: url.length, token: { kind: 'url', url } });
+  }
+  for (const match of content.slice(cursor).matchAll(BARE_DOMAIN_PATTERN)) {
     const raw = match[0];
     const url = trimUrlPunctuation(raw);
     if (url.length > 0 && parseExternalUrl(url) !== undefined) candidates.push({ index: cursor + (match.index ?? 0), length: url.length, token: { kind: 'url', url } });
@@ -118,8 +129,20 @@ function isAbsoluteFilePath(path: string): boolean {
   const baseName = fileName(path);
   return !baseName.startsWith('.') && /[^<>:"/\\|?*]+\.[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/u.test(baseName);
 }
+const BARE_DOMAIN_PATTERN = /(?<![@A-Za-z0-9_.-])(?:www\.)?(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}(?::\d{2,5})?(?:[/?#][^\s<>()]*)?/giu;
+const COMMON_WEB_TLDS = new Set(['ai', 'app', 'au', 'biz', 'ca', 'cloud', 'co', 'cn', 'com', 'de', 'dev', 'edu', 'fm', 'fr', 'gg', 'gov', 'in', 'info', 'io', 'jp', 'ly', 'me', 'mil', 'net', 'online', 'org', 'site', 'store', 'tech', 'tv', 'uk', 'us', 'vn', 'xyz']);
 function trimUrlPunctuation(value: string): string { return value.replace(/[.,;:!?]+$/u, '').replace(/[)]$/u, character => value.includes('(') ? character : ''); }
-function parseExternalUrl(href: string): URL | undefined { try { const url = new URL(href); return url.protocol === 'http:' || url.protocol === 'https:' ? url : undefined; } catch { return undefined; } }
+export function parseExternalUrl(href: string): URL | undefined {
+  const candidate = href.trim();
+  const isBareDomain = !/^[A-Za-z][A-Za-z0-9+.-]*:\/\//u.test(candidate);
+  const normalized = isBareDomain ? `https://${candidate}` : candidate;
+  try {
+    const url = new URL(normalized);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+    if (isBareDomain && !COMMON_WEB_TLDS.has(url.hostname.split('.').at(-1)?.toLowerCase() ?? '')) return undefined;
+    return url;
+  } catch { return undefined; }
+}
 function websiteLabel(href: string): string { return parseExternalUrl(href)?.hostname.replace(/^www\./iu, '') ?? href; }
 function textContent(value: ReactNode): string { return Children.toArray(value).filter((item): item is string => typeof item === 'string').join('').trim(); }
 

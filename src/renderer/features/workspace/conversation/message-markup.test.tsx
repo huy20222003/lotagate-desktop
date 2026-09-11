@@ -18,19 +18,20 @@ describe('message markup', () => {
     await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('D:/workspace/reports/result.json'));
   });
 
-  it('renders external links as a website label without fetching remote favicons', () => {
+  it('renders external links with the website favicon and hostname label', () => {
     render(<MessageMarkup content="Open https://example.com/docs now." />);
 
     const link = screen.getByRole('link', { name: 'example.com' });
     expect(link).toHaveClass('message-external-link');
-    expect(link.querySelector('img')).not.toBeInTheDocument();
+    expect(link.querySelector('img')).toHaveAttribute('src', 'https://example.com/favicon.ico');
   });
 
-  it('does not create a third-party favicon fallback request', () => {
+  it('falls back to the globe icon when the site favicon cannot load', () => {
     render(<MessageMarkup content="Open https://example.com/docs now." />);
 
     const image = screen.getByRole('link', { name: 'example.com' }).querySelector('img');
-    expect(image).toBeNull();
+    fireEvent.error(image!);
+    expect(screen.getByRole('link', { name: 'example.com' }).querySelector('img')).toBeNull();
   });
 
   it('keeps bare and relative file names as plain message text', () => {

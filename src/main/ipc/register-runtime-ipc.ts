@@ -21,6 +21,7 @@ handle('browser.navigate', async (event, sessionId: unknown, tabId: unknown, url
 handle('browser.goBack', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.goBack(idSchema.parse(sessionId), idSchema.parse(tabId)); });
 handle('browser.goForward', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.goForward(idSchema.parse(sessionId), idSchema.parse(tabId)); });
 handle('browser.reload', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); return browser.reload(idSchema.parse(sessionId), idSchema.parse(tabId)); });
+handle('browser.openDevTools', async (event, sessionId: unknown, tabId: unknown) => { assertTrustedRenderer(event); browser.openDevTools(idSchema.parse(sessionId), idSchema.parse(tabId)); });
 handle('browser.setViewBounds', async (event, sessionId: unknown, tabId: unknown, bounds: unknown, visible: unknown) => { assertTrustedRenderer(event); const value = browserBoundsSchema.parse(bounds); browser.setViewBounds(idSchema.parse(sessionId), idSchema.parse(tabId), value, z.boolean().parse(visible)); });
 handle('browser.screenshot', async (event, sessionId: unknown, tabId?: unknown) => { assertTrustedRenderer(event); return browser.screenshot(idSchema.parse(sessionId), tabId === undefined ? undefined : idSchema.parse(tabId)); });
 handle('browser.startRecording', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.startRecording(idSchema.parse(id)); });

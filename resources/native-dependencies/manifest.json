@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "dependencies": [
+    {
+      "id": "documents.libreoffice",
+      "label": "LibreOffice",
+      "platforms": ["win32", "darwin", "linux"],
+      "probe": { "type": "commandAny", "commands": ["soffice", "libreoffice"] },
+      "install": {
+        "win32": { "manager": "winget", "packageId": "TheDocumentFoundation.LibreOffice" },
+        "darwin": { "manager": "brew", "packageId": "libreoffice", "cask": true },
+        "linux": [
+          { "manager": "apt", "packageId": "libreoffice" },
+          { "manager": "dnf", "packageId": "libreoffice" },
+          { "manager": "pacman", "packageId": "libreoffice-fresh" }
+        ]
+      }
+    },
+    {
+      "id": "documents.poppler",
+      "label": "Poppler PDF utilities",
+      "platforms": ["win32", "darwin", "linux"],
+      "probe": {
+        "type": "commandsAll",
+        "commands": ["pdfinfo", "pdftotext", "pdftoppm", "pdfunite", "pdfimages", "pdftohtml", "pdfdetach"]
+      },
+      "install": {
+        "win32": { "manager": "winget", "packageId": "oschwartz10612.Poppler" },
+        "darwin": { "manager": "brew", "packageId": "poppler" },
+        "linux": [
+          { "manager": "apt", "packageId": "poppler-utils" },
+          { "manager": "dnf", "packageId": "poppler-utils" },
+          { "manager": "pacman", "packageId": "poppler" }
+        ]
+      }
+    },
+    {
+      "id": "documents.pdftk",
+      "label": "PDFtk",
+      "platforms": ["win32", "darwin", "linux"],
+      "probe": { "type": "command", "command": "pdftk" },
+      "install": {
+        "darwin": { "manager": "brew", "packageId": "pdftk-java" },
+        "linux": [
+          { "manager": "apt", "packageId": "pdftk" },
+          { "manager": "dnf", "packageId": "pdftk-java" },
+          { "manager": "pacman", "packageId": "pdftk" }
+        ]
+      },
+      "manual": "No current official Windows package source was verified for PDFtk. Install a trusted PDFtk Server build and ensure pdftk.exe is on PATH."
+    },
+    {
+      "id": "documents.qpdf",
+      "label": "qpdf",
+      "platforms": ["win32", "darwin", "linux"],
+      "probe": { "type": "command", "command": "qpdf" },
+      "install": {
+        "win32": { "manager": "winget", "packageId": "QPDF.QPDF" },
+        "darwin": { "manager": "brew", "packageId": "qpdf" },
+        "linux": [
+          { "manager": "apt", "packageId": "qpdf" },
+          { "manager": "dnf", "packageId": "qpdf" },
+          { "manager": "pacman", "packageId": "qpdf" }
+        ]
+      }
+    },
+    {
+      "id": "documents.ghostscript",
+      "label": "Ghostscript",
+      "platforms": ["win32", "darwin", "linux"],
+      "probe": { "type": "commandAny", "commands": ["gs", "gswin64c"] },
+      "install": {
+        "darwin": { "manager": "brew", "packageId": "ghostscript" },
+        "linux": [
+          { "manager": "apt", "packageId": "ghostscript" },
+          { "manager": "dnf", "packageId": "ghostscript" },
+          { "manager": "pacman", "packageId": "ghostscript" }
+        ]
+      },
+      "manual": "Install the current Windows Ghostscript release from the official Ghostscript website and ensure gswin64c.exe is on PATH."
+    },
+    {
+      "id": "documents.tesseract",
+      "label": "Tesseract OCR",
+      "platforms": ["win32", "darwin", "linux"],
+      "probe": { "type": "command", "command": "tesseract" },
+      "install": {
+        "win32": { "manager": "winget", "packageId": "tesseract-ocr.tesseract" },
+        "darwin": { "manager": "brew", "packageId": "tesseract" },
+        "linux": [
+          { "manager": "apt", "packageId": "tesseract-ocr" },
+          { "manager": "dnf", "packageId": "tesseract" },
+          { "manager": "pacman", "packageId": "tesseract" }
+        ]
+      },
+      "note": "Windows builds are provided by the package manager publisher; the Tesseract project does not publish a current Windows installer."
+    },
+    {
+      "id": "computer.linux.window-control",
+      "label": "Linux window and input helpers",
+      "platforms": ["linux"],
+      "probe": {
+        "type": "commandsAll",
+        "commands": ["wmctrl", "xdotool", "xrandr", "xprintidle"]
+      },
+      "install": {
+        "linux": [
+          { "manager": "apt", "packageId": "wmctrl xdotool x11-xserver-utils xprintidle" },
+          { "manager": "dnf", "packageId": "wmctrl xdotool xorg-x11-server-utils xprintidle" },
+          { "manager": "pacman", "packageId": "wmctrl xdotool xorg-xrandr xprintidle" }
+        ]
+      }
+    },
+    {
+      "id": "computer.linux.clipboard-and-capture",
+      "label": "Linux clipboard and screenshot helpers",
+      "platforms": ["linux"],
+      "probe": {
+        "type": "commandGroups",
+        "groups": [
+          ["xclip", "xsel", "wl-paste"],
+          ["xclip", "xsel", "wl-copy"],
+          ["gnome-screenshot", "scrot", "grim"]
+        ]
+      },
+      "install": {
+        "linux": [
+          { "manager": "apt", "packageId": "xclip xsel wl-clipboard gnome-screenshot scrot" },
+          { "manager": "dnf", "packageId": "xclip xsel wl-clipboard gnome-screenshot scrot" },
+          { "manager": "pacman", "packageId": "xclip xsel wl-clipboard gnome-screenshot scrot" }
+        ]
+      }
+    },
+    {
+      "id": "computer.linux.atspi",
+      "label": "Linux AT-SPI accessibility bridge",
+      "platforms": ["linux"],
+      "probe": { "type": "pythonImport", "module": "pyatspi" },
+      "install": {
+        "linux": [
+          { "manager": "apt", "packageId": "python3-pyatspi" },
+          { "manager": "dnf", "packageId": "python3-pyatspi" },
+          { "manager": "pacman", "packageId": "python-atspi" }
+        ]
+      }
+    },
+    {
+      "id": "documents.windows.office",
+      "label": "Microsoft Office desktop applications",
+      "platforms": ["win32"],
+      "probe": {
+        "type": "commandsAll",
+        "commands": ["WINWORD.EXE", "EXCEL.EXE", "POWERPNT.EXE"]
+      },
+      "manual": "Microsoft Office is proprietary and is not redistributed by LotaGate. Install Word, Excel, and PowerPoint through Microsoft 365 or your organization's software portal."
+    },
+    {
+      "id": "computer.macos.accessibility",
+      "label": "macOS Accessibility permission",
+      "platforms": ["darwin"],
+      "probe": { "type": "manual" },
+      "manual": "Enable Accessibility for LotaGate Desktop in System Settings > Privacy & Security > Accessibility. macOS does not allow an installer to grant this permission."
+    }
+  ]
+}

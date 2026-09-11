@@ -146,11 +146,13 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
     if (command === 'newTask') void startNewChat();
     if (command === 'openWorkspace') void openWorkspacePicker();
   }), [openWorkspacePicker, startNewChat]);
+  const browserWorkspaceRoot = controller.workspace?.rootPath;
+  const browserTaskSessionId = controller.task?.sessionId;
   useEffect(() => window.lotagate.agent.onEvent(envelope => {
-    if (envelope.cwd !== controller.workspace?.rootPath) return;
+    if (envelope.cwd !== browserWorkspaceRoot) return;
     if (!envelope.event.event.startsWith('browser.')) return;
     const eventSessionId = envelope.event.data['sessionId'];
-    if (typeof eventSessionId !== 'string' || eventSessionId !== controller.task?.sessionId) return;
+    if (typeof eventSessionId !== 'string' || eventSessionId !== browserTaskSessionId) return;
     const browserSessionId = envelope.event.data['browserSessionId'];
     if (typeof browserSessionId !== 'string') return;
     setAgentBrowserSessionId(browserSessionId);
@@ -158,7 +160,7 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
     setSourcesOpen(false);
     setGitOpen(false);
     setBrowserOpen(true);
-  }), [controller.workspace?.rootPath]);
+  }), [browserTaskSessionId, browserWorkspaceRoot]);
   useEffect(() => {
     if (settingsOpen) return;
     followLatestRef.current = true;
@@ -272,7 +274,13 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
   const toggleSources = useCallback(() => { if (sourcesOpen) { setSourcesOpen(false); return; } setChangesOpen(false); setBrowserOpen(false); setGitOpen(false); setSourcesOpen(true); }, [sourcesOpen]);
   const toggleGit = useCallback(() => { if (gitOpen) { setGitOpen(false); return; } setChangesOpen(false); setSourcesOpen(false); setBrowserOpen(false); setGitOpen(true); }, [gitOpen]);
   const showConversationControls = showScrollBottom || (controller.thinking && (activeTurnFileChanges.files.length > 0 || controller.plan?.status === 'active'));
-  const isWelcomeState = controller.workspace !== undefined && !controller.loading && !controller.activitiesLoading && !controller.thinking && (controller.task === undefined || !controller.activities.some(activity => activity.kind === 'user'));
+  // A selected task owns the conversation surface even while its activities
+  // are loading (and even when the task has no user activity yet). Deriving
+  // the welcome state from the activity list made a sidebar selection race
+  // with the async activity load and briefly, or permanently, rendered New
+  // chat for an existing session. `undefined` is the controller's explicit
+  // new-chat state, so it is the single source of truth here.
+  const isWelcomeState = controller.workspace !== undefined && !controller.loading && controller.task === undefined;
   useEffect(() => { setChangesOpen(false); setSourcesOpen(false); setTerminalOpen(false); setChangesSummary(undefined); setChangesInitialExpandedPath(undefined); setChangesInitialFile(undefined); setPlanDrawerOpen(false); setAgentBrowserSessionId(undefined); setBrowserOpen(false); setGitOpen(false); }, [controller.task?.id]);
   useEffect(() => { let mounted = true; void window.lotagate.settings.get().then(settings => { if (mounted) { setTerminalPlacement(settings.terminalPlacement); setShowContextWindowUsage(settings.showContextWindowUsage); } }).catch(() => undefined); return () => { mounted = false; }; }, [settingsOpen]);
   useEffect(() => { if (controller.plan?.status !== 'active') setPlanDrawerOpen(false); }, [controller.plan?.status]);

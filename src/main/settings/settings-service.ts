@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 import { normalizeOriginAllowlist } from '../../contracts/ipc/v1/origin-allowlist.js';
-import { DEFAULT_COMPUTER_APPLICATION_ALLOWLIST, normalizeComputerApplicationAllowlist } from '../../contracts/ipc/v1/computer-application-allowlist.js';
+import { defaultComputerApplicationAllowlist, normalizeComputerApplicationAllowlist, type ComputerApplicationPlatform } from '../../contracts/ipc/v1/computer-application-allowlist.js';
 import { DEFAULT_FILE_OPEN_DESTINATION, fileOpenDestinationSchema } from '../../contracts/ipc/v1/settings.js';
 
 const browserSettingsSchema = z.object({
@@ -29,8 +29,11 @@ const sandboxSettingsSchema = z.object({
   diagnosticsRetentionDays: z.number().int().min(1).max(365).default(30),
 });
 
+const computerApplicationPlatform: ComputerApplicationPlatform = process.platform === 'darwin' ? 'darwin' : process.platform === 'linux' ? 'linux' : 'win32';
+const defaultComputerApplications = defaultComputerApplicationAllowlist(computerApplicationPlatform);
+
 const computerSettingsSchema = z.object({
-  applicationAllowlist: z.array(z.string().trim().min(1).max(4_096)).default([...DEFAULT_COMPUTER_APPLICATION_ALLOWLIST]).transform(normalizeComputerApplicationAllowlist).pipe(z.array(z.string().min(1).max(4_096)).max(256)),
+  applicationAllowlist: z.array(z.string().trim().min(1).max(4_096)).default([...defaultComputerApplications]).transform(normalizeComputerApplicationAllowlist).pipe(z.array(z.string().min(1).max(4_096)).max(256)),
 });
 
 export const settingsSchema = z.object({

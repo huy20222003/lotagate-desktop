@@ -3,6 +3,7 @@ import { mkdir, open, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 import { activitySchema, type Activity, type ActivityPage } from '../../contracts/ipc/v1/workspace.js';
+import { mergeAssistantText, normalizeAssistantText } from '../../shared/assistant-stream-text.js';
 import { renameWithRetry } from './atomic-file-operations.js';
 import { ACTIVITY_LOG_VERSION, DEFAULT_COMPACTION_BYTES, DEFAULT_COMPACTION_OPERATIONS } from './persistence-constants.js';
 
@@ -30,6 +31,7 @@ const activitySegmentCompletedRecordSchema = z.object({
   taskId: z.string().min(1),
   segmentId: z.string().min(1),
   phase: z.enum(['progress', 'final']),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const activitySnapshotRecordSchema = z.object({
@@ -99,9 +101,10 @@ export class ActivityLogStore {
       await this.ensureLoaded();
       await this.compactIfNeeded();
       const nextSequence = this.sequence + 1;
-      const record: ActivityLogRecord = { version: ACTIVITY_LOG_VERSION, type: 'append', sequence: nextSequence, activity };
+      const normalizedActivity = normalizeActivity(activity);
+      const record: ActivityLogRecord = { version: ACTIVITY_LOG_VERSION, type: 'append', sequence: nextSequence, activity: normalizedActivity };
       await this.appendRecord(record);
-      this.activitiesCache = [...this.activitiesCache!, activity];
+      this.activitiesCache = [...this.activitiesCache!, normalizedActivity];
       this.sequence = nextSequence;
       this.recordOperation(record);
     });
@@ -125,7 +128,7 @@ export class ActivityLogStore {
         const actualIndex = findAssistantIndex(next, taskId, turnId, delta.metadata['segmentId']);
         const previous = actualIndex < 0 ? undefined : activitySchema.parse(next[actualIndex]);
         const nextActivity = previous === undefined
-          ? activitySchema.parse({ id: `streaming:${randomUUID()}`, taskId, kind: 'assistant', text: delta.text, metadata: delta.metadata, createdAt: new Date().toISOString() })
+          ? activitySchema.parse({ id: `streaming:${randomUUID()}`, taskId, kind: 'assistant', text: normalizeAssistantText(delta.text), metadata: delta.metadata, createdAt: new Date().toISOString() })
           : activitySchema.parse({ ...previous, text: mergeAssistantText(previous.text, delta.text), metadata: { ...previous.metadata, ...delta.metadata } });
         if (actualIndex < 0) next.push(nextActivity);
         else next[actualIndex] = nextActivity;
@@ -143,7 +146,7 @@ export class ActivityLogStore {
     return updated;
   }
 
-  async completeAssistantSegment(taskId: string, segmentId: string, phase: 'progress' | 'final'): Promise<Activity | undefined> {
+  async completeAssistantSegment(taskId: string, segmentId: string, phase: 'progress' | 'final', metadata: Record<string, unknown> = {}): Promise<Activity | undefined> {
     let updated: Activity | undefined;
     await this.enqueue(async () => {
       await this.ensureLoaded();
@@ -151,15 +154,43 @@ export class ActivityLogStore {
       const actualIndex = this.activitiesCache!.findIndex(activity => activity.taskId === taskId && activity.kind === 'assistant' && activity.metadata['segmentId'] === segmentId);
       if (actualIndex < 0) return;
       const previous = activitySchema.parse(this.activitiesCache![actualIndex]);
-      if (previous.metadata['assistantPhase'] === phase) { updated = previous; return; }
-      updated = activitySchema.parse({ ...previous, metadata: { ...previous.metadata, assistantPhase: phase } });
-      const record: ActivityLogRecord = { version: ACTIVITY_LOG_VERSION, type: 'assistant.segment.completed', sequence: this.sequence + 1, taskId, segmentId, phase };
+      const nextMetadata = { ...previous.metadata, ...metadata, assistantPhase: phase };
+      if (previous.metadata['assistantPhase'] === phase && Object.keys(metadata).every(key => previous.metadata[key] === metadata[key])) { updated = previous; return; }
+      updated = activitySchema.parse({ ...previous, metadata: nextMetadata });
+      const record: ActivityLogRecord = { version: ACTIVITY_LOG_VERSION, type: 'assistant.segment.completed', sequence: this.sequence + 1, taskId, segmentId, phase, ...(Object.keys(metadata).length === 0 ? {} : { metadata }) };
       await this.appendRecord(record);
       const next = [...this.activitiesCache!];
       next[actualIndex] = updated;
       this.activitiesCache = next;
       this.sequence = record.sequence;
       this.recordOperation(record);
+    });
+    return updated;
+  }
+
+  async completeAssistantSegmentsForTurn(taskId: string, turnId: string, phase: 'progress' | 'final', metadata: Record<string, unknown> = {}): Promise<Activity[]> {
+    const updated: Activity[] = [];
+    await this.enqueue(async () => {
+      await this.ensureLoaded();
+      await this.compactIfNeeded();
+      const next = [...this.activitiesCache!];
+      const records: ActivityLogRecord[] = [];
+      for (const [index, activity] of next.entries()) {
+        if (activity.taskId !== taskId || activity.kind !== 'assistant' || activity.metadata['turnId'] !== turnId || activity.metadata['assistantPhase'] !== 'progress') continue;
+        const segmentId = activity.metadata['segmentId'];
+        if (typeof segmentId !== 'string' || segmentId.length === 0) continue;
+        const previous = activitySchema.parse(activity);
+        const changed = activitySchema.parse({ ...previous, metadata: { ...previous.metadata, ...metadata, assistantPhase: phase } });
+        const record: ActivityLogRecord = { version: ACTIVITY_LOG_VERSION, type: 'assistant.segment.completed', sequence: this.sequence + records.length + 1, taskId, segmentId, phase, ...(Object.keys(metadata).length === 0 ? {} : { metadata }) };
+        next[index] = changed;
+        updated.push(changed);
+        records.push(record);
+      }
+      if (records.length === 0) return;
+      await this.appendRecords(records);
+      this.activitiesCache = next;
+      this.sequence = records[records.length - 1]!.sequence;
+      for (const record of records) this.recordOperation(record);
     });
     return updated;
   }
@@ -174,7 +205,7 @@ export class ActivityLogStore {
         id: replacementId,
         taskId,
         kind: 'assistant',
-        text,
+        text: normalizeAssistantText(text),
         metadata: { ...metadata, turnId, segmentId, assistantPhase: 'final', assistantReplacement: true },
         createdAt: existing?.createdAt ?? new Date().toISOString(),
       });
@@ -230,7 +261,7 @@ export class ActivityLogStore {
       if (isMissingFile(error)) return;
       throw error;
     }
-    const activities = activitySchema.array().parse(JSON.parse(raw));
+    const activities = activitySchema.array().parse(JSON.parse(raw)).map(normalizeActivity);
     this.activitiesCache = activities;
     this.sequence = 0;
     await this.writeSnapshot();
@@ -269,13 +300,13 @@ export class ActivityLogStore {
         bytesSinceSnapshot += Buffer.byteLength(`${line}\n`, 'utf8');
         operationsSinceSnapshot += 1;
       } else {
-        activities = applyAssistantSegmentCompleted(activities, record.taskId, record.segmentId, record.phase);
+        activities = applyAssistantSegmentCompleted(activities, record.taskId, record.segmentId, record.phase, record.metadata);
         bytesSinceSnapshot += Buffer.byteLength(`${line}\n`, 'utf8');
         operationsSinceSnapshot += 1;
       }
       sequence = record.sequence;
     }
-    this.activitiesCache = activitySchema.array().parse(activities);
+    this.activitiesCache = activitySchema.array().parse(activities.map(normalizeActivity));
     this.sequence = Math.max(sequence, 0);
     this.bytesSinceSnapshot = bytesSinceSnapshot;
     this.operationsSinceSnapshot = operationsSinceSnapshot;
@@ -341,14 +372,6 @@ function findAssistantIndex(activities: Activity[], taskId: string, turnId: unkn
   return -1;
 }
 
-function mergeAssistantText(previousText: string, incomingDelta: string): string {
-  if (incomingDelta.length === 0) return previousText;
-  if (previousText === incomingDelta) return previousText;
-  if (incomingDelta.startsWith(previousText)) return incomingDelta;
-  if (previousText.endsWith(incomingDelta) && incomingDelta.length > 20) return previousText;
-  return `${previousText}${incomingDelta}`;
-}
-
 function applyAssistantDelta(activities: Activity[], taskId: string, turnId: unknown, text: string, metadata: Record<string, unknown>): Activity[] {
   const actualIndex = findAssistantIndex(activities, taskId, turnId, metadata['segmentId']);
   if (actualIndex < 0) throw new Error('Activity log delta has no matching assistant activity.');
@@ -360,17 +383,21 @@ function applyAssistantDelta(activities: Activity[], taskId: string, turnId: unk
   return next;
 }
 
-function applyAssistantSegmentCompleted(activities: Activity[], taskId: string, segmentId: string, phase: 'progress' | 'final'): Activity[] {
+function applyAssistantSegmentCompleted(activities: Activity[], taskId: string, segmentId: string, phase: 'progress' | 'final', metadata: Record<string, unknown> = {}): Activity[] {
   const actualIndex = activities.findIndex(activity => activity.taskId === taskId && activity.kind === 'assistant' && activity.metadata['segmentId'] === segmentId);
   if (actualIndex < 0) throw new Error('Activity log segment completion has no matching assistant activity.');
   const previous = activitySchema.parse(activities[actualIndex]);
   const next = [...activities];
-  next[actualIndex] = activitySchema.parse({ ...previous, metadata: { ...previous.metadata, assistantPhase: phase } });
+  next[actualIndex] = activitySchema.parse({ ...previous, metadata: { ...previous.metadata, ...metadata, assistantPhase: phase } });
   return next;
 }
 
 function assistantReplacementId(taskId: string, segmentId: string): string {
   return `assistant-replacement:${taskId}:${segmentId}`;
+}
+
+function normalizeActivity(activity: Activity): Activity {
+  return activity.kind === 'assistant' ? { ...activity, text: normalizeAssistantText(activity.text) } : activity;
 }
 
 function isMissingFile(error: unknown): boolean {

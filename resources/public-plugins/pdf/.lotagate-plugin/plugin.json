@@ -1,8 +1,8 @@
 {
   "name": "pdf",
   "displayName": "PDF",
-  "version": "1.0.0",
-  "description": "Read, validate, render, and govern PDF document workflows through LotaGate Desktop.",
+  "version": "1.1.0",
+  "description": "Read, validate, render, and govern PDF workflows through LotaGate's platform-native document host.",
   "author": "LotaGate",
   "license": "MIT",
   "homepage": "https://lotagate.com/",

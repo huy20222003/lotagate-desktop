@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AttachmentPreviewList } from './AttachmentPreviewList.js';
 
 describe('AttachmentPreviewList', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   it('loads and displays a video attachment thumbnail', async () => {
     const readArtifactMedia = vi.fn().mockResolvedValue({ bytes: new Uint8Array([0]), mimeType: 'video/mp4' });
@@ -41,5 +44,37 @@ describe('AttachmentPreviewList', () => {
 
     screen.getByRole('button', { name: 'Open test.md' }).click();
     expect(openFile).toHaveBeenCalledWith('C:\\workspace\\test.md');
+  });
+
+  it('marks a composer list containing pasted text so media previews can share its compact height', () => {
+    const readArtifactMedia = vi.fn().mockResolvedValue({ bytes: new Uint8Array([0]), mimeType: 'image/png' });
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { tasks: { readArtifactMedia } } });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:image-preview');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    render(<AttachmentPreviewList taskId="task-1" onRemove={vi.fn().mockResolvedValue(undefined)} attachments={[{ id: 'image-1', name: 'image.png', kind: 'image', size: 1 }, { id: 'text-1', name: 'pasted.txt', kind: 'text', source: 'pasted-text', size: 1 }]} />);
+
+    expect(document.querySelector('.composer-attachment-list')).toHaveClass('has-pasted-text');
+  });
+
+  it('renders remove buttons on both image and text attachments and triggers onRemove', async () => {
+    const onRemove = vi.fn().mockResolvedValue(undefined);
+    const readArtifactMedia = vi.fn().mockResolvedValue({ bytes: new Uint8Array([0]), mimeType: 'image/png' });
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { tasks: { readArtifactMedia } } });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:image-preview');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    render(<AttachmentPreviewList taskId="task-1" onRemove={onRemove} attachments={[{ id: 'image-1', name: 'image.png', kind: 'image', size: 1 }, { id: 'text-1', name: 'pasted.txt', kind: 'text', source: 'pasted-text', size: 1 }]} />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Remove image.png' })).toHaveClass('image-attachment-remove'));
+    const removeImageBtn = screen.getByRole('button', { name: 'Remove image.png' });
+    const removeTextBtn = screen.getByRole('button', { name: 'Remove pasted.txt' });
+    expect(removeTextBtn).toHaveClass('attachment-remove');
+
+    removeImageBtn.click();
+    expect(onRemove).toHaveBeenCalledWith('image-1');
+
+    removeTextBtn.click();
+    expect(onRemove).toHaveBeenCalledWith('text-1');
   });
 });

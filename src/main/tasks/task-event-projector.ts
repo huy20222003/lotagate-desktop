@@ -93,7 +93,9 @@ export class TaskEventProjector {
       await this.tasks.replaceAssistantResponse(task.id, data['turnId'], data['segmentId'], data['content'], redactMetadata(data));
     }
     if (event.event === 'assistant.segment.completed' && typeof data['segmentId'] === 'string' && (data['phase'] === 'progress' || data['phase'] === 'final')) {
-      await this.tasks.completeAssistantSegment(task.id, data['segmentId'], data['phase']);
+      const artifactIds = readArtifactIds(data['artifactIds']);
+      if (artifactIds.length === 0) await this.tasks.completeAssistantSegment(task.id, data['segmentId'], data['phase']);
+      else await this.tasks.completeAssistantSegment(task.id, data['segmentId'], data['phase'], { artifactIds });
     }
     const text = event.event === 'assistant.replaced' ? undefined : eventText(event.event, data);
     if (text !== undefined) {
@@ -110,8 +112,18 @@ export class TaskEventProjector {
       if (turnId !== undefined) await this.tasks.update(task.id, { turnId });
     }
     if (event.event === 'turn.completed') { await this.tasks.setStatus(task.id, 'completed'); await this.tasks.update(task.id, { turnId: undefined, interruptedReason: undefined }); this.clearActiveTask(cwd, data, task.id); }
-    if (event.event === 'turn.failed') { await this.tasks.setStatus(task.id, 'failed'); await this.tasks.update(task.id, { turnId: undefined, interruptedReason: failedTurnReason(data) }); this.clearActiveTask(cwd, data, task.id); }
-    if (event.event === 'turn.cancelled') { await this.tasks.setStatus(task.id, 'cancelled'); await this.tasks.update(task.id, { turnId: undefined }); this.clearActiveTask(cwd, data, task.id); }
+    if (event.event === 'turn.failed') { await this.completePartialAssistantSegments(task.id, data); await this.tasks.setStatus(task.id, 'failed'); await this.tasks.update(task.id, { turnId: undefined, interruptedReason: failedTurnReason(data) }); this.clearActiveTask(cwd, data, task.id); }
+    if (event.event === 'turn.cancelled') { await this.completePartialAssistantSegments(task.id, data); await this.tasks.setStatus(task.id, 'cancelled'); await this.tasks.update(task.id, { turnId: undefined }); this.clearActiveTask(cwd, data, task.id); }
+  }
+
+  private async completePartialAssistantSegments(taskId: string, data: Record<string, unknown>): Promise<void> {
+    const turnId = data['turnId'];
+    if (typeof turnId === 'string' && turnId.length > 0) {
+      // An interrupted progress segment is still progress. Promoting it to a
+      // final response moves narration out of Worked For and changes the
+      // transcript order when the turn fails.
+      await this.tasks.completeAssistantSegmentsForTurn(taskId, turnId, 'progress', { assistantInterrupted: true });
+    }
   }
 
   private async selectTask(cwd: string, event: DesktopEvent): Promise<Awaited<ReturnType<TaskStore['require']>> | undefined> {
@@ -236,4 +248,9 @@ function toolActivityDisplayName(data: Record<string, unknown>): string { return
 function hasDetailedToolActivity(data: Record<string, unknown>): boolean {
   const toolName = data['toolName'];
   return toolName === 'shell.exec' || toolName === 'filesystem.read' || toolName === 'filesystem.write' || toolName === 'filesystem.exists';
+}
+
+function readArtifactIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((item): item is string => typeof item === 'string' && item.length > 0 && item.length <= 256))].slice(0, 256);
 }

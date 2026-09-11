@@ -4,13 +4,14 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UserProfile } from '../../../contracts/ipc/v1/auth.js';
+import { DEFAULT_COMPUTER_APPLICATION_ALLOWLIST } from '../../../contracts/ipc/v1/computer-application-allowlist.js';
 import { ToastProvider } from '../../components/ui.js';
 import { SettingsPage, type SettingsSection } from './SettingsPage.js';
 
 const user: UserProfile = { id: 'user-1', email: 'user@example.test', fullName: 'Test User', defaultOrganizationCode: 'org-1', organizations: [{ id: 'org-1', organizationCode: 'org-1', displayName: 'Test Org', role: 'Member', workspaces: [] }] };
 const browser = { viewportProfile: 'desktop', customViewport: { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 }, downloadDirectory: '', sessionRetention: 'persistent', sessionRetentionMinutes: 60, originAllowlist: [], clearDataOnClose: false, evidenceRetentionDays: 30 };
 const sandbox = { backend: 'auto', image: 'node:22-bookworm-slim', networkPolicy: 'none', mountMode: 'read-write', memoryMb: 2_048, cpuCores: 2, pidsLimit: 128, hostFallback: 'ask', cleanup: 'always', diagnosticsRetentionDays: 30 };
-const computer = { applicationAllowlist: ['notepad.exe', 'calc.exe', 'mspaint.exe', 'explorer.exe'] };
+const computer = { applicationAllowlist: [...DEFAULT_COMPUTER_APPLICATION_ALLOWLIST] };
 
 describe('SettingsPage', () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -50,7 +51,17 @@ describe('SettingsPage', () => {
     render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="computer-use" /></ToastProvider>);
     const applications = await screen.findByRole('textbox', { name: 'Allowed applications' });
     fireEvent.change(applications, { target: { value: 'notepad.exe, wordpad.exe' } });
+    expect(applications).toHaveValue('notepad.exe, wordpad.exe');
     await waitFor(() => expect(update).toHaveBeenCalledWith({ computer: { applicationAllowlist: ['notepad.exe', 'wordpad.exe'] } }));
+  });
+
+  it('keeps delimiters and spaces editable while the allowlist is being typed', async () => {
+    const update = installBridge();
+    render(<ToastProvider><SettingsPage user={user} onBack={vi.fn()} keyboardShortcuts={{}} onUpdateShortcut={vi.fn().mockResolvedValue(undefined)} initialSection="computer-use" /></ToastProvider>);
+    const applications = await screen.findByRole('textbox', { name: 'Allowed applications' });
+    fireEvent.change(applications, { target: { value: 'C:\\Program Files\\Paint.exe, ' } });
+    expect(applications).toHaveValue('C:\\Program Files\\Paint.exe, ');
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ computer: { applicationAllowlist: ['C:\\Program Files\\Paint.exe'] } }));
   });
 
   it('saves the context window usage preference through the shared settings bridge', async () => {

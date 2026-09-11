@@ -8,7 +8,8 @@ import { protectNestedCodeFences } from './markdown-code-fences.js';
 
 export function AgentMarkdown({ content, fileReferences = [], filePaths = [], workspaceCwd, executionCwd }: { content: string; fileReferences?: readonly MessageFileReference[]; filePaths?: readonly string[]; workspaceCwd?: string; executionCwd?: string }) {
   const references = [...fileReferences, ...filePaths.map(path => ({ path, name: fileName(path) }))];
-  return <div className="agent-markdown"><Markdown remarkPlugins={[remarkGfm]} components={{ a: SafeLink, pre: MarkdownCodeBlock, p: ({ children }) => <p>{renderMessageChildren(children, references, workspaceCwd, executionCwd)}</p>, li: ({ children }) => <li>{renderMessageChildren(children, references, workspaceCwd, executionCwd)}</li> }}>{protectNestedCodeFences(content)}</Markdown></div>;
+  const renderText = (children: ReactNode) => renderMessageChildren(children, references, workspaceCwd, executionCwd);
+  return <div className="agent-markdown"><Markdown remarkPlugins={[remarkGfm]} components={{ a: SafeLink, pre: MarkdownCodeBlock, p: ({ children }) => <p>{renderText(children)}</p>, li: ({ children }) => <li>{renderText(children)}</li>, h1: ({ children }) => <h1>{renderText(children)}</h1>, h2: ({ children }) => <h2>{renderText(children)}</h2>, h3: ({ children }) => <h3>{renderText(children)}</h3>, h4: ({ children }) => <h4>{renderText(children)}</h4>, h5: ({ children }) => <h5>{renderText(children)}</h5>, h6: ({ children }) => <h6>{renderText(children)}</h6>, blockquote: ({ children }) => <blockquote>{renderText(children)}</blockquote>, th: ({ children }) => <th>{renderText(children)}</th>, td: ({ children }) => <td>{renderText(children)}</td> }}>{protectNestedCodeFences(content)}</Markdown></div>;
 }
 
 function fileName(path: string): string { return path.split(/[\\/]/u).pop() ?? path; }

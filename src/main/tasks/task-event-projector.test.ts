@@ -22,6 +22,7 @@ function createProjector(task: Task) {
     appendAssistantDelta: vi.fn(async () => task),
     appendAssistantDeltas: vi.fn(async () => [task]),
     completeAssistantSegment: vi.fn(async () => task),
+    completeAssistantSegmentsForTurn: vi.fn(async () => []),
     replaceAssistantResponse: vi.fn(async () => task),
   } as unknown as TaskStore;
   return { projector: new TaskEventProjector(tasks), tasks };
@@ -43,6 +44,7 @@ describe('TaskEventProjector turn lifecycle', () => {
     expect(tasks.update).toHaveBeenCalledWith('task-1', { turnId: undefined, interruptedReason: 'Agent failed.' });
     expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'context', 'Desktop turn timing marker.', expect.objectContaining({ turnId: 'turn-1', desktopTurnTiming: expect.objectContaining({ phase: 'failed', timestampMs: expect.any(Number) }) }));
     expect(tasks.appendEvent).toHaveBeenCalledWith('task-1', 'error', 'The response could not be completed: Agent failed.', expect.objectContaining({ turnId: 'turn-1' }));
+    expect(tasks.completeAssistantSegmentsForTurn).toHaveBeenCalledWith('task-1', 'turn-1', 'progress', { assistantInterrupted: true });
   });
 
   it('uses a user-facing message when an approval denial fails the turn', async () => {
@@ -86,6 +88,12 @@ describe('TaskEventProjector turn lifecycle', () => {
     await projector.apply('C:\\workspace', { version: 1, type: 'event', scope: 'session', event: 'assistant.segment.completed', data: { sessionId: 'session-1', turnId: 'turn-1', segmentId: 'run-1:1', phase: 'final' } });
     expect(tasks.completeAssistantSegment).toHaveBeenCalledWith('task-1', 'run-1:1', 'final');
     expect(tasks.appendEvent).not.toHaveBeenCalledWith('task-1', 'assistant', expect.anything(), expect.anything());
+  });
+
+  it('associates document artifacts with the final assistant segment', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 1, type: 'event', scope: 'session', event: 'assistant.segment.completed', data: { sessionId: 'session-1', turnId: 'turn-1', segmentId: 'run-1:1', phase: 'final', artifactIds: ['artifact-1', 'artifact-1', 42] } });
+    expect(tasks.completeAssistantSegment).toHaveBeenCalledWith('task-1', 'run-1:1', 'final', { artifactIds: ['artifact-1'] });
   });
 
   it('does not persist command output in the conversation transcript', async () => {

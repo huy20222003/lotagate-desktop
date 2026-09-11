@@ -185,8 +185,12 @@ export class TaskStore {
     });
   }
 
-  async completeAssistantSegment(taskId: string, segmentId: string, phase: 'progress' | 'final'): Promise<Activity | undefined> {
-    return this.withExclusive(() => this.activityStore.completeAssistantSegment(taskId, segmentId, phase));
+  async completeAssistantSegment(taskId: string, segmentId: string, phase: 'progress' | 'final', metadata: Record<string, unknown> = {}): Promise<Activity | undefined> {
+    return this.withExclusive(() => this.activityStore.completeAssistantSegment(taskId, segmentId, phase, metadata));
+  }
+
+  async completeAssistantSegmentsForTurn(taskId: string, turnId: string, phase: 'progress' | 'final', metadata: Record<string, unknown> = {}): Promise<Activity[]> {
+    return this.withExclusive(() => this.activityStore.completeAssistantSegmentsForTurn(taskId, turnId, phase, metadata));
   }
 
   async replaceAssistantResponse(taskId: string, turnId: string, segmentId: string, text: string, metadata: Record<string, unknown>): Promise<Activity> {

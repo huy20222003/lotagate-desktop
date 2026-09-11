@@ -1,20 +1,23 @@
 import type { DesktopHostRequest, DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
 import type { ComputerOverlay } from './computer-overlay.js';
+import type { ComputerRuntime } from './computer-runtime.js';
+import { HostCapabilityRegistry } from '../host/host-capability-registry.js';
 
-export interface ComputerRuntime {
-  execute(action: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>;
-  close?(): Promise<void>;
-}
+export type { ComputerRuntime } from './computer-runtime.js';
 
 /** Serializes all native Computer Use actions because mouse and keyboard are machine-global resources. */
 export class ComputerHostToolBroker {
   private readonly queues = new Map<string, Promise<void>>();
   private readonly active = new Map<string, { cwd: string; sessionId: string; controller: AbortController }>();
+  private readonly capabilities: HostCapabilityRegistry;
 
-  constructor(private readonly runtime: ComputerRuntime, private readonly overlay?: ComputerOverlay) {}
+  constructor(private readonly runtime: ComputerRuntime, private readonly overlay?: ComputerOverlay) {
+    this.capabilities = new HostCapabilityRegistry(runtime.capabilities === undefined ? {} : { computer: runtime.capabilities });
+  }
 
   async handle(cwd: string, request: DesktopHostRequest, signal?: AbortSignal): Promise<DesktopHostResponse> {
     if (request.tool !== 'computer') return this.error(request, 'COMPUTER_TOOL_MISMATCH', 'The Computer broker received a non-computer request.');
+    if (!this.capabilities.supportsComputer(request.action)) return this.error(request, 'COMPUTER_CAPABILITY_UNAVAILABLE', this.capabilities.computerReason(request.action) ?? `The configured computer provider does not support ${request.action}.`);
     const key = 'computer-global-input-queue';
     const previous = this.queues.get(key) ?? Promise.resolve();
     let release!: () => void;

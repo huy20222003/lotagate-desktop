@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Activity } from '../../../../contracts/ipc/v1/workspace.js';
-import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, reconcilePendingAssistantStreams, replaceAssistantResponse, type PendingAssistantStream } from './streaming-activity.js';
+import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, markAssistantTurnCompleted, reconcilePendingAssistantStreams, replaceAssistantResponse, type PendingAssistantStream } from './streaming-activity.js';
 
 const createdAt = '2026-08-27T00:00:00.000Z';
 
@@ -50,6 +50,16 @@ describe('streaming activity projection', () => {
     const result = replaceAssistantResponse(activities, { taskId: 'task-1', turnId: 'turn-1', segmentId: 'run-1:final', content: 'The result could not be verified.', createdAt });
     expect(result.map(item => item.id)).toEqual(['assistant-2', 'assistant-replacement:task-1:run-1:final']);
     expect(result[1]).toMatchObject({ kind: 'assistant', text: 'The result could not be verified.', metadata: { turnId: 'turn-1', segmentId: 'run-1:final', assistantPhase: 'final', assistantReplacement: true } });
+  });
+
+  it('keeps partial assistant output visible when a turn fails', () => {
+    const activities: Activity[] = [
+      { ...activity('assistant-1', 'Partial response', 'turn-1'), metadata: { turnId: 'turn-1', segmentId: 'run-1:1', assistantPhase: 'progress' } },
+      { ...activity('assistant-2', 'Previous response', 'turn-0'), metadata: { turnId: 'turn-0', segmentId: 'run-0:1', assistantPhase: 'final' } },
+    ];
+    const result = markAssistantTurnCompleted(activities, 'task-1', 'turn-1');
+    expect(result[0]?.metadata).toMatchObject({ assistantPhase: 'progress', assistantInterrupted: true });
+    expect(result[1]).toBe(activities[1]);
   });
 
   it('overlays a stream while persistence is catching up, then allows reconciliation', () => {

@@ -2,6 +2,7 @@
 @import './tokens.css';
 @import './base.css';
 @import './workspace.css';
+@import './workspace-markdown.css';
 @import './remote-control.css';
 @import './layout-components.css';
 @import './settings.css';

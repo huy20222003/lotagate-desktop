@@ -35,13 +35,17 @@ allowed-tools:
 
 Use the `docs.*` tools only when the user explicitly asks LotaGate to inspect,
 create, edit, convert, or verify a Word-compatible document. These tools run
-through the governed Desktop document host and a bounded Windows backend; they
-are library-driven document operations, not simulated mouse and keyboard input.
+through the governed Desktop document host and the provider negotiated for the
+current platform; they are document operations, not simulated mouse and
+keyboard input.
 
 ## Preconditions and permissions
 
-- This skill is available through LotaGate Desktop on Windows and does not
-  grant document access by itself.
+- This skill is available through LotaGate Desktop when a compatible document
+  provider is available and does not grant document access by itself.
+- The provider may expose only a subset of operations. Use the tool catalog as
+  the source of truth and do not assume every operation listed in this guide is
+  available on every platform.
 - Confirm the requested document path and operation before opening a file.
 - Document paths are restricted to the active workspace. Do not search for
   unrelated files or use path traversal to reach another location.

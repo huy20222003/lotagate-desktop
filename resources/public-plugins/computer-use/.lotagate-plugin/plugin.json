@@ -1,11 +1,11 @@
 {
   "name": "computer-use",
   "displayName": "Computer Use",
-  "version": "1.1.0",
-  "description": "Control approved Windows applications directly through LotaGate.",
+  "version": "1.2.0",
+  "description": "Control approved desktop applications through LotaGate's platform-native Computer Use host.",
   "author": "LotaGate",
   "license": "MIT",
   "homepage": "https://lotagate.com/",
   "repository": "https://github.com/huy20222003/lotagate-desktop",
-  "keywords": ["windows", "computer-use", "ui-automation"]
+  "keywords": ["computer-use", "desktop-automation", "accessibility"]
 }

@@ -1,8 +1,8 @@
 {
   "name": "docs",
   "displayName": "Docs",
-  "version": "1.0.0",
-  "description": "Read, edit, render, and export Word documents through LotaGate Desktop.",
+  "version": "1.1.0",
+  "description": "Read, edit, render, and export documents through LotaGate's platform-native document host.",
   "author": "LotaGate",
   "license": "MIT",
   "homepage": "https://lotagate.com/",

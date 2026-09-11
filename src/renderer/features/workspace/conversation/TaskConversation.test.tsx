@@ -158,4 +158,30 @@ describe('TaskConversation live state', () => {
     expect(screen.getByLabelText('Edited files')).toBeInTheDocument();
     expect(document.querySelectorAll('.file-change-card')).toHaveLength(1);
   });
+
+  it('renders generated files before the diff card and exposes a download action', async () => {
+    const openArtifact = vi.fn().mockResolvedValue('');
+    const downloadArtifact = vi.fn().mockResolvedValue('/downloads/report.docx');
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { tasks: { openArtifact, downloadArtifact } } });
+    const artifact = { id: 'artifact-1', taskId: task.id, name: 'report.docx', path: '/private/report.docx', kind: 'binary' as const, size: 128, createdAt: task.createdAt };
+
+    render(<TaskConversation
+      task={task}
+      activities={[{ id: 'assistant-1', taskId: task.id, kind: 'assistant', text: 'The report is ready.', metadata: { turnId: 'turn-1', segmentId: 'turn-1:final', assistantPhase: 'final' }, createdAt: task.createdAt }]}
+      activityAttachments={{}}
+      activityArtifacts={{ 'assistant-1': [artifact] }}
+      fileChangesByTurn={{ 'turn-1': { files: [{ path: 'report.docx', lines: [], additions: 1, deletions: 0, truncated: false }], additions: 1, deletions: 0 } }}
+      onOpenFileChanges={() => undefined}
+      thinking={false}
+      finalResponseReceived
+      turnTimings={{ 'turn-1': { startedAt: Date.now(), endedAt: Date.now() } }}
+      onTrust={async () => undefined}
+    />);
+
+    expect(screen.getByText('report.docx')).toBeInTheDocument();
+    expect(document.querySelector('.agent-file-response')).toBeInTheDocument();
+    expect(document.querySelector('.file-change-card')).toBeInTheDocument();
+    screen.getByRole('button', { name: 'Download report.docx' }).click();
+    expect(downloadArtifact).toHaveBeenCalledWith(task.id, artifact.id);
+  });
 });

@@ -1,8 +1,8 @@
 {
   "name": "pptx",
   "displayName": "PowerPoint",
-  "version": "1.0.0",
-  "description": "Inspect and automate PowerPoint presentations through LotaGate Desktop.",
+  "version": "1.1.0",
+  "description": "Inspect and automate presentations through LotaGate's platform-native document host.",
   "author": "LotaGate",
   "license": "MIT",
   "homepage": "https://lotagate.com/",

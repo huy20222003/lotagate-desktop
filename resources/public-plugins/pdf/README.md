@@ -3,16 +3,13 @@
 The PDF public plugin exposes the `pdf.*` tools through the governed Desktop
 document host. It is declarative: file access remains bounded by the active
 workspace and tool permissions. PDF inspection, text extraction, validation,
-and rendering use the configured Windows document backend; unsupported edit
-operations return a structured host error instead of silently changing data.
+and rendering use the configured platform document backend; unsupported edit
+operations are omitted from the negotiated tool catalog and return a structured
+host error if requested directly.
 
-The public surface also supports Windows OCR with line bounds, bounded text
-search, embedded-image and link extraction, annotation inspection, bookmark
-and attachment lifecycle operations, form flattening, optimization, and page
-numbering.
+The public surface also supports bounded text search, rendering, and document
+inspection when the required host utilities are installed. Provider-specific
+operations are advertised explicitly rather than assumed.
 
-OCR uses the installed Windows OCR languages; text rendering/search/link/image
-extraction use the configured Poppler utilities, bookmark/forms operations
-require `pdftk`, optimization requires Ghostscript (`gswin64c`), and attachment
-deletion requires `qpdf` to be available on the Desktop host PATH. Missing
-prerequisites return an explicit backend error.
+Missing prerequisites return an explicit capability or backend error; Desktop
+never silently falls back to an unrelated shell command or viewer.

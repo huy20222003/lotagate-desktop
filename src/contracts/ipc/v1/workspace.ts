@@ -279,7 +279,7 @@ export interface DesktopAutomationApi {
 export interface BrowserConsoleEntry { level: string; message: string; timestamp: string; }
 export interface BrowserEvidence { id: string; url: string; title: string; console: BrowserConsoleEntry[]; errors: string[]; screenshots: string[]; recordings: string[]; createdAt: string; }
 export interface BrowserViewBounds { x: number; y: number; width: number; height: number; }
-export interface BrowserTabSnapshot { id: string; title: string; url: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; }
+export interface BrowserTabSnapshot { id: string; title: string; url: string; favicon?: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; }
 export interface BrowserSessionSnapshot { id: string; activeTabId: string; tabs: BrowserTabSnapshot[]; createdAt: string; }
 export interface DesktopBrowserApi {
   create(): Promise<BrowserSessionSnapshot>;
@@ -293,6 +293,7 @@ export interface DesktopBrowserApi {
   goBack(sessionId: string, tabId: string): Promise<BrowserTabSnapshot>;
   goForward(sessionId: string, tabId: string): Promise<BrowserTabSnapshot>;
   reload(sessionId: string, tabId: string): Promise<BrowserTabSnapshot>;
+  openDevTools(sessionId: string, tabId: string): Promise<void>;
   setViewBounds(sessionId: string, tabId: string, bounds: BrowserViewBounds, visible: boolean): Promise<void>;
   screenshot(sessionId: string, tabId?: string): Promise<{ evidenceId: string; path: string; dataUrl: string }>;
   startRecording(id: string): Promise<void>;

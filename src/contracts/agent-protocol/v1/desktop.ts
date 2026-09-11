@@ -78,6 +78,7 @@ export const desktopHostRequestSchema = z.object({
   projectRoot: z.string().min(1).max(4_096).optional(),
   executionCwd: z.string().min(1).max(4_096).optional(),
   executionWorkspaceId: id.optional(),
+  taskId: id.optional(),
 });
 
 export const desktopHostCancelSchema = z.object({
@@ -103,6 +104,7 @@ export const desktopHostResponseSchema = z.object({
   }).optional(),
   executionBoundary: z.enum(['sandbox', 'host']).optional(),
   fallbackReason: z.string().max(512).optional(),
+  artifacts: z.array(z.object({ id, name: z.string().min(1).max(256), kind: z.string().min(1).max(64), sizeBytes: z.number().int().nonnegative() })).max(256).optional(),
   fileChange: z.object({
     path: z.string().min(1).max(4_096),
     lines: z.array(z.object({ kind: z.enum(['context', 'addition', 'deletion']), text: z.string(), oldLine: z.number().int().positive().optional(), newLine: z.number().int().positive().optional() })).max(512),

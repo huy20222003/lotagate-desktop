@@ -6,7 +6,12 @@ export interface BrowserDialog { type: 'alert' | 'confirm' | 'prompt' | 'beforeu
 
 export async function setViewport(contents: WebContents, viewport: BrowserViewport): Promise<void> {
   await withDebugger(contents, async debuggerInstance => {
-    await debuggerInstance.sendCommand('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, mobile: viewport.mobile, deviceScaleFactor: viewport.deviceScaleFactor });
+    await debuggerInstance.sendCommand('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      mobile: viewport.mobile,
+      deviceScaleFactor: viewport.deviceScaleFactor === 1 && !viewport.mobile ? 0 : viewport.deviceScaleFactor
+    });
   });
 }
 

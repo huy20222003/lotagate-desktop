@@ -191,6 +191,7 @@ const bridge: DesktopBridge = {
     goBack: (sessionId, tabId) => ipcRenderer.invoke('browser.goBack', sessionId, tabId),
     goForward: (sessionId, tabId) => ipcRenderer.invoke('browser.goForward', sessionId, tabId),
     reload: (sessionId, tabId) => ipcRenderer.invoke('browser.reload', sessionId, tabId),
+    openDevTools: (sessionId, tabId) => ipcRenderer.invoke('browser.openDevTools', sessionId, tabId),
     setViewBounds: (sessionId, tabId, bounds, visible) => ipcRenderer.invoke('browser.setViewBounds', sessionId, tabId, bounds, visible),
     screenshot: (sessionId, tabId) => ipcRenderer.invoke('browser.screenshot', sessionId, tabId),
     startRecording: id => ipcRenderer.invoke('browser.startRecording', id),
