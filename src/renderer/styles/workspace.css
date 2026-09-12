@@ -218,7 +218,7 @@
 .plan-ring-segment-failed { stroke: var(--color-danger); }
 .plan-ring-segment-blocked { stroke: var(--color-warning); }
 .change-summary-popover { position: absolute; bottom: calc(100% + 8px); z-index: 4; display: grid; min-width: 220px; max-width: min(360px, 70vw); gap: 8px; border: 1px solid var(--color-border); border-radius: 9px; padding: 11px 12px; background: var(--color-surface-popover); box-shadow: 0 16px 38px var(--shadow-popover); color: var(--color-text-secondary); font-size: 12px; pointer-events: none; }
-.change-summary-plan-popover { left: 0; }
+.change-summary-plan-popover { left: 0; min-width: 275px; }
 .change-summary-files-popover { right: 0; min-width: 260px; max-height: min(280px, calc(100vh - 48px)); overflow: hidden; pointer-events: auto; }
 .change-summary-files-scrollbar { width: 100%; min-width: 0; min-height: 0; max-height: inherit; overflow: hidden; }
 .change-summary-files-scrollbar .scrollbar-viewport { width: 100%; height: auto; max-height: inherit; overflow-x: hidden; overflow-y: auto; }

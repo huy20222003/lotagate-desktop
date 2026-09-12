@@ -1,7 +1,5 @@
 import type { ReactNode } from 'react';
-
-const PROMPT_TOKEN_PATTERN = /(@[^\s]+|https?:\/\/[^\s]+|\/[A-Za-z0-9][^\s]*)/gu;
-const PROMPT_TOKEN_EXACT_PATTERN = /^(@[^\s]+|https?:\/\/[^\s]+|\/[A-Za-z0-9][^\s]*)$/u;
+import { PROMPT_TOKEN_EXACT_PATTERN, PROMPT_TOKEN_PATTERN } from '../prompt-token-pattern.js';
 
 export function promptTokenDisplayValue(token: string): string {
   if (!token.startsWith('@')) return token;

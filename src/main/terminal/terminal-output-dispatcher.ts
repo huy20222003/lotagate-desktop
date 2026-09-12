@@ -68,7 +68,7 @@ export class TerminalOutputDispatcher {
 export function createTerminalOutputDispatcher(sender: TerminalOutputSender, sessionId: string): TerminalOutputDispatcher {
   const dispatcher = new TerminalOutputDispatcher({
     isDestroyed: () => sender.isDestroyed(),
-    send: (channel, output) => sender.send(channel, { ...output, sessionId }),
+    send: (channel, output) => sender.send(channel, output),
   }, sessionId);
   return dispatcher;
 }

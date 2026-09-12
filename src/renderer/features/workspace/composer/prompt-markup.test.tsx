@@ -29,4 +29,16 @@ describe('PromptMarkup', () => {
     expect(container.querySelector('.prompt-token')).toHaveTextContent('test.md');
     expect(container).toHaveTextContent('test.md thêm nội dung');
   });
+
+  it('does not treat relative paths as slash commands', () => {
+    const { container } = render(<PromptMarkup content="Kiểm tra src/index.ts và AGENTS.md/README.md" />);
+
+    expect(container.querySelector('.prompt-token')).not.toBeInTheDocument();
+  });
+
+  it('keeps standalone slash commands highlighted', () => {
+    const { container } = render(<PromptMarkup content="/goal" />);
+
+    expect(container.querySelector('.prompt-token')).toHaveTextContent('/goal');
+  });
 });

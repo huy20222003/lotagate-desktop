@@ -41,6 +41,24 @@ describe('message markup', () => {
     expect(screen.getByText('Đọc file.ts và src/index.ts giúp anh.')).toBeInTheDocument();
   });
 
+  it('does not highlight slash characters inside relative paths', () => {
+    const { container } = render(<MessageMarkup content="Kiểm tra src/index.ts và AGENTS.md/README.md" highlightPromptTokens />);
+
+    expect(container.querySelector('.prompt-token')).not.toBeInTheDocument();
+  });
+
+  it('highlights a standalone slash command in a user message', () => {
+    const { container } = render(<MessageMarkup content="/goal" highlightPromptTokens />);
+
+    expect(container.querySelector('.prompt-token')).toHaveTextContent('/goal');
+  });
+
+  it('preserves mention highlighting alongside slash command highlighting', () => {
+    const { container } = render(<MessageMarkup content="Use @research" highlightPromptTokens />);
+
+    expect(container.querySelector('.prompt-token')).toHaveTextContent('@research');
+  });
+
   it('renders an absolute file path with only its basename', async () => {
     const path = 'D:\\workspace\\src\\index.ts';
     render(<MessageMarkup content={`Open ${path} now.`} />);

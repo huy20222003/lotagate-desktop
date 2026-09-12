@@ -4,6 +4,7 @@ import type { Artifact } from '../../../../contracts/ipc/v1/workspace.js';
 import { Icon, Tooltip } from '../../../components/ui.js';
 import { fileIconFor } from '../../../components/file-icon.js';
 import { openFilePath } from '../../../services/open-file.js';
+import { PROMPT_REFERENCE_TOKEN_PATTERN } from '../prompt-token-pattern.js';
 
 export interface MessageFileReference {
   path: string;
@@ -78,9 +79,11 @@ function findNextToken(content: string, cursor: number, references: readonly Mes
     if (url.length > 0 && parseExternalUrl(url) !== undefined) candidates.push({ index: cursor + (match.index ?? 0), length: url.length, token: { kind: 'url', url } });
   }
   if (highlightPromptTokens) {
-    for (const match of content.slice(cursor).matchAll(/(?:@[^\s]+|\/[A-Za-z0-9][^\s]*)/gu)) {
+    for (const match of content.matchAll(PROMPT_REFERENCE_TOKEN_PATTERN)) {
+      const index = match.index ?? -1;
+      if (index < cursor) continue;
       const value = match[0];
-      if (value !== undefined) candidates.push({ index: cursor + (match.index ?? 0), length: value.length, token: { kind: 'prompt', value } });
+      if (value !== undefined) candidates.push({ index, length: value.length, token: { kind: 'prompt', value } });
     }
   }
   return candidates.sort((left, right) => left.index - right.index || right.length - left.length)[0];
