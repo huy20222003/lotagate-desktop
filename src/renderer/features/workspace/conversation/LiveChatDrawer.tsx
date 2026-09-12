@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AudioLines, Mic, Square, X } from 'lucide-react';
+import { AudioLines, X } from 'lucide-react';
 import type { SpeechSynthesisInput } from '../../../../contracts/ipc/v1/speech.js';
+import type { Activity } from '../../../../contracts/ipc/v1/workspace.js';
 import type { WorkspaceModelOption } from '../../../services/model-catalog.js';
 import { IconButton } from '../../../components/ui.js';
 import { useResizableSidePanel } from '../state/use-resizable-panel.js';
@@ -10,8 +11,8 @@ import type { AssistantFinalResponse } from './assistant-response.js';
 const LIVE_CHAT_DEFAULT_VOICE = 'alloy';
 const LIVE_CHAT_RESPONSE_FORMAT = 'mp3' as const;
 const LIVE_CHAT_SILENCE_MS = 1_200;
-const LIVE_CHAT_INITIAL_SILENCE_MS = 8_000;
 const LIVE_CHAT_SPEECH_THRESHOLD = 0.035;
+const LIVE_CHAT_STREAM_FLUSH_CHARACTERS = 280;
 const LIVE_CHAT_SPEECH_CHUNK_CHARACTERS = 3_500;
 const AUDIO_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
 
@@ -23,11 +24,18 @@ interface ActiveAudioPlayback {
   resolve: () => void;
 }
 
+interface SpeechCursor {
+  cursor: number;
+  completed: boolean;
+}
+
 export function LiveChatDrawer({
   cwd,
   models,
   thinking,
   error: agentError,
+  assistantActivities,
+  activeTurnId,
   assistantFinalResponse,
   onSend,
   onClose,
@@ -36,11 +44,14 @@ export function LiveChatDrawer({
   models: readonly WorkspaceModelOption[];
   thinking: boolean;
   error: string | undefined;
+  assistantActivities: readonly Activity[];
+  activeTurnId: string | undefined;
   assistantFinalResponse: AssistantFinalResponse | undefined;
   onSend: (prompt: string) => Promise<void>;
   onClose: () => void;
 }) {
   const { panelWidth, resizing, startResize, handleResizeKeyDown } = useResizableSidePanel();
+  const onSendRef = useRef(onSend);
   const recorderRef = useRef<MediaRecorder | undefined>();
   const recorderStreamRef = useRef<MediaStream | undefined>();
   const chunksRef = useRef<Blob[]>([]);
@@ -48,13 +59,25 @@ export function LiveChatDrawer({
   const activePlaybackRef = useRef<ActiveAudioPlayback | undefined>();
   const mountedRef = useRef(true);
   const speechGenerationRef = useRef(0);
-  const initializedResponseRef = useRef(false);
-  const spokenResponseKeyRef = useRef<string | undefined>();
+  const streamInitializedRef = useRef(false);
+  const streamTurnRef = useRef<string | undefined>();
+  const streamCursorsRef = useRef(new Map<string, SpeechCursor>());
+  const speechQueueRef = useRef<string[]>([]);
+  const speechRunnerRef = useRef(false);
+  const speechStreamCompleteRef = useRef(false);
+  const fallbackResponseTurnRef = useRef<string | undefined>();
+  const finalizedSpeechTurnRef = useRef<string | undefined>();
+  const startListeningRef = useRef<(() => Promise<void>) | undefined>();
+  const restartTimerRef = useRef<number | undefined>();
 
   const [status, setStatus] = useState<LiveChatStatus>('starting');
   const statusRef = useRef<LiveChatStatus>('starting');
   const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | undefined>();
+
+  useEffect(() => {
+    onSendRef.current = onSend;
+  }, [onSend]);
 
   const updateStatus = useCallback((nextStatus: LiveChatStatus) => {
     statusRef.current = nextStatus;
@@ -73,6 +96,8 @@ export function LiveChatDrawer({
 
   const stopSpeaking = useCallback(() => {
     speechGenerationRef.current += 1;
+    speechQueueRef.current = [];
+    speechStreamCompleteRef.current = false;
     disposePlayback();
     if (mountedRef.current) updateStatus('idle');
   }, [disposePlayback, updateStatus]);
@@ -99,28 +124,46 @@ export function LiveChatDrawer({
     }
   }, [updateStatus]);
 
+  const scheduleListeningRestart = useCallback((delayMs = 0) => {
+    if (!mountedRef.current) return;
+    if (restartTimerRef.current !== undefined) window.clearTimeout(restartTimerRef.current);
+    restartTimerRef.current = window.setTimeout(() => {
+      restartTimerRef.current = undefined;
+      if (mountedRef.current) void startListeningRef.current?.();
+    }, delayMs);
+  }, []);
+
   const transcribeRecording = useCallback(
     async (blob: Blob) => {
       if (!mountedRef.current) return;
       updateStatus('transcribing');
       try {
+        if (blob.size === 0) {
+          updateStatus('idle');
+          scheduleListeningRestart();
+          return;
+        }
         const wav = await recordingToWav(blob);
         const result = await window.lotagate.speech.transcribe(wav);
         const text = result.text.trim();
         if (text.length === 0) {
-          if (mountedRef.current) updateStatus('idle');
+          if (mountedRef.current) {
+            updateStatus('idle');
+            scheduleListeningRestart();
+          }
           return;
         }
         if (!mountedRef.current) return;
-        await onSend(text);
+        await onSendRef.current(text);
         if (mountedRef.current) updateStatus('waiting');
       } catch (reason) {
         if (!mountedRef.current) return;
         setError(reason instanceof Error ? reason.message : 'Unable to transcribe the recording.');
         updateStatus('error');
+        scheduleListeningRestart(1_500);
       }
     },
-    [onSend, updateStatus]
+    [scheduleListeningRestart, updateStatus]
   );
 
   const startListening = useCallback(async () => {
@@ -162,6 +205,7 @@ export function LiveChatDrawer({
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
 
       recorder.ondataavailable = event => {
+        // Keep the first chunk: WebM/Ogg container headers are emitted before VAD hears speech.
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
 
@@ -191,6 +235,13 @@ export function LiveChatDrawer({
       updateStatus('error');
     }
   }, [stopListening, stopSpeaking, transcribeRecording, updateStatus]);
+
+  useEffect(() => {
+    startListeningRef.current = startListening;
+    return () => {
+      if (startListeningRef.current === startListening) startListeningRef.current = undefined;
+    };
+  }, [startListening]);
 
   const playSpeechAudio = useCallback(
     (audio: Uint8Array, mimeType: string): Promise<void> => {
@@ -235,15 +286,28 @@ export function LiveChatDrawer({
     [disposePlayback]
   );
 
-  const speakResponse = useCallback(
-    async (response: string) => {
-      const generation = ++speechGenerationRef.current;
-      stopListening();
-      setError(undefined);
-      updateStatus('speaking');
+  const runSpeechQueue = useCallback(async () => {
+    if (!mountedRef.current || speechRunnerRef.current) return;
+    speechRunnerRef.current = true;
+    const generation = speechGenerationRef.current;
 
-      try {
-        for (const input of splitSpeechText(response)) {
+    try {
+      while (mountedRef.current && speechGenerationRef.current === generation) {
+        const next = speechQueueRef.current.shift();
+        if (next === undefined) {
+          if (speechStreamCompleteRef.current) {
+            updateStatus('idle');
+            void startListening();
+          } else {
+            updateStatus('waiting');
+          }
+          return;
+        }
+
+        const inputs = splitSpeechText(next);
+        if (inputs.length === 0) continue;
+        updateStatus('speaking');
+        for (const input of inputs) {
           if (!mountedRef.current || speechGenerationRef.current !== generation) return;
           const model = models.find(candidate => candidate.category === 'speech')?.id;
           const request: SpeechSynthesisInput = {
@@ -254,43 +318,121 @@ export function LiveChatDrawer({
           };
           const audio = await window.lotagate.speech.synthesize(cwd, request);
           if (!mountedRef.current || speechGenerationRef.current !== generation) return;
-          await playSpeechAudio(audio.audio, audio.mimeType);
+          try {
+            await playSpeechAudio(audio.audio, audio.mimeType);
+          } catch (reason) {
+            if (!isAudioDecodeFailure(reason)) throw reason;
+            const fallback = await window.lotagate.speech.synthesize(cwd, {
+              ...request,
+              responseFormat: 'wav',
+            });
+            if (!mountedRef.current || speechGenerationRef.current !== generation) return;
+            await playSpeechAudio(fallback.audio, fallback.mimeType);
+          }
         }
-
-        if (mountedRef.current && speechGenerationRef.current === generation) {
-          updateStatus('idle');
-          void startListening();
-        }
-      } catch (reason) {
-        if (!mountedRef.current || speechGenerationRef.current !== generation) return;
-        setError(reason instanceof Error ? reason.message : 'Unable to play the agent response.');
-        updateStatus('error');
       }
+    } catch (reason) {
+      if (!mountedRef.current || speechGenerationRef.current !== generation) return;
+      setError(reason instanceof Error ? reason.message : 'Unable to play the agent response.');
+      updateStatus('error');
+      scheduleListeningRestart(1_500);
+    } finally {
+      speechRunnerRef.current = false;
+      if (mountedRef.current && speechQueueRef.current.length > 0) void runSpeechQueue();
+    }
+  }, [cwd, models, playSpeechAudio, scheduleListeningRestart, startListening, updateStatus]);
+
+  const enqueueSpeech = useCallback(
+    (text: string) => {
+      const normalized = text.trim();
+      if (normalized.length === 0) return;
+      speechQueueRef.current.push(normalized);
+      void runSpeechQueue();
     },
-    [cwd, models, playSpeechAudio, startListening, stopListening, updateStatus]
+    [runSpeechQueue]
   );
 
   useEffect(() => {
-    if (!initializedResponseRef.current) {
-      initializedResponseRef.current = true;
-      if (assistantFinalResponse !== undefined) spokenResponseKeyRef.current = assistantFinalResponse.turnId;
+    const responseTurnId = activeTurnId ?? assistantFinalResponse?.turnId;
+    if (responseTurnId === undefined) {
+      streamInitializedRef.current = true;
       return;
     }
-    if (assistantFinalResponse === undefined || spokenResponseKeyRef.current === assistantFinalResponse.turnId) return;
-    spokenResponseKeyRef.current = assistantFinalResponse.turnId;
-    void speakResponse(assistantFinalResponse.text);
-  }, [assistantFinalResponse, speakResponse]);
+
+    const segments = assistantActivities
+      .filter(activity => activity.kind === 'assistant' && activity.metadata['turnId'] === responseTurnId && activity.text.length > 0)
+      .map(activity => ({
+        key: `${responseTurnId}:${readStreamSegmentId(activity)}`,
+        text: activity.text,
+        completed:
+          activity.metadata['assistantPhase'] === 'progress' ||
+          activity.metadata['assistantPhase'] === 'final' ||
+          assistantFinalResponse?.turnId === responseTurnId,
+      }));
+
+    if (streamTurnRef.current !== responseTurnId) {
+      const skipExistingResponse = !streamInitializedRef.current;
+      streamInitializedRef.current = true;
+      streamTurnRef.current = responseTurnId;
+      streamCursorsRef.current.clear();
+      fallbackResponseTurnRef.current = undefined;
+      finalizedSpeechTurnRef.current = undefined;
+      speechStreamCompleteRef.current = false;
+
+      if (!skipExistingResponse) {
+        speechGenerationRef.current += 1;
+        speechQueueRef.current = [];
+        disposePlayback();
+      } else {
+        for (const segment of segments) streamCursorsRef.current.set(segment.key, { cursor: segment.text.length, completed: segment.completed });
+        if (assistantFinalResponse?.turnId === responseTurnId) speechStreamCompleteRef.current = true;
+        return;
+      }
+    }
+
+    if (segments.length === 0) {
+      if (assistantFinalResponse?.turnId === responseTurnId && fallbackResponseTurnRef.current !== responseTurnId) {
+        fallbackResponseTurnRef.current = responseTurnId;
+        speechStreamCompleteRef.current = true;
+        finalizedSpeechTurnRef.current = responseTurnId;
+        enqueueSpeech(assistantFinalResponse.text);
+      }
+      return;
+    }
+
+    for (const segment of segments) {
+      const cursor = streamCursorsRef.current.get(segment.key) ?? { cursor: 0, completed: false };
+      if (cursor.cursor > segment.text.length) cursor.cursor = segment.text.length;
+      const ready = speechReadySlice(segment.text.slice(cursor.cursor), segment.completed);
+      if (ready.text.length > 0) enqueueSpeech(ready.text);
+      cursor.cursor += ready.consumedLength;
+      cursor.completed = cursor.completed || segment.completed;
+      streamCursorsRef.current.set(segment.key, cursor);
+      if (!segment.completed) break;
+    }
+
+    if (assistantFinalResponse?.turnId === responseTurnId && finalizedSpeechTurnRef.current !== responseTurnId) {
+      speechStreamCompleteRef.current = true;
+      finalizedSpeechTurnRef.current = responseTurnId;
+      void runSpeechQueue();
+    }
+  }, [activeTurnId, assistantActivities, assistantFinalResponse, disposePlayback, enqueueSpeech, runSpeechQueue]);
 
   useEffect(() => {
     if (status !== 'waiting' || thinking || agentError === undefined) return;
     setError(agentError);
     updateStatus('error');
-  }, [agentError, status, thinking, updateStatus]);
+    scheduleListeningRestart(1_500);
+  }, [agentError, scheduleListeningRestart, status, thinking, updateStatus]);
 
   useEffect(() => {
     mountedRef.current = true;
     void startListening();
     return () => {
+      if (restartTimerRef.current !== undefined) {
+        window.clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = undefined;
+      }
       mountedRef.current = false;
       speechGenerationRef.current += 1;
       disposePlayback();
@@ -298,12 +440,11 @@ export function LiveChatDrawer({
     };
   }, [disposePlayback, startListening, stopListening]);
 
-  const recording = status === 'starting' || status === 'listening';
   const statusLabel =
     status === 'starting'
       ? 'Starting microphone…'
       : status === 'listening'
-        ? 'Listening… pause to send'
+        ? 'Listening… waiting for speech'
         : status === 'transcribing'
           ? 'Converting speech to text…'
           : status === 'waiting'
@@ -312,7 +453,7 @@ export function LiveChatDrawer({
               ? 'Agent is speaking…'
               : status === 'error'
                 ? 'Live chat needs attention'
-                : 'Tap microphone to speak';
+                : 'Waiting for speech…';
 
   return (
     <aside
@@ -378,40 +519,6 @@ export function LiveChatDrawer({
         </div>
       </div>
 
-      <footer className="live-chat-footer">
-        <div className={`live-chat-mic-wrapper${recording ? ' is-recording' : ''}`}>
-          <div className="live-chat-mic-pulse" />
-          {status === 'speaking' ? (
-            <button
-              type="button"
-              className="live-chat-mic-btn is-stop"
-              aria-label="Stop agent speech"
-              onClick={stopSpeaking}
-            >
-              <Square size={20} />
-            </button>
-          ) : recording ? (
-            <button
-              type="button"
-              className="live-chat-mic-btn is-active"
-              aria-label="Stop listening and send"
-              onClick={stopListening}
-            >
-              <Square size={20} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="live-chat-mic-btn"
-              aria-label="Start live chat recording"
-              disabled={status === 'transcribing' || status === 'waiting' || thinking}
-              onClick={() => void startListening()}
-            >
-              <Mic size={22} />
-            </button>
-          )}
-        </div>
-      </footer>
     </aside>
   );
 }
@@ -438,8 +545,7 @@ function createVoiceActivityMonitor(
   source.connect(analyser);
 
   const data = new Float32Array(analyser.fftSize);
-  const startedAt = performance.now();
-  let lastVoiceAt = startedAt;
+  let lastVoiceAt = 0;
   let heardVoice = false;
   let frame = 0;
   let stopped = false;
@@ -459,10 +565,7 @@ function createVoiceActivityMonitor(
     if (rms >= LIVE_CHAT_SPEECH_THRESHOLD) {
       heardVoice = true;
       lastVoiceAt = now;
-    } else if (
-      (heardVoice && now - lastVoiceAt >= LIVE_CHAT_SILENCE_MS) ||
-      (!heardVoice && now - startedAt >= LIVE_CHAT_INITIAL_SILENCE_MS)
-    ) {
+    } else if (heardVoice && now - lastVoiceAt >= LIVE_CHAT_SILENCE_MS) {
       stopped = true;
       onSilence();
       return;
@@ -505,14 +608,44 @@ function splitSpeechText(text: string): string[] {
   return chunks;
 }
 
+function speechReadySlice(text: string, completed: boolean): { text: string; consumedLength: number } {
+  if (text.length === 0) return { text: '', consumedLength: 0 };
+  if (completed) return { text: text.trim(), consumedLength: text.length };
+
+  let boundary = 0;
+  for (const match of text.matchAll(/[.!?。！？](?:["'”’)\]]*)\s+/gu)) {
+    boundary = (match.index ?? 0) + match[0].length;
+  }
+  const paragraphBoundary = text.lastIndexOf('\n\n');
+  if (paragraphBoundary >= 0) boundary = Math.max(boundary, paragraphBoundary + 2);
+  if (boundary === 0 && text.length >= LIVE_CHAT_STREAM_FLUSH_CHARACTERS) {
+    const whitespace = text.lastIndexOf(' ', LIVE_CHAT_STREAM_FLUSH_CHARACTERS);
+    boundary = whitespace > Math.floor(LIVE_CHAT_STREAM_FLUSH_CHARACTERS * 0.55) ? whitespace + 1 : LIVE_CHAT_STREAM_FLUSH_CHARACTERS;
+  }
+  return boundary === 0 ? { text: '', consumedLength: 0 } : { text: text.slice(0, boundary).trim(), consumedLength: boundary };
+}
+
+function readStreamSegmentId(activity: Activity): string {
+  const segmentId = activity.metadata['segmentId'];
+  return typeof segmentId === 'string' && segmentId.length > 0 ? segmentId : activity.id;
+}
+
 function playableAudioMimeType(bytes: Uint8Array, providedMimeType: string): string {
   if (ascii(bytes, 0, 'RIFF') && ascii(bytes, 8, 'WAVE')) return 'audio/wav';
   if (ascii(bytes, 0, 'OggS')) return 'audio/ogg';
   if (ascii(bytes, 0, 'fLaC')) return 'audio/flac';
-  if (ascii(bytes, 0, 'ID3') || isMpegFrame(bytes)) return 'audio/mpeg';
   if (isAacFrame(bytes)) return 'audio/aac';
+  if (ascii(bytes, 0, 'ID3') || isMpegFrame(bytes)) return 'audio/mpeg';
   const normalized = providedMimeType.split(';', 1)[0]?.trim().toLowerCase();
+  if (normalized === 'audio/mp3' || normalized === 'audio/x-mp3' || normalized === 'audio/x-mpeg') return 'audio/mpeg';
+  if (normalized === 'audio/x-wav' || normalized === 'audio/vnd.wave') return 'audio/wav';
+  if (normalized === 'application/ogg') return 'audio/ogg';
   return normalized && normalized.startsWith('audio/') ? normalized : 'audio/mpeg';
+}
+
+function isAudioDecodeFailure(reason: unknown): boolean {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  return /decode audio data|media (?:source|format)|not supported/iu.test(message);
 }
 
 function isMpegFrame(bytes: Uint8Array): boolean {

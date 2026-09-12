@@ -22,6 +22,9 @@ describe('slash commands', () => {
   it('initializes every dropdown with its first CLI-supported value', () => {
     const command = SLASH_COMMAND_DEFINITIONS.find(item => item.id === 'audio.transcribe')!;
     expect(createSlashCommandForm(command).values['response-format']).toBe('json');
+
+    const speechCommand = SLASH_COMMAND_DEFINITIONS.find(item => item.id === 'audio.speech')!;
+    expect(createSlashCommandForm(speechCommand).values['stream-format']).toBe('audio');
   });
 
   it('keeps model categories and selects the first compatible model', () => {
@@ -49,6 +52,16 @@ describe('slash commands', () => {
     const command = SLASH_COMMAND_DEFINITIONS.find(item => item.id === 'image.generate')!;
     const form = { ...createSlashCommandForm(), primary: 'a sunset', values: { size: '1024x1024', out: 'sunset', force: true } };
     expect(createSlashInvocation(command, form)).toEqual({ actionId: 'image.generate', positionals: ['a sunset'], options: { size: '1024x1024', out: 'sunset', force: true } });
+  });
+
+  it('serializes the speech stream format selected in the shared dropdown', () => {
+    const command = SLASH_COMMAND_DEFINITIONS.find(item => item.id === 'audio.speech')!;
+    const invocation = createSlashInvocation(command, {
+      ...createSlashCommandForm(command),
+      primary: 'hello',
+      values: { voice: 'alloy', 'stream-format': 'sse' },
+    });
+    expect(invocation.options).toMatchObject({ voice: 'alloy', 'stream-format': 'sse' });
   });
 
   it('validates required command fields', () => {
