@@ -9,25 +9,25 @@ describe('AgentManager response routing', () => {
   it('evicts one idle session synchronously before admitting another session process', async () => {
     const manager = new AgentManager({ onEvent: () => undefined });
     const shutdown = vi.fn(async () => undefined);
-    const bindings = ['session-1', 'session-2', 'session-3'].map(sessionId => ({ key: `session:${sessionId}`, projectRoot: 'C:\\workspace', sessionId, process: { shutdown, initialize: async () => undefined, request: async () => ({}), isAvailable: () => true } }));
+    const bindings = Array.from({ length: 10 }, (_, index) => `session-${index + 1}`).map(sessionId => ({ key: `session:${sessionId}`, projectRoot: 'C:\\workspace', sessionId, process: { shutdown, initialize: async () => undefined, request: async () => ({}), isAvailable: () => true } }));
     const internals = manager as unknown as { sessionBindings: Map<string, unknown>; sessionLastUsed: Map<string, number>; ensureSessionCapacity(): Promise<void> };
     bindings.forEach((binding, index) => { internals.sessionBindings.set(binding.sessionId, binding); internals.sessionLastUsed.set(binding.sessionId, index + 1); });
 
     await internals.ensureSessionCapacity();
 
     expect(internals.sessionBindings.has('session-1')).toBe(false);
-    expect(internals.sessionBindings.size).toBe(2);
+    expect(internals.sessionBindings.size).toBe(9);
     expect(shutdown).toHaveBeenCalledTimes(1);
     await manager.shutdownAll();
   });
 
   it('rejects admission when every session process is active', async () => {
     const manager = new AgentManager({ onEvent: () => undefined });
-    const bindings = ['session-1', 'session-2', 'session-3'].map(sessionId => ({ key: `session:${sessionId}`, projectRoot: 'C:\\workspace', sessionId, process: { shutdown: vi.fn(async () => undefined), initialize: async () => undefined, request: async () => ({}), isAvailable: () => true } }));
+    const bindings = Array.from({ length: 10 }, (_, index) => `session-${index + 1}`).map(sessionId => ({ key: `session:${sessionId}`, projectRoot: 'C:\\workspace', sessionId, process: { shutdown: vi.fn(async () => undefined), initialize: async () => undefined, request: async () => ({}), isAvailable: () => true } }));
     const internals = manager as unknown as { sessionBindings: Map<string, unknown>; turnBindings: Map<string, unknown>; ensureSessionCapacity(): Promise<void> };
     bindings.forEach((binding, index) => { internals.sessionBindings.set(binding.sessionId, binding); internals.turnBindings.set(`turn-${index}`, binding); });
 
-    await expect(internals.ensureSessionCapacity()).rejects.toThrow('maximum of 3 concurrent CLI sessions');
+    await expect(internals.ensureSessionCapacity()).rejects.toThrow('maximum of 10 concurrent CLI sessions');
     await manager.shutdownAll();
   });
 
