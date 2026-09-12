@@ -6,6 +6,18 @@ import { contextCompactionActivityId } from '../conversation/context-compaction-
 import { DESKTOP_CONTEXT_COMPACTION_ID_METADATA_KEY } from '../../../../contracts/ipc/v1/workspace.js';
 import { pastedTextPreview } from '../../../services/pasted-text.js';
 
+export interface WorkspaceActiveTurn {
+  taskId: string;
+  cwd: string;
+  turnId: string;
+}
+
+/** Returns the live turn only when it belongs to the selected task and workspace. */
+export function activeTurnForTask(taskId: string | undefined, workspaceRoot: string | undefined, activeTurn: WorkspaceActiveTurn | undefined): WorkspaceActiveTurn | undefined {
+  if (taskId === undefined || workspaceRoot === undefined || activeTurn?.taskId !== taskId || activeTurn.cwd !== workspaceRoot) return undefined;
+  return activeTurn;
+}
+
 export async function loadAttachmentPreviews(taskId: string, attachmentIds: readonly string[] = [], availableArtifacts?: Artifact[]): Promise<AttachmentPreview[]> {
   const artifacts = (availableArtifacts ?? await window.lotagate.tasks.artifacts(taskId)).filter(artifact => attachmentIds.includes(artifact.id));
   return Promise.all(artifacts.map(async artifact => {

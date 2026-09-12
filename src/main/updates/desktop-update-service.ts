@@ -10,6 +10,7 @@ import type { DesktopLogger } from '../observability/desktop-logger.js';
 import { desktopReleaseSchema, type DesktopAppVersionInfo, type DesktopRelease, type DesktopReleaseArchitecture, type DesktopReleaseAsset, type DesktopReleaseFormat, type DesktopReleasePlatform, type DesktopUpdateSnapshot } from '../../contracts/ipc/v1/update.js';
 import { isDesktopVersionBelow, isDesktopVersionNewer, isValidDesktopVersion } from './desktop-update-version.js';
 import { MAX_DOWNLOAD_ATTEMPTS, MAX_DOWNLOAD_BYTES, RETRY_DELAY_MS } from './update-constants.js';
+import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 const require = createRequire(import.meta.url);
 
 export class DesktopUpdateService {
@@ -20,6 +21,7 @@ export class DesktopUpdateService {
   private downloadController: AbortController | undefined;
   private downloadedPath: string | undefined;
   private downloadedAssetId: string | undefined;
+  private lastProgressPublishAt = 0;
 
   constructor(private readonly transport: Pick<ApiTransport, 'request'>, private readonly logger?: DesktopLogger, private readonly updateSigningPublicKey = '') {
     const info = this.readInfo();
@@ -99,6 +101,7 @@ export class DesktopUpdateService {
     const target = join(directory, `${randomUUID()}-${fileName}`);
     const partial = `${target}.part`;
     this.publish({ ...this.state, phase: 'downloading', bytesDownloaded: 0, totalBytes, error: null });
+    this.lastProgressPublishAt = 0;
     try {
       let lastError: unknown;
       for (let attempt = 1; attempt <= MAX_DOWNLOAD_ATTEMPTS; attempt += 1) {
@@ -147,7 +150,7 @@ export class DesktopUpdateService {
         hash.update(next.value);
         verifier.update(next.value);
         await handle.write(next.value);
-        this.publish({ ...this.state, bytesDownloaded: downloaded });
+        this.publishDownloadProgress(downloaded);
       }
     } finally {
       reader.releaseLock();
@@ -157,6 +160,13 @@ export class DesktopUpdateService {
     if (asset.sizeBytes !== null && downloaded !== Number(asset.sizeBytes)) throw new Error('The desktop update size does not match its metadata.');
     if (asset.sha256 === null || hash.digest('hex').toLowerCase() !== asset.sha256.toLowerCase()) throw new Error('The desktop update checksum does not match its metadata.');
     if (asset.signature === null || !verifier.verify(publicKey, Buffer.from(asset.signature, 'base64url'))) throw new Error('The desktop update signature does not match its metadata.');
+  }
+
+  private publishDownloadProgress(bytesDownloaded: number): void {
+    const now = Date.now();
+    if (bytesDownloaded !== this.state.totalBytes && now - this.lastProgressPublishAt < DESKTOP_RUNTIME_LIMITS.updateProgressPublishIntervalMs) return;
+    this.lastProgressPublishAt = now;
+    this.publish({ ...this.state, bytesDownloaded });
   }
 
   private readInfo(): DesktopAppVersionInfo {

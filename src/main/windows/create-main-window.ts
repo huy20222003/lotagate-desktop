@@ -8,7 +8,7 @@ export function createMainWindow(): BrowserWindow {
   const appRoot = app.getAppPath();
   const mainDirectory = join(appRoot, '.vite', 'build');
   const preload = join(mainDirectory, 'bridge.js');
-  const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
+  const rendererUrl = app.isPackaged ? undefined : process.env['ELECTRON_RENDERER_URL'];
   const icon = desktopAssetPath('lotagate.ico');
   const renderer = app.isPackaged ? join(appRoot, '.vite', 'renderer', 'main_window', 'index.html') : join(appRoot, 'src', 'renderer', 'index.html');
   const window = new BrowserWindow({

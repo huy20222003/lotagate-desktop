@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Activity } from '../../../../contracts/ipc/v1/workspace.js';
-import { discardQueuedAttachments, mergeActivities } from './workspace-controller-helpers.js';
+import { activeTurnForTask, discardQueuedAttachments, mergeActivities } from './workspace-controller-helpers.js';
 import type { QueuedMessage } from './message-queue-service.js';
 
 const activity = (id: string, text: string, turnId = 'turn-1'): Activity => ({ id, taskId: 'task-1', kind: 'assistant', text, metadata: { turnId }, createdAt: '2026-08-29T00:00:00.000Z' });
@@ -25,6 +25,26 @@ describe('workspace controller activity merging', () => {
     const persistedError: Activity = { id: 'persisted-error-1', taskId: 'task-1', kind: 'error', text: 'Failed', metadata: { turnId: 'turn-1' }, createdAt: '2026-08-29T00:00:01.000Z' };
 
     expect(mergeActivities([liveError], [persistedError])).toEqual([persistedError]);
+  });
+});
+
+describe('workspace controller active turn routing', () => {
+  const activeTurn = { taskId: 'task-1', cwd: 'C:\\workspace', turnId: 'turn-1' };
+
+  it('queues only while the live turn still belongs to the selected task', () => {
+    expect(activeTurnForTask('task-1', 'C:\\workspace', activeTurn)).toEqual(activeTurn);
+  });
+
+  it.each(['completed', 'failed'])('does not queue after a %s terminal event cleared the live turn', terminalState => {
+    const staleTaskState = { id: 'task-1', status: 'active', turnId: 'turn-1', lastTerminalState: terminalState };
+
+    expect(staleTaskState.status).toBe('active');
+    expect(activeTurnForTask(staleTaskState.id, 'C:\\workspace', undefined)).toBeUndefined();
+  });
+
+  it('does not route a turn from another task or workspace into the queue', () => {
+    expect(activeTurnForTask('task-2', 'C:\\workspace', activeTurn)).toBeUndefined();
+    expect(activeTurnForTask('task-1', 'C:\\other-workspace', activeTurn)).toBeUndefined();
   });
 });
 

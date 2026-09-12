@@ -33,7 +33,17 @@ export function mergeChatActivities(activities: Activity[]): Activity[] {
 }
 
 export function isAssistantProgressActivity(activity: Activity): boolean {
-  return activity.kind === 'assistant' && activity.metadata['assistantPhase'] === 'progress';
+  return activity.kind === 'assistant'
+    && activity.metadata['assistantPhase'] === 'progress'
+    && activity.metadata['assistantInterrupted'] !== true;
+}
+
+export function activitiesForUserTurn(activities: readonly Activity[], userActivity: Activity): Activity[] {
+  if (userActivity.kind !== 'user') return [];
+  const userIndex = activities.findIndex(activity => activity.id === userActivity.id);
+  if (userIndex < 0) return [];
+  const nextUserIndex = activities.findIndex((activity, index) => index > userIndex && activity.kind === 'user');
+  return [...activities.slice(userIndex + 1, nextUserIndex < 0 ? activities.length : nextUserIndex)];
 }
 
 function isInterruptedAssistantActivity(activity: Activity): boolean {

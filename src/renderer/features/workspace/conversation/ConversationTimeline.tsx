@@ -16,13 +16,19 @@ interface TimelineMessage {
 
 function buildTimelineMessages(activities: Activity[]): TimelineMessage[] {
   const transcript = mergeChatActivities(activities);
-  return transcript.flatMap((activity, index) => {
-    if (activity.kind !== 'user') return [];
-    const nextUserIndex = transcript.findIndex((candidate, candidateIndex) => candidateIndex > index && candidate.kind === 'user');
-    const response = transcript.slice(index + 1, nextUserIndex < 0 ? transcript.length : nextUserIndex).find(candidate => candidate.kind === 'assistant' || candidate.kind === 'error');
-    const responseText = response?.text.trim();
-    return [{ activity, ...(responseText ? { responseText } : {}) }];
-  });
+  const messages: TimelineMessage[] = [];
+  for (const activity of transcript) {
+    if (activity.kind === 'user') {
+      messages.push({ activity });
+      continue;
+    }
+    const current = messages[messages.length - 1];
+    if (current !== undefined && current.responseText === undefined && (activity.kind === 'assistant' || activity.kind === 'error')) {
+      const responseText = activity.text.trim();
+      if (responseText.length > 0) current.responseText = responseText;
+    }
+  }
+  return messages;
 }
 
 function initialTimelineHeight(): number {

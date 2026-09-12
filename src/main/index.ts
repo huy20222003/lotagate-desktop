@@ -51,6 +51,7 @@ import { PublicPluginBootstrapService } from './extensions/public-plugin-bootstr
 import { WhisperCppSpeechTranscriptionService } from './speech/whisper-cpp-speech-transcription-service.js';
 import { AgentEventCoordinator } from './agents/agent-event-coordinator.js';
 import { NativeDependencyService } from './dependencies/native-dependency-service.js';
+import { DESKTOP_RUNTIME_LIMITS } from '../contracts/runtime-limits.js';
 
 loadRuntimeEnvironment();
 const runtimeConfig = readRuntimeConfig();
@@ -60,6 +61,7 @@ let agentManager: AgentManager | undefined;
 let browserService: BrowserService | undefined;
 let computerBroker: ComputerHostToolBroker | undefined;
 let documentBroker: DocumentHostToolBroker | undefined;
+let interactiveTerminalService: InteractiveTerminalService | undefined;
 let automationService: AutomationService | undefined;
 let approvalCoordinator: ApprovalCoordinator | undefined;
 let taskProjector: TaskEventProjector | undefined;
@@ -247,7 +249,7 @@ app.whenReady().then(async () => {
     readDetail: (cwd, input) => agents.extensionReadDetail(cwd, input),
     readPluginIcon: (cwd, input) => agents.extensionReadPluginIcon(cwd, input),
   });
-  void new PublicPluginBootstrapService(extensionFiles, agents, logger, app.getPath('userData')).run().catch(error => logger.warn('public.plugins.bootstrap.failed', { message: error instanceof Error ? error.message : 'Unable to bootstrap bundled public plugins.' }));
+  void new PublicPluginBootstrapService(extensionFiles, agents, logger, app.getPath('userData'), undefined, undefined, () => shuttingDown).run().catch(error => logger.warn('public.plugins.bootstrap.failed', { message: error instanceof Error ? error.message : 'Unable to bootstrap bundled public plugins.' }));
   titleGenerationService = new TaskTitleGenerationService(tasks, agents, logger);
   const git = new GitService();
   const automationExecution = new AutomationExecutionService({ workspaces, git, tasks, agents, settings, browserHost, artifacts, logger, sessions: automationSessions });
@@ -273,7 +275,9 @@ app.whenReady().then(async () => {
     }
   });
   const auth = new DesktopAuthService(transport, async () => { await remoteControl.stop(); await approvals.cancelAll(); await agents.shutdownAll(); await computerBroker?.close(); }, () => userContext.resetSession());
-  registerIpc({ auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, taskTurns, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal: new InteractiveTerminalService(workspaces, settings), settings, artifacts, browser, automations, approvals, remoteControl, operations, speech, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); taskTurns.releaseWorkspace(removedWorkspace.rootPath); await browserHost.closeForWorkspace(removedWorkspace.rootPath); await documentBroker?.closeForWorkspace(removedWorkspace.rootPath); } });
+  const interactiveTerminal = new InteractiveTerminalService(workspaces, settings);
+  interactiveTerminalService = interactiveTerminal;
+  registerIpc({ auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, taskTurns, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal, settings, artifacts, browser, automations, approvals, remoteControl, operations, speech, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); taskTurns.releaseWorkspace(removedWorkspace.rootPath); await browserHost.closeForWorkspace(removedWorkspace.rootPath); await documentBroker?.closeForWorkspace(removedWorkspace.rootPath); } });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }
@@ -309,17 +313,18 @@ app.on('before-quit', (event) => {
   logger.info('app.before-quit', { windowCount: BrowserWindow.getAllWindows().length });
 
   const shutdownWatchdog = setTimeout(() => {
-    logger.warn('app.shutdown.watchdog.expired', { timeoutMs: 5000 });
+    logger.warn('app.shutdown.watchdog.expired', { timeoutMs: DESKTOP_RUNTIME_LIMITS.shutdownWatchdogMs });
     app.exit(0);
-  }, 5000);
+  }, DESKTOP_RUNTIME_LIMITS.shutdownWatchdogMs);
   shutdownWatchdog.unref?.();
 
   void (async () => {
     await approvalCoordinator?.cancelAll();
     await remoteControlService?.stop();
     await agentManager?.shutdownAll('app.before-quit');
+    interactiveTerminalService?.closeAll();
     await computerBroker?.close();
-    await documentBroker?.closeForWorkspace(process.cwd());
+    await documentBroker?.closeAll();
     await taskProjector?.flush();
     await browserService?.closeAll();
   })().catch(error => logger.error('app.shutdown.failed', { message: error instanceof Error ? error.message : 'Desktop shutdown failed.' })).finally(async () => {

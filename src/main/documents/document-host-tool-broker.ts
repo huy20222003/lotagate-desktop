@@ -68,6 +68,14 @@ export class DocumentHostToolBroker {
     }
   }
 
+  async closeAll(): Promise<void> {
+    for (const key of [...this.sessions.keys()]) {
+      for (const handleId of this.sessions.get(key) ?? []) await this.closeHandle(handleId);
+      this.sessions.delete(key);
+      this.serial.delete(key);
+    }
+  }
+
   private async execute(cwd: string, request: DesktopHostRequest, sessionKey: string, signal?: AbortSignal): Promise<DesktopHostResponse> {
     if (signal?.aborted === true) throw new Error('Document action was cancelled.');
     const [formatToken, actionToken] = request.action.split('.', 2);

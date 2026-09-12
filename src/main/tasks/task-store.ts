@@ -16,7 +16,7 @@ export class TaskStore {
   }
 
   async create(input: { workspaceId: string; title: string; cwd: string; titleSource?: Task['titleSource']; prompt?: string }): Promise<Task> {
-    return this.withExclusive(async () => {
+    return this.withGlobalExclusive(async () => {
       const now = new Date().toISOString();
       const titleSource = input.titleSource ?? 'manual';
       const task = taskSchema.parse({ id: randomUUID(), workspaceId: input.workspaceId, title: input.title, titleSource, titleSummaryStatus: titleSource === 'automatic' ? 'not_started' : 'completed', cwd: input.cwd, status: 'queued', pinned: false, archived: false, draft: '', draftAttachmentIds: [], lastEventCursor: 0, createdAt: now, updatedAt: now });
@@ -27,14 +27,14 @@ export class TaskStore {
   }
 
   async update(taskId: string, patch: TaskUpdate): Promise<Task> {
-    return this.withExclusive(() => this.mutate(taskId, current => ({ ...current, ...patch, updatedAt: new Date().toISOString() })));
+    return this.withTaskExclusive(taskId, () => this.mutate(taskId, current => ({ ...current, ...patch, updatedAt: new Date().toISOString() })));
   }
 
   async queuedPrompts(taskId: string): Promise<QueuedPrompt[]> { return (await this.require(taskId)).queuedPrompts ?? []; }
 
   async queuePrompt(taskId: string, input: Omit<QueuedPrompt, 'id' | 'createdAt'>): Promise<QueuedPrompt> {
     const queued = queuedPromptSchema.parse({ ...input, id: randomUUID(), createdAt: new Date().toISOString() });
-    await this.withExclusive(() => this.mutate(taskId, current => {
+    await this.withTaskExclusive(taskId, () => this.mutate(taskId, current => {
       const prompts = current.queuedPrompts ?? [];
       if (current.archived) throw new Error('The selected task is archived.');
       if (prompts.length >= MAX_QUEUED_PROMPTS_PER_TASK) throw new Error('This task already has the maximum number of queued prompts.');
@@ -45,7 +45,7 @@ export class TaskStore {
 
   async dequeuePrompt(taskId: string, promptId: string): Promise<QueuedPrompt | undefined> {
     let removed: QueuedPrompt | undefined;
-    await this.withExclusive(() => this.mutate(taskId, current => {
+    await this.withTaskExclusive(taskId, () => this.mutate(taskId, current => {
       const prompts = current.queuedPrompts ?? [];
       removed = prompts.find(prompt => prompt.id === promptId);
       return { ...current, queuedPrompts: prompts.filter(prompt => prompt.id !== promptId), updatedAt: new Date().toISOString() };
@@ -54,11 +54,11 @@ export class TaskStore {
   }
 
   async rename(taskId: string, title: string): Promise<Task> {
-    return this.withExclusive(() => this.mutate(taskId, current => ({ ...current, title, titleSource: 'manual', titleSummaryStatus: 'completed', updatedAt: new Date().toISOString() })));
+    return this.withTaskExclusive(taskId, () => this.mutate(taskId, current => ({ ...current, title, titleSource: 'manual', titleSummaryStatus: 'completed', updatedAt: new Date().toISOString() })));
   }
 
   async claimAutomaticTitleSummary(taskId: string): Promise<Task | undefined> {
-    return this.withExclusive(async () => {
+    return this.withTaskExclusive(taskId, async () => {
       let claimed: Task | undefined;
       await this.taskStore.update(current => current.map(task => {
         if (task.id !== taskId || task.titleSource !== 'automatic' || task.titleSummaryStatus !== 'not_started') return task;
@@ -70,7 +70,7 @@ export class TaskStore {
   }
 
   async completeAutomaticTitleSummary(taskId: string, title: string): Promise<Task | undefined> {
-    return this.withExclusive(async () => {
+    return this.withTaskExclusive(taskId, async () => {
       let completed: Task | undefined;
       await this.taskStore.update(current => current.map(task => {
         if (task.id !== taskId || task.titleSource !== 'automatic' || task.titleSummaryStatus !== 'generating') return task;
@@ -82,7 +82,7 @@ export class TaskStore {
   }
 
   async failAutomaticTitleSummary(taskId: string): Promise<Task | undefined> {
-    return this.withExclusive(async () => {
+    return this.withTaskExclusive(taskId, async () => {
       let failed: Task | undefined;
       await this.taskStore.update(current => current.map(task => {
         if (task.id !== taskId || task.titleSource !== 'automatic' || task.titleSummaryStatus !== 'generating') return task;
@@ -93,9 +93,9 @@ export class TaskStore {
     });
   }
 
-  async setStatus(taskId: string, status: TaskStatus): Promise<Task> { return this.withExclusive(() => this.mutate(taskId, current => ({ ...current, status, updatedAt: new Date().toISOString() }))); }
+  async setStatus(taskId: string, status: TaskStatus): Promise<Task> { return this.withTaskExclusive(taskId, () => this.mutate(taskId, current => ({ ...current, status, updatedAt: new Date().toISOString() }))); }
   async retry(taskId: string): Promise<Task> { return this.setStatus(taskId, 'queued'); }
-  async cancel(taskId: string): Promise<Task> { return this.withExclusive(() => this.mutate(taskId, current => ({ ...current, status: 'cancelled', turnId: undefined, updatedAt: new Date().toISOString() }))); }
+  async cancel(taskId: string): Promise<Task> { return this.withTaskExclusive(taskId, () => this.mutate(taskId, current => ({ ...current, status: 'cancelled', turnId: undefined, updatedAt: new Date().toISOString() }))); }
   async resume(taskId: string): Promise<Task> { return this.setStatus(taskId, 'queued'); }
   async archive(taskId: string, archived: boolean): Promise<Task> { return this.update(taskId, { archived }); }
   async pin(taskId: string, pinned: boolean): Promise<Task> { return this.update(taskId, { pinned }); }
@@ -116,7 +116,7 @@ export class TaskStore {
   async findBySession(sessionId: string): Promise<Task | undefined> { return (await this.taskStore.read()).find(task => !task.archived && task.sessionId === sessionId); }
 
   async interruptActiveByCwd(cwd: string, reason: string): Promise<Task | undefined> {
-    return this.withExclusive(async () => {
+    return this.withGlobalExclusive(async () => {
       let interrupted: Task | undefined;
       await this.taskStore.update(current => {
         const index = current.findIndex(task => !task.archived && task.cwd === cwd && task.status === 'active' && task.turnId !== undefined);
@@ -130,7 +130,7 @@ export class TaskStore {
   }
 
   async interruptActiveBySession(sessionId: string, reason: string): Promise<Task | undefined> {
-    return this.withExclusive(async () => {
+    return this.withGlobalExclusive(async () => {
       let interrupted: Task | undefined;
       await this.taskStore.update(current => {
         const index = current.findIndex(task => !task.archived && task.sessionId === sessionId && task.status === 'active' && task.turnId !== undefined);
@@ -144,7 +144,7 @@ export class TaskStore {
   }
 
   async interruptActive(reason: string): Promise<readonly Task[]> {
-    return this.withExclusive(async () => {
+    return this.withGlobalExclusive(async () => {
       const interrupted: Task[] = [];
       await this.taskStore.update(current => {
         const now = new Date().toISOString();
@@ -161,7 +161,7 @@ export class TaskStore {
   }
 
   async appendActivity(taskId: string, kind: Activity['kind'], text: string, metadata: Record<string, unknown>): Promise<Activity> {
-    return this.withExclusive(() => this.appendActivityInternal(taskId, kind, text, metadata));
+    return this.withTaskExclusive(taskId, () => this.appendActivityInternal(taskId, kind, text, metadata));
   }
 
   async appendAssistantDelta(taskId: string, text: string, metadata: Record<string, unknown>): Promise<Activity> {
@@ -171,22 +171,22 @@ export class TaskStore {
   }
 
   async appendAssistantDeltas(taskId: string, deltas: readonly { text: string; metadata: Record<string, unknown> }[]): Promise<Activity[]> {
-    return this.withExclusive(async () => {
+    return this.withTaskExclusive(taskId, async () => {
       const updated = await this.activityStore.appendAssistantDeltas(taskId, deltas);
       return updated;
     });
   }
 
   async completeAssistantSegment(taskId: string, segmentId: string, phase: 'progress' | 'final', metadata: Record<string, unknown> = {}): Promise<Activity | undefined> {
-    return this.withExclusive(() => this.activityStore.completeAssistantSegment(taskId, segmentId, phase, metadata));
+    return this.withTaskExclusive(taskId, () => this.activityStore.completeAssistantSegment(taskId, segmentId, phase, metadata));
   }
 
   async completeAssistantSegmentsForTurn(taskId: string, turnId: string, phase: 'progress' | 'final', metadata: Record<string, unknown> = {}): Promise<Activity[]> {
-    return this.withExclusive(() => this.activityStore.completeAssistantSegmentsForTurn(taskId, turnId, phase, metadata));
+    return this.withTaskExclusive(taskId, () => this.activityStore.completeAssistantSegmentsForTurn(taskId, turnId, phase, metadata));
   }
 
   async replaceAssistantResponse(taskId: string, turnId: string, segmentId: string, text: string, metadata: Record<string, unknown>): Promise<Activity> {
-    return this.withExclusive(async () => {
+    return this.withTaskExclusive(taskId, async () => {
       const updated = await this.activityStore.replaceAssistantResponse(taskId, turnId, segmentId, text, metadata);
       await this.taskStore.update(current => {
         const index = current.findIndex(task => task.id === taskId);
@@ -213,7 +213,7 @@ export class TaskStore {
   }
 
   async appendEvent(taskId: string, kind: Activity['kind'], text: string, metadata: Record<string, unknown>): Promise<Activity> {
-    return this.withExclusive(async () => {
+    return this.withTaskExclusive(taskId, async () => {
       const current = (await this.taskStore.read()).map(item => taskSchema.parse(item)).find(item => item.id === taskId);
       if (current === undefined) throw new Error('Task was not found.');
       const cursor = (current.lastEventCursor ?? 0) + 1;
@@ -240,25 +240,39 @@ export class TaskStore {
   }
 
   private async mutate(taskId: string, update: (task: Task) => Task): Promise<Task> {
-    const current = await this.taskStore.read();
-    const index = current.findIndex(task => task.id === taskId);
-    if (index < 0) throw new Error('Task was not found.');
-    const updated = taskSchema.parse(update(current[index]!));
-    const next = [...current];
-    next[index] = updated;
-    await this.taskStore.write(next);
+    let updated: Task | undefined;
+    await this.taskStore.update(current => {
+      const index = current.findIndex(task => task.id === taskId);
+      if (index < 0) throw new Error('Task was not found.');
+      updated = taskSchema.parse(update(taskSchema.parse(current[index])));
+      const next = [...current];
+      next[index] = updated;
+      return next;
+    });
+    if (updated === undefined) throw new Error('Task update failed.');
     return updated;
   }
 
-  private async withExclusive<T>(operation: () => Promise<T>): Promise<T> {
-    const previous = this.mutationChain;
+  private async withGlobalExclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.globalMutationChain;
     let release!: () => void;
-    this.mutationChain = new Promise<void>(resolve => { release = resolve; });
+    this.globalMutationChain = new Promise<void>(resolve => { release = resolve; });
     await previous;
     try { return await operation(); } finally { release(); }
   }
 
-  private mutationChain: Promise<void> = Promise.resolve();
+  private async withTaskExclusive<T>(taskId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.taskMutationChains.get(taskId) ?? Promise.resolve();
+    let release!: () => void;
+    const next = new Promise<void>(resolve => { release = resolve; });
+    this.taskMutationChains.set(taskId, next);
+    await previous;
+    try { return await operation(); }
+    finally { release(); if (this.taskMutationChains.get(taskId) === next) this.taskMutationChains.delete(taskId); }
+  }
+
+  private readonly taskMutationChains = new Map<string, Promise<void>>();
+  private globalMutationChain: Promise<void> = Promise.resolve();
 }
 
 export function paginateActivities(all: readonly Activity[], options: { limit?: number; before?: string } = {}): ActivityPage {

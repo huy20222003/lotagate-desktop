@@ -144,22 +144,20 @@ describe('LiveChatDrawer', () => {
     );
 
     await waitFor(() => expect(synthesize).toHaveBeenCalledTimes(1));
-    expect(synthesize).toHaveBeenCalledWith('D:\\\\test-workspace', expect.objectContaining({ input: 'Hello from the streamed response.' }));
+    expect(synthesize).toHaveBeenCalledWith('D:\\\\test-workspace', expect.objectContaining({ input: 'Hello from the streamed response.', responseFormat: 'pcm' }));
   });
 
-  it('retries speech playback with WAV when the browser cannot decode MP3', async () => {
+  it('does not retry PCM speech with unsupported WAV when playback fails', async () => {
     const synthesize = vi
       .fn()
-      .mockResolvedValueOnce({ audio: new Uint8Array([1, 2, 3]), mimeType: 'audio/mpeg' })
-      .mockResolvedValueOnce({ audio: new Uint8Array([4, 5, 6]), mimeType: 'audio/wav' });
+      .mockResolvedValueOnce({ audio: new Uint8Array([1, 2, 3, 4]), mimeType: 'audio/pcm;rate=24000' });
     Object.defineProperty(window, 'lotagate', {
       configurable: true,
       value: { speech: { synthesize, transcribe: vi.fn() } },
     });
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:test') });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
-    let loadCount = 0;
-    class FallbackAudio {
+    class FailingAudio {
       oncanplay: (() => void) | null = null;
       onended: (() => void) | null = null;
       onerror: (() => void) | null = null;
@@ -167,14 +165,12 @@ describe('LiveChatDrawer', () => {
       preload = '';
       src = '';
       load() {
-        loadCount += 1;
-        if (loadCount === 1) this.onerror?.();
-        else this.onloadeddata?.();
+        this.onerror?.();
       }
       pause() { return undefined; }
       play() { this.onended?.(); return Promise.resolve(); }
     }
-    vi.stubGlobal('Audio', FallbackAudio);
+    vi.stubGlobal('Audio', FailingAudio);
 
     const activity: Activity = {
       id: 'streaming:task-1:segment-1',
@@ -212,7 +208,7 @@ describe('LiveChatDrawer', () => {
       />
     );
 
-    await waitFor(() => expect(synthesize).toHaveBeenCalledTimes(2));
-    expect(synthesize.mock.calls[1]?.[1]).toEqual(expect.objectContaining({ responseFormat: 'wav' }));
+    await waitFor(() => expect(synthesize).toHaveBeenCalledTimes(1));
+    expect(synthesize.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ responseFormat: 'pcm' }));
   });
 });

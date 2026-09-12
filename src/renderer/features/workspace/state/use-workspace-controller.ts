@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DESKTOP_COMMAND_TIMING_METADATA_KEY, type Activity, type Artifact, type FileChangeSummary, type WorkPlanSnapshot, type SubagentSnapshot, type Task, type TrustRequest, type Workspace } from '../../../../contracts/ipc/v1/workspace.js';
 import type { DesktopApprovalDecision, DesktopApprovalRequest } from '../../../../contracts/ipc/v1/approval.js';
 import { sessionSlugFromPrompt } from '../conversation/task-title.js';
-import { shouldAutoApproveDesktop, type ApprovalMode } from './approval-policy.js';
+import { shouldAutoApproveDesktop } from './approval-policy.js';
 import { EMPTY_FILE_CHANGE_SUMMARIES, EMPTY_FILE_CHANGE_SUMMARY, fileChangeSummariesFromActivities, mergeFileChange, mergeFileChangeForTurn, mergeFileChangeSummaries } from '../review/file-changes.js';
 import { applyWorkPlanEvent, applySubagentEvent } from '../orchestration/orchestration-events.js';
 import { restoreWorkPlan } from '../conversation/work-plan-history.js';
@@ -18,7 +18,7 @@ import { agentStatusForEvent, commandStatusForAction } from './agent-status.js';
 import { mergeTurnTimings, turnTimingsFromActivities } from '../conversation/turn-timings.js';
 import { appendAssistantDelta, assistantStreamKey, isAssistantStreamPersisted, markAssistantSegmentPhase, markAssistantTurnCompleted, reconcilePendingAssistantStreams, type PendingAssistantStream } from '../conversation/streaming-activity.js';
 import { upsertContextCompactionActivity } from '../conversation/context-compaction-activity.js';
-import { applyAssistantReplacementEvent, discardQueuedAttachments, extractSessionId, extractTurnId, loadActivityArtifactPreviews, loadActivityAttachmentPreviews, loadAttachmentPreviews, mergeActivities, readAgentError } from './workspace-controller-helpers.js';
+import { activeTurnForTask, applyAssistantReplacementEvent, discardQueuedAttachments, extractSessionId, extractTurnId, loadActivityArtifactPreviews, loadActivityAttachmentPreviews, loadAttachmentPreviews, mergeActivities, readAgentError } from './workspace-controller-helpers.js';
 import { allowsUnscopedTaskFallback, shouldSurfaceAgentDiagnostic } from './agent-event-routing.js';
 import { persistDesktopCommandResult } from './desktop-command-result-persistence.js';
 import { cancelWorkspaceTask } from './cancel-workspace-task.js';
@@ -36,6 +36,8 @@ import { contextUsageFromValue, latestContextUsage, type ContextWindowUsage } fr
 import { useWorkspaceAttachmentActions } from './use-workspace-attachment-actions.js';
 import { useWorkspaceModelPreferences } from './use-workspace-model-preferences.js';
 import { finalAssistantResponseForTurn, type AssistantFinalResponse } from '../conversation/assistant-response.js';
+import { useWorkspaceBootstrap } from './use-workspace-bootstrap.js';
+import { useApprovalMode } from './use-approval-mode.js';
 export function useWorkspaceController() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspace, setWorkspace] = useState<Workspace | undefined>();
@@ -54,7 +56,6 @@ export function useWorkspaceController() {
   const [subagents, setSubagents] = useState<SubagentSnapshot[]>([]);
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [approval, setApproval] = useState<DesktopApprovalRequest | undefined>();
-  const [approvalMode, setApprovalMode] = useState<ApprovalMode>('auto');
   const [trust, setTrust] = useState<TrustRequest | undefined>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -98,7 +99,7 @@ export function useWorkspaceController() {
     if (taskId !== undefined && draftTaskRef.current?.id !== taskId) return;
     setError(toMessage(reason));
   }, []);
-  useEffect(() => { void window.lotagate.settings.get().then(settings => { setApprovalMode(settings.approvalMode); }).catch(() => undefined); }, []);
+  const [approvalMode, updateApprovalMode] = useApprovalMode();
   useEffect(() => {
     const unsubscribe = window.lotagate.approvals.onRequest(request => {
       if (request.surface !== 'composer' || request.source === 'automation') return;
@@ -113,10 +114,7 @@ export function useWorkspaceController() {
   useEffect(() => window.lotagate.approvals.onResolved(resolution => {
     setApproval(current => current?.approvalId === resolution.approvalId ? undefined : current);
   }), []);
-  const updateApprovalMode = useCallback((next: ApprovalMode) => {
-    setApprovalMode(next);
-    void window.lotagate.settings.update({ approvalMode: next }).catch(() => undefined);
-  }, []);
+  useWorkspaceBootstrap({ setWorkspaces, setTasks, setWorkspace, setTask, setLoading, setError });
   const publishActivities = useDeferredStatePublisher(setActivities);
   const reloadTasks = useCallback(async (workspaceId: string) => {
     const requestId = ++taskReloadRequestRef.current;
@@ -135,29 +133,6 @@ export function useWorkspaceController() {
       void reloadTasks(workspaceId).catch(reason => { if (workspaceRef.current?.id === workspaceId) setError(toMessage(reason)); });
     }, 75);
   }, [reloadTasks]);
-  useEffect(() => {
-    let mounted = true;
-    void (async () => {
-      try {
-        const nextWorkspaces = await window.lotagate.workspaces.list();
-        const nextTasks = (await Promise.all(nextWorkspaces.map(item => window.lotagate.tasks.list(item.id)))).flat();
-        if (!mounted) return;
-        const preferredWorkspace = nextWorkspaces.find(item => item.trusted) ?? nextWorkspaces[0];
-        setWorkspaces(nextWorkspaces);
-        setTasks(nextTasks);
-        setWorkspace(preferredWorkspace);
-        // Startup opens the same empty-chat surface as the explicit New chat action.
-        // Existing sessions remain available in the sidebar and are selected only
-        // when the user chooses one.
-        setTask(undefined);
-      } catch (reason) {
-        if (mounted) setError(toMessage(reason));
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
   useEffect(() => {
     if (!workspace) return;
     if (!initialTasksLoadedRef.current) { initialTasksLoadedRef.current = true; return; }
@@ -242,7 +217,6 @@ export function useWorkspaceController() {
   useEffect(() => () => {
     if (taskReloadTimerRef.current !== undefined) { clearTimeout(taskReloadTimerRef.current); taskReloadTimerRef.current = undefined; }
   }, [workspace?.id]);
-
   useEffect(() => window.lotagate.agent.onEvent(envelope => {
     const currentWorkspace = workspaceRef.current;
     const currentTasks = tasksRef.current;
@@ -303,7 +277,7 @@ export function useWorkspaceController() {
           : [...nextActivities].reverse().find(activity => activity.taskId === eventTask.id && activity.kind === 'assistant' && activity.metadata['segmentId'] === segmentId);
         if (streamed !== undefined) pendingAssistantStreamsRef.current.set(assistantStreamKey(eventTask.id, turnId, segmentId), { taskId: eventTask.id, ...(turnId === undefined ? {} : { turnId }), ...(segmentId === undefined ? {} : { segmentId }), metadata: { ...(typeof streamed.metadata['projectRoot'] === 'string' ? { projectRoot: streamed.metadata['projectRoot'] } : {}), ...(typeof streamed.metadata['executionCwd'] === 'string' ? { executionCwd: streamed.metadata['executionCwd'] } : {}) }, text: streamed.text, createdAt: streamed.createdAt });
         activitiesRef.current = nextActivities;
-        publishActivities(nextActivities);
+          publishActivities(nextActivities, true);
       }
       if (currentTurn && envelope.event.event === 'assistant.replaced') applyAssistantReplacementEvent(activitiesRef, pendingAssistantStreamsRef, eventTask.id, turnId, data, publishActivities);
       if (currentTurn && envelope.event.event === 'assistant.segment.completed' && typeof data['segmentId'] === 'string' && (data['phase'] === 'progress' || data['phase'] === 'final')) {
@@ -511,12 +485,12 @@ export function useWorkspaceController() {
   }, [task]);
   const sendPrompt = useCallback(async (prompt: string, options?: PromptSendOptions) => {
     if (!prompt.trim() || workspace === undefined) return;
-    if ((task?.id !== undefined && activeTurnRef.current?.taskId === task.id) || (task?.status === 'active' && task.turnId !== undefined)) { await enqueuePrompt(prompt, options); return; }
+    if (activeTurnForTask(task?.id, workspace.rootPath, activeTurnRef.current) !== undefined) { await enqueuePrompt(prompt, options); return; }
     await startPrompt(prompt, undefined, options);
   }, [enqueuePrompt, startPrompt, task, workspace]);
   const runCommand = useCallback(async (invocation: DesktopCommandInvocation, preview: string): Promise<boolean> => {
     if (!workspace || !preview.trim()) return false;
-    if (task?.id !== undefined && activeTurnRef.current?.taskId === task.id) {
+    if (activeTurnForTask(task?.id, workspace.rootPath, activeTurnRef.current) !== undefined) {
       setError('Wait for the active response to finish before running a slash command.');
       return false;
     }
@@ -600,7 +574,7 @@ export function useWorkspaceController() {
   const steerQueuedMessage = useCallback(async (id: string) => {
     const queued = messageQueueServiceRef.current.snapshot().find(item => item.id === id);
     if (!queued || !task || !workspace) return;
-    const activeTurn = activeTurnRef.current?.taskId === task.id && activeTurnRef.current.cwd === workspace.rootPath ? activeTurnRef.current : undefined;
+    const activeTurn = activeTurnForTask(task.id, workspace.rootPath, activeTurnRef.current);
     if (!activeTurn) { const queuedMessage = messageQueueServiceRef.current.snapshot().find(item => item.id === id); if (queuedMessage) await dispatchQueuedPrompt(queuedMessage); return; }
     steeringQueueIdRef.current = id;
     suppressQueueRef.current = false;
@@ -609,7 +583,7 @@ export function useWorkspaceController() {
   }, [dispatchQueuedPrompt, task, workspace]);
   const cancelTask = useCallback(async () => {
     if (!task || !workspace) return;
-    const activeTurn = activeTurnRef.current?.taskId === task.id && activeTurnRef.current.cwd === workspace.rootPath ? activeTurnRef.current : undefined;
+    const activeTurn = activeTurnForTask(task.id, workspace.rootPath, activeTurnRef.current);
     setError(undefined); suppressQueueRef.current = true; steeringQueueIdRef.current = undefined;
     await cancelWorkspaceTask({ task, workspace, activeTurn, clearActiveTurn: () => { activeTurnRef.current = undefined; setActiveTurnId(undefined); }, resetLiveState: () => { setThinking(false); setFinalResponseReceived(false); setThinkingStartedAt(undefined); setAgentStatus(undefined); setActiveTurnId(undefined); setApproval(undefined); setTrust(undefined); setPlan(undefined); setSubagents([]); suppressQueueRef.current = false; steeringQueueIdRef.current = undefined; }, markTurnFinished, setTask, updateTasks: update => setTasks(update), reloadTasks, setError });
   }, [markTurnFinished, reloadTasks, task, workspace]);

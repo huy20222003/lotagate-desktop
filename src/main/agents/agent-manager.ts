@@ -43,7 +43,10 @@ export class AgentManager {
   private readonly commandEventBuffers = new Map<string, CommandEventBuffer>();
   private readonly protocolCacheLoads = new Map<string, Promise<unknown>>();
   private readonly uploadedAttachments = new Map<string, Set<string>>();
+  private readonly sessionLastUsed = new Map<string, number>();
   private readonly idleTimeoutMs: number;
+  private sessionAdmissionChain: Promise<void> = Promise.resolve();
+  private lastSessionUse = 0;
 
   constructor(private readonly handler: AgentManagerHandler, private readonly cache?: PersistentCache, private readonly getInteractiveExecutionPolicy: () => Promise<DesktopExecutionPolicy> = async () => buildInteractiveDesktopExecutionPolicy(), private readonly options: AgentManagerOptions = {}) {
     this.idleTimeoutMs = Number.isFinite(this.options.idleTimeoutMs) ? Math.max(1_000, Math.floor(this.options.idleTimeoutMs!)) : DESKTOP_RUNTIME_LIMITS.agentIdleTimeoutMs;
@@ -53,15 +56,18 @@ export class AgentManager {
 
   async sessionCreate(cwd: string, input: { model?: string; name?: string }): Promise<unknown> {
     const projectRoot = await requireDirectory(cwd);
-    const binding = this.createProcess(projectRoot, `session:${randomUUID()}`);
-    await binding.process.initialize();
-    try {
-      const result = await binding.process.request('session.create', input);
-      const sessionId = extractSessionId(result);
-      if (sessionId === undefined) throw new Error('The CLI did not return a session id.');
-      binding.sessionId = sessionId; this.sessionBindings.set(sessionId, binding); this.touch(binding);
-      return result;
-    } catch (error) { this.removeBinding(binding); await binding.process.shutdown('session-create-failed'); throw error; }
+    return this.withSessionAdmission(async () => {
+      await this.ensureSessionCapacity();
+      const binding = this.createProcess(projectRoot, `session:${randomUUID()}`);
+      await binding.process.initialize();
+      try {
+        const result = await binding.process.request('session.create', input);
+        const sessionId = extractSessionId(result);
+        if (sessionId === undefined) throw new Error('The CLI did not return a session id.');
+        binding.sessionId = sessionId; this.sessionBindings.set(sessionId, binding); this.touch(binding);
+        return result;
+      } catch (error) { this.removeBinding(binding); await binding.process.shutdown('session-create-failed'); throw error; }
+    });
   }
 
   async sessionList(cwd: string): Promise<unknown> { return this.request(cwd, 'session.list', {}); }
@@ -81,33 +87,44 @@ export class AgentManager {
   }
 
   private async openSession(projectRoot: string, sessionId: string): Promise<unknown> {
-    this.evictExcessIdleSessions();
-    const binding = this.createProcess(projectRoot, `session:${sessionId}`);
-    await binding.process.initialize();
-    try { const result = await binding.process.request('session.resume', { sessionId }); binding.sessionId = sessionId; this.sessionBindings.set(sessionId, binding); this.touch(binding); return result; }
-    catch (error) { this.removeBinding(binding); await binding.process.shutdown('session-resume-failed'); throw error; }
+    return this.withSessionAdmission(async () => {
+      await this.ensureSessionCapacity();
+      const binding = this.createProcess(projectRoot, `session:${sessionId}`);
+      await binding.process.initialize();
+      try { const result = await binding.process.request('session.resume', { sessionId }); binding.sessionId = sessionId; this.sessionBindings.set(sessionId, binding); this.touch(binding); return result; }
+      catch (error) { this.removeBinding(binding); await binding.process.shutdown('session-resume-failed'); throw error; }
+    });
   }
 
-  private evictExcessIdleSessions(): void {
+  private async ensureSessionCapacity(): Promise<void> {
     const maxSessions = DESKTOP_RUNTIME_LIMITS.maxConcurrentSessionProcesses;
-    if (this.sessionBindings.size < maxSessions) return;
     const activeBindings = new Set([
       ...this.turnBindings.values(),
       ...this.approvalBindings.values(),
       ...this.trustBindings.values(),
     ]);
-    for (const [, candidate] of this.sessionBindings) {
-      if (this.sessionBindings.size < maxSessions) break;
-      if (!activeBindings.has(candidate)) {
-        void this.shutdownBinding(candidate, 'lru-eviction').catch(error =>
-          this.handler.onDiagnostic?.(candidate.projectRoot, {
-            kind: 'protocol',
-            severity: 'error',
-            message: error instanceof Error ? error.message : 'LRU session eviction failed.',
-          })
-        );
-      }
+    while (this.sessionBindings.size >= maxSessions) {
+      const candidate = [...this.sessionBindings.values()]
+        .filter(binding => !activeBindings.has(binding))
+        .sort((left, right) => (this.sessionLastUsed.get(left.sessionId ?? '') ?? 0) - (this.sessionLastUsed.get(right.sessionId ?? '') ?? 0))[0];
+      if (candidate === undefined) throw new Error(`The maximum of ${maxSessions} concurrent CLI sessions is already active.`);
+      await this.shutdownBinding(candidate, 'lru-eviction').catch(error => {
+        this.handler.onDiagnostic?.(candidate.projectRoot, {
+          kind: 'protocol',
+          severity: 'error',
+          message: error instanceof Error ? error.message : 'LRU session eviction failed.',
+        });
+      });
     }
+  }
+
+  private async withSessionAdmission<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.sessionAdmissionChain;
+    let release!: () => void;
+    this.sessionAdmissionChain = new Promise<void>(resolve => { release = resolve; });
+    await previous.catch(() => undefined);
+    try { return await operation(); }
+    finally { release(); }
   }
 
   async turnStart(cwd: string, input: { sessionId: string; prompt: string; model?: string; reasoningEffort?: DesktopReasoningEffort; runId?: string; taskId?: string; sessionName?: string; execution?: DesktopExecutionPolicy; skills?: DesktopSkillSelection; attachments?: CliAttachmentInput[] }): Promise<unknown> {
@@ -225,7 +242,7 @@ export class AgentManager {
   }
 
   async shutdown(cwd: string, reason = 'ipc.agent.shutdown'): Promise<void> { const projectRoot = await requireDirectory(cwd); await Promise.allSettled([...this.processes.values()].filter(binding => binding.projectRoot === projectRoot).map(binding => this.shutdownBinding(binding, reason))); }
-  async shutdownAll(reason = 'shutdown-all'): Promise<void> { await Promise.allSettled([...this.processes.values()].map(binding => this.shutdownBinding(binding, reason))); this.processes.clear(); this.sessionBindings.clear(); this.sessionResumes.clear(); this.turnBindings.clear(); this.approvalBindings.clear(); this.trustBindings.clear(); this.uploadedAttachments.clear(); this.protocolCacheLoads.clear(); for (const timer of this.recoveryTimers.values()) clearTimeout(timer); this.recoveryTimers.clear(); this.recoveryAttempts.clear(); for (const timer of this.idleTimers.values()) clearTimeout(timer); this.idleTimers.clear(); for (const buffer of this.commandEventBuffers.values()) clearTimeout(buffer.timer); this.commandEventBuffers.clear(); }
+  async shutdownAll(reason = 'shutdown-all'): Promise<void> { await Promise.allSettled([...this.processes.values()].map(binding => this.shutdownBinding(binding, reason))); this.processes.clear(); this.sessionBindings.clear(); this.sessionResumes.clear(); this.turnBindings.clear(); this.approvalBindings.clear(); this.trustBindings.clear(); this.uploadedAttachments.clear(); this.sessionLastUsed.clear(); this.protocolCacheLoads.clear(); for (const timer of this.recoveryTimers.values()) clearTimeout(timer); this.recoveryTimers.clear(); this.recoveryAttempts.clear(); for (const timer of this.idleTimers.values()) clearTimeout(timer); this.idleTimers.clear(); for (const buffer of this.commandEventBuffers.values()) clearTimeout(buffer.timer); this.commandEventBuffers.clear(); }
 
   private createProcess(projectRoot: string, key: string): ProcessBinding {
     const current = this.processes.get(key); if (current !== undefined) return current;
@@ -263,14 +280,14 @@ export class AgentManager {
   private async bindingForApproval(cwd: string, approvalId: string): Promise<ProcessBinding> { return this.bindingForId(await requireDirectory(cwd), this.approvalBindings.get(approvalId), 'approval'); }
   private async bindingForTrust(cwd: string, trustRequestId: string): Promise<ProcessBinding> { return this.bindingForId(await requireDirectory(cwd), this.trustBindings.get(trustRequestId), 'trust'); }
   private async bindingForId(projectRoot: string, binding: ProcessBinding | undefined, kind: string): Promise<ProcessBinding> { if (binding === undefined || binding.projectRoot !== projectRoot) throw new Error(`The requested ${kind} does not belong to this project.`); return binding; }
-  private scheduleRecovery(binding: ProcessBinding): void { const attempt = this.recoveryAttempts.get(binding.key) ?? 0; if (attempt >= 3 || this.recoveryTimers.has(binding.key)) { if (attempt >= 3) { this.removeBinding(binding); void binding.process.shutdown('recovery-exhausted').catch(error => this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', severity: 'error', message: error instanceof Error ? error.message : 'CLI recovery cleanup failed.' })); } return; } const delayMs = 1_000 * 2 ** attempt; this.recoveryAttempts.set(binding.key, attempt + 1); this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', message: `CLI recovery scheduled in ${delayMs}ms (attempt ${attempt + 1}/3).` }); const timer = setTimeout(() => { this.recoveryTimers.delete(binding.key); void binding.process.initialize().then(() => { this.recoveryAttempts.delete(binding.key); }).catch(error => { this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', severity: 'error', message: error instanceof Error ? error.message : 'CLI recovery failed.' }); this.scheduleRecovery(binding); }); }, delayMs); this.recoveryTimers.set(binding.key, timer); }
-  private removeBinding(binding: ProcessBinding): void { this.processes.delete(binding.key); if (binding.sessionId !== undefined) { this.sessionBindings.delete(binding.sessionId); this.uploadedAttachments.delete(binding.sessionId); } this.clearBindingRoutes(binding); this.clearIdle(binding.key); }
+  private scheduleRecovery(binding: ProcessBinding): void { const attempt = this.recoveryAttempts.get(binding.key) ?? 0; if (attempt >= 3 || this.recoveryTimers.has(binding.key)) { if (attempt >= 3) { this.removeBinding(binding); void binding.process.shutdown('recovery-exhausted').catch(error => this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', severity: 'error', message: error instanceof Error ? error.message : 'CLI recovery cleanup failed.' })); } return; } const delayMs = 1_000 * 2 ** attempt; this.recoveryAttempts.set(binding.key, attempt + 1); this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', message: `CLI recovery scheduled in ${delayMs}ms (attempt ${attempt + 1}/3).` }); const timer = setTimeout(() => { this.recoveryTimers.delete(binding.key); void binding.process.initialize().then(() => { if (this.processes.get(binding.key) !== binding) return; this.recoveryAttempts.delete(binding.key); this.touch(binding); }).catch(error => { this.handler.onDiagnostic?.(binding.projectRoot, { kind: 'protocol', severity: 'error', message: error instanceof Error ? error.message : 'CLI recovery failed.' }); this.scheduleRecovery(binding); }); }, delayMs); this.recoveryTimers.set(binding.key, timer); }
+  private removeBinding(binding: ProcessBinding): void { this.processes.delete(binding.key); if (binding.sessionId !== undefined) { this.sessionBindings.delete(binding.sessionId); this.uploadedAttachments.delete(binding.sessionId); this.sessionLastUsed.delete(binding.sessionId); } this.clearBindingRoutes(binding); this.clearIdle(binding.key); }
   private isAttachmentUploaded(sessionId: string, attachmentId: string): boolean { return this.uploadedAttachments.get(sessionId)?.has(attachmentId) === true; }
   private markAttachmentUploaded(sessionId: string, attachmentId: string): void { const ids = this.uploadedAttachments.get(sessionId) ?? new Set<string>(); ids.add(attachmentId); this.uploadedAttachments.set(sessionId, ids); }
   private clearBindingRoutes(binding: ProcessBinding): void { for (const [id, candidate] of this.turnBindings) if (candidate === binding) this.turnBindings.delete(id); for (const [id, candidate] of this.approvalBindings) if (candidate === binding) this.approvalBindings.delete(id); for (const [id, candidate] of this.trustBindings) if (candidate === binding) this.trustBindings.delete(id); }
   private async shutdownBinding(binding: ProcessBinding, reason: string): Promise<void> { this.removeBinding(binding); this.clearRecovery(binding.key); await binding.process.shutdown(reason); }
   private clearRecovery(key: string): void { const timer = this.recoveryTimers.get(key); if (timer !== undefined) clearTimeout(timer); this.recoveryTimers.delete(key); this.recoveryAttempts.delete(key); }
-  private touch(binding: ProcessBinding): void { this.clearIdle(binding.key); const timer = setTimeout(() => { this.idleTimers.delete(binding.key); void this.expireIdle(binding); }, this.idleTimeoutMs); timer.unref?.(); this.idleTimers.set(binding.key, timer); }
+  private touch(binding: ProcessBinding): void { this.clearIdle(binding.key); if (binding.sessionId !== undefined) this.sessionLastUsed.set(binding.sessionId, ++this.lastSessionUse); const timer = setTimeout(() => { this.idleTimers.delete(binding.key); void this.expireIdle(binding); }, this.idleTimeoutMs); timer.unref?.(); this.idleTimers.set(binding.key, timer); }
   private async expireIdle(binding: ProcessBinding): Promise<void> {
     if (this.processes.get(binding.key) !== binding || this.recoveryTimers.has(binding.key)) return;
     if ([...this.turnBindings.values(), ...this.approvalBindings.values(), ...this.trustBindings.values()].includes(binding)) { this.touch(binding); return; }

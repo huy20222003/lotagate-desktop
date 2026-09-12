@@ -32,6 +32,32 @@ export function encodePcm16Wav(samples: Float32Array, sampleRate: number): Uint8
   return new Uint8Array(buffer);
 }
 
+export function encodeRawPcm16Wav(pcm: Uint8Array, sampleRate: number, channels = 1): Uint8Array {
+  if (!Number.isInteger(sampleRate) || sampleRate <= 0) throw new Error('WAV sample rate must be a positive integer.');
+  if (!Number.isInteger(channels) || channels <= 0) throw new Error('WAV channel count must be a positive integer.');
+
+  const bytesPerSample = 2;
+  const blockAlign = channels * bytesPerSample;
+  const dataLength = pcm.byteLength - (pcm.byteLength % blockAlign);
+  const buffer = new ArrayBuffer(44 + dataLength);
+  const view = new DataView(buffer);
+  writeAscii(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataLength, true);
+  writeAscii(view, 8, 'WAVE');
+  writeAscii(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bytesPerSample * 8, true);
+  writeAscii(view, 36, 'data');
+  view.setUint32(40, dataLength, true);
+  new Uint8Array(buffer, 44, dataLength).set(pcm.subarray(0, dataLength));
+  return new Uint8Array(buffer);
+}
+
 function resampleMono(audio: AudioBuffer): Float32Array {
   const sourceLength = audio.length;
   const targetLength = Math.max(1, Math.round(sourceLength * TARGET_SAMPLE_RATE / audio.sampleRate));

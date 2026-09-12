@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }));
 
 import { CliAgentProcess } from './cli-agent-process.js';
+import type { DesktopHostRequest, DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
 
 function createChild(): EventEmitter & Record<string, unknown> {
   const child = new EventEmitter() as EventEmitter & Record<string, unknown>;
@@ -88,5 +89,27 @@ describe('CliAgentProcess request lifecycle', () => {
     await expect(newRequest).resolves.toBe('new-response');
     expect(newChild['kill']).not.toHaveBeenCalled();
     expect(onExit).toHaveBeenCalledOnce();
+  });
+
+  it('rejects host requests above the per-process concurrency limit', async () => {
+    const child = createChild();
+    mocks.spawn.mockReturnValueOnce(child);
+    const onHostRequest = vi.fn(async (request: DesktopHostRequest, signal?: AbortSignal): Promise<DesktopHostResponse> => new Promise(resolve => {
+      signal?.addEventListener('abort', () => resolve({ version: 1, type: 'host.response', requestId: request.requestId, tool: 'filesystem', executionBoundary: 'host', ok: true, result: 'released' }), { once: true });
+    }));
+    const agent = new CliAgentProcess({ cwd: 'C:\\workspace', executable: 'lotagate' }, { onEvent: vi.fn(), onHostRequest });
+    const pending = agent.request('model.list', {});
+    for (let index = 1; index <= 17; index += 1) {
+      (child['stdout'] as EventEmitter).emit('data', `${JSON.stringify({ version: 1, type: 'host.request', requestId: `host-${index}`, tool: 'filesystem', sessionId: 'session-1', runId: 'run-1', action: 'filesystem.read', params: { path: 'README.md' }, executionBoundary: 'host', hostFallback: 'deny' })}\n`);
+    }
+
+    await vi.waitFor(() => expect(onHostRequest).toHaveBeenCalledTimes(16));
+    const responses = (child['stdin'] as { write: ReturnType<typeof vi.fn> }).write.mock.calls
+      .map(([line]) => JSON.parse(String(line)) as { type?: string; requestId?: string; error?: { code?: string } })
+      .filter(value => value.type === 'host.response');
+    expect(responses.find(value => value.requestId === 'host-17')?.error?.code).toBe('HOST_CAPACITY_EXCEEDED');
+
+    await agent.shutdown('test');
+    await expect(pending).rejects.toThrow();
   });
 });

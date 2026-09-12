@@ -266,6 +266,12 @@ export class CliAgentProcess {
     const child = this.child;
     if (child === undefined || this.stopping) return;
     const generation = this.generation;
+    if (this.activeHostRequests.size >= DESKTOP_RUNTIME_LIMITS.maxConcurrentHostRequestsPerProcess) {
+      const response = deniedHostResponse(request, 'The Desktop host is at capacity. Retry the host operation later.', 'HOST_CAPACITY_EXCEEDED');
+      try { await writeLine(child, response, undefined, CLI_DEFAULT_REQUEST_TIMEOUT_MS); }
+      catch (error) { this.failProcess(new CliAgentProcessError('Unable to respond to the CLI host capacity request.', error), child, generation); }
+      return;
+    }
     let response: DesktopHostResponse;
     const controller = new AbortController();
     this.activeHostRequests.set(request.requestId, controller);
@@ -325,7 +331,7 @@ function isResponse(value: unknown): value is { type: 'response'; id: string } {
 function isHostRequest(value: unknown): boolean { return typeof value === 'object' && value !== null && (value as Record<string, unknown>)['type'] === 'host.request'; }
 function isHostCancel(value: unknown): boolean { return typeof value === 'object' && value !== null && (value as Record<string, unknown>)['type'] === 'host.cancel'; }
 function parseHostCancel(value: unknown): DesktopHostCancel { return desktopHostCancelSchema.parse(value); }
-function deniedHostResponse(request: DesktopHostRequest, message: string): DesktopHostResponse { return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message, retryable: false } }; }
+function deniedHostResponse(request: DesktopHostRequest, message: string, code = 'HOST_UNAVAILABLE'): DesktopHostResponse { return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code, category: 'execution', message, retryable: code === 'HOST_CAPACITY_EXCEEDED' } }; }
 async function writeLine(child: ChildProcessWithoutNullStreams, value: unknown, signal?: AbortSignal, timeoutMs = CLI_DEFAULT_REQUEST_TIMEOUT_MS): Promise<void> {
   const payload = `${JSON.stringify(value)}\n`;
   if (signal?.aborted === true) throw abortReason(signal);

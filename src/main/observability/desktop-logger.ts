@@ -1,5 +1,6 @@
 import { appendFile, mkdir, readdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 import { desktopDataDirectory, DESKTOP_DATA_DIRECTORIES } from '../persistence/app-data-paths.js';
 import { LOG_FILE_PATTERN, LOG_RETENTION_DAYS, MAX_STRING_LENGTH, REDACTED, SENSITIVE_KEY } from './observability-constants.js';
 
@@ -13,6 +14,8 @@ export class DesktopLogger {
   private writeChain: Promise<void> = Promise.resolve();
   private lastPrunedDate: string | undefined;
   private retentionDays = LOG_RETENTION_DAYS;
+  private pendingEntries = 0;
+  private pendingBytes = 0;
 
   constructor(private readonly directory = desktopDataDirectory(DESKTOP_DATA_DIRECTORIES.logs)) {}
 
@@ -29,11 +32,22 @@ export class DesktopLogger {
   }
 
   private enqueue(level: LogLevel, event: string, details?: LogDetails): void {
+    const estimatedBytes = estimateRecordBytes(event, details);
+    if (this.pendingEntries >= DESKTOP_RUNTIME_LIMITS.desktopLogQueueEntries || this.pendingBytes + estimatedBytes > DESKTOP_RUNTIME_LIMITS.desktopLogQueueBytes) {
+      if (level === 'warn' || level === 'error') console.error(`Desktop logger queue is full; dropped ${level} event ${event}.`);
+      return;
+    }
+    this.pendingEntries += 1;
+    this.pendingBytes += estimatedBytes;
     const next = this.writeChain
       .catch(() => undefined)
       .then(() => this.write(level, event, details))
       .catch(error => {
         console.error(`Desktop logger write failed for ${event}.`, error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        this.pendingEntries -= 1;
+        this.pendingBytes -= estimatedBytes;
       });
     this.writeChain = next;
   }
@@ -65,6 +79,11 @@ export class DesktopLogger {
       return [unlink(join(directory, file.name)).catch(() => undefined)];
     }));
   }
+}
+
+function estimateRecordBytes(event: string, details?: LogDetails): number {
+  try { return Buffer.byteLength(JSON.stringify({ event, details }), 'utf8') + 128; }
+  catch { return 1_024; }
 }
 
 function redactRecord(value: LogDetails): LogDetails {

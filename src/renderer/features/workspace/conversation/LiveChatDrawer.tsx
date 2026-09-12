@@ -7,14 +7,11 @@ import { IconButton } from '../../../components/ui.js';
 import { useResizableSidePanel } from '../state/use-resizable-panel.js';
 import { recordingToWav } from '../composer/audio-wav.js';
 import type { AssistantFinalResponse } from './assistant-response.js';
+import { DESKTOP_RUNTIME_LIMITS } from '../../../../contracts/runtime-limits.js';
+import { AUDIO_MIME_TYPES, createVoiceActivityMonitor, isAudioDecodeFailure, microphoneErrorMessage, playableAudioMimeType, speechReadySlice, splitSpeechText, toPlayableSpeechAudio } from './live-chat-audio.js';
 
 const LIVE_CHAT_DEFAULT_VOICE = 'alloy';
-const LIVE_CHAT_RESPONSE_FORMAT = 'mp3' as const;
-const LIVE_CHAT_SILENCE_MS = 1_200;
-const LIVE_CHAT_SPEECH_THRESHOLD = 0.035;
-const LIVE_CHAT_STREAM_FLUSH_CHARACTERS = 280;
-const LIVE_CHAT_SPEECH_CHUNK_CHARACTERS = 3_500;
-const AUDIO_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+const LIVE_CHAT_RESPONSE_FORMAT = 'pcm' as const;
 
 type LiveChatStatus = 'starting' | 'listening' | 'transcribing' | 'waiting' | 'speaking' | 'idle' | 'error';
 
@@ -55,6 +52,9 @@ export function LiveChatDrawer({
   const recorderRef = useRef<MediaRecorder | undefined>();
   const recorderStreamRef = useRef<MediaStream | undefined>();
   const chunksRef = useRef<Blob[]>([]);
+  const recordingBytesRef = useRef(0);
+  const recordingTimerRef = useRef<number | undefined>();
+  const discardRecordingRef = useRef(false);
   const vadCleanupRef = useRef<(() => void) | undefined>();
   const activePlaybackRef = useRef<ActiveAudioPlayback | undefined>();
   const mountedRef = useRef(true);
@@ -63,6 +63,7 @@ export function LiveChatDrawer({
   const streamTurnRef = useRef<string | undefined>();
   const streamCursorsRef = useRef(new Map<string, SpeechCursor>());
   const speechQueueRef = useRef<string[]>([]);
+  const speechQueueCharactersRef = useRef(0);
   const speechRunnerRef = useRef(false);
   const speechStreamCompleteRef = useRef(false);
   const fallbackResponseTurnRef = useRef<string | undefined>();
@@ -94,15 +95,24 @@ export function LiveChatDrawer({
     active.resolve();
   }, []);
 
+  const clearSpeechQueue = useCallback(() => {
+    speechQueueRef.current = [];
+    speechQueueCharactersRef.current = 0;
+  }, []);
+
   const stopSpeaking = useCallback(() => {
     speechGenerationRef.current += 1;
-    speechQueueRef.current = [];
+    clearSpeechQueue();
     speechStreamCompleteRef.current = false;
     disposePlayback();
     if (mountedRef.current) updateStatus('idle');
-  }, [disposePlayback, updateStatus]);
+  }, [clearSpeechQueue, disposePlayback, updateStatus]);
 
   const stopListening = useCallback(() => {
+    if (recordingTimerRef.current !== undefined) {
+      window.clearTimeout(recordingTimerRef.current);
+      recordingTimerRef.current = undefined;
+    }
     vadCleanupRef.current?.();
     vadCleanupRef.current = undefined;
     setAudioLevel(0);
@@ -200,18 +210,36 @@ export function LiveChatDrawer({
 
       recorderStreamRef.current = stream;
       chunksRef.current = [];
+      recordingBytesRef.current = 0;
+      discardRecordingRef.current = false;
 
       const mimeType = AUDIO_MIME_TYPES.find(type => MediaRecorder.isTypeSupported(type));
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
 
       recorder.ondataavailable = event => {
         // Keep the first chunk: WebM/Ogg container headers are emitted before VAD hears speech.
-        if (event.data.size > 0) chunksRef.current.push(event.data);
+        if (event.data.size <= 0) return;
+        const nextBytes = recordingBytesRef.current + event.data.size;
+        if (nextBytes > DESKTOP_RUNTIME_LIMITS.liveChatRecordingMaxBytes) {
+          discardRecordingRef.current = true;
+          setError('The recording is too large. Speak for a shorter time and try again.');
+          stopListening();
+          return;
+        }
+        chunksRef.current.push(event.data);
+        recordingBytesRef.current = nextBytes;
       };
 
       recorder.onstop = () => {
         const chunks = [...chunksRef.current];
         chunksRef.current = [];
+        recordingBytesRef.current = 0;
+        const discarded = discardRecordingRef.current;
+        discardRecordingRef.current = false;
+        if (discarded) {
+          if (mountedRef.current) { updateStatus('idle'); scheduleListeningRestart(); }
+          return;
+        }
         const blob = new Blob(chunks, { type: recorder.mimeType });
         void transcribeRecording(blob);
       };
@@ -227,6 +255,9 @@ export function LiveChatDrawer({
       );
 
       recorder.start(250);
+      recordingTimerRef.current = window.setTimeout(() => {
+        if (recorderRef.current === recorder) stopListening();
+      }, DESKTOP_RUNTIME_LIMITS.liveChatRecordingMaxDurationMs);
       updateStatus('listening');
     } catch (reason) {
       stopListening();
@@ -303,6 +334,7 @@ export function LiveChatDrawer({
           }
           return;
         }
+        speechQueueCharactersRef.current = Math.max(0, speechQueueCharactersRef.current - next.length);
 
         const inputs = splitSpeechText(next);
         if (inputs.length === 0) continue;
@@ -318,10 +350,11 @@ export function LiveChatDrawer({
           };
           const audio = await window.lotagate.speech.synthesize(cwd, request);
           if (!mountedRef.current || speechGenerationRef.current !== generation) return;
+          const playableAudio = toPlayableSpeechAudio(audio.audio, audio.mimeType, request.responseFormat);
           try {
-            await playSpeechAudio(audio.audio, audio.mimeType);
+            await playSpeechAudio(playableAudio.bytes, playableAudio.mimeType);
           } catch (reason) {
-            if (!isAudioDecodeFailure(reason)) throw reason;
+            if (!isAudioDecodeFailure(reason) || request.responseFormat === 'pcm') throw reason;
             const fallback = await window.lotagate.speech.synthesize(cwd, {
               ...request,
               responseFormat: 'wav',
@@ -346,7 +379,14 @@ export function LiveChatDrawer({
     (text: string) => {
       const normalized = text.trim();
       if (normalized.length === 0) return;
-      speechQueueRef.current.push(normalized);
+      const bounded = normalized.slice(0, DESKTOP_RUNTIME_LIMITS.liveChatSpeechQueueCharacters);
+      while (speechQueueRef.current.length >= DESKTOP_RUNTIME_LIMITS.liveChatSpeechQueueEntries || speechQueueCharactersRef.current + bounded.length > DESKTOP_RUNTIME_LIMITS.liveChatSpeechQueueCharacters) {
+        const removed = speechQueueRef.current.shift();
+        if (removed === undefined) break;
+        speechQueueCharactersRef.current = Math.max(0, speechQueueCharactersRef.current - removed.length);
+      }
+      speechQueueRef.current.push(bounded);
+      speechQueueCharactersRef.current += bounded.length;
       void runSpeechQueue();
     },
     [runSpeechQueue]
@@ -381,7 +421,7 @@ export function LiveChatDrawer({
 
       if (!skipExistingResponse) {
         speechGenerationRef.current += 1;
-        speechQueueRef.current = [];
+        clearSpeechQueue();
         disposePlayback();
       } else {
         for (const segment of segments) streamCursorsRef.current.set(segment.key, { cursor: segment.text.length, completed: segment.completed });
@@ -416,7 +456,7 @@ export function LiveChatDrawer({
       finalizedSpeechTurnRef.current = responseTurnId;
       void runSpeechQueue();
     }
-  }, [activeTurnId, assistantActivities, assistantFinalResponse, disposePlayback, enqueueSpeech, runSpeechQueue]);
+  }, [activeTurnId, assistantActivities, assistantFinalResponse, clearSpeechQueue, disposePlayback, enqueueSpeech, runSpeechQueue]);
 
   useEffect(() => {
     if (status !== 'waiting' || thinking || agentError === undefined) return;
@@ -523,153 +563,7 @@ export function LiveChatDrawer({
   );
 }
 
-function createVoiceActivityMonitor(
-  stream: MediaStream,
-  onAudioLevel: (level: number) => void,
-  onSilence: () => void
-): () => void {
-  const AudioContextConstructor =
-    window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (AudioContextConstructor === undefined) return () => undefined;
-
-  let context: AudioContext | undefined;
-  try {
-    context = new AudioContextConstructor();
-  } catch {
-    return () => undefined;
-  }
-
-  const source = context.createMediaStreamSource(stream);
-  const analyser = context.createAnalyser();
-  analyser.fftSize = 512;
-  source.connect(analyser);
-
-  const data = new Float32Array(analyser.fftSize);
-  let lastVoiceAt = 0;
-  let heardVoice = false;
-  let frame = 0;
-  let stopped = false;
-
-  const monitor = () => {
-    if (stopped) return;
-    analyser.getFloatTimeDomainData(data);
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      const val = data[i] ?? 0;
-      sum += val * val;
-    }
-    const rms = Math.sqrt(sum / data.length);
-    onAudioLevel(Math.min(1, rms * 4.5));
-
-    const now = performance.now();
-    if (rms >= LIVE_CHAT_SPEECH_THRESHOLD) {
-      heardVoice = true;
-      lastVoiceAt = now;
-    } else if (heardVoice && now - lastVoiceAt >= LIVE_CHAT_SILENCE_MS) {
-      stopped = true;
-      onSilence();
-      return;
-    }
-    frame = window.requestAnimationFrame(monitor);
-  };
-
-  void context.resume();
-  monitor();
-
-  return () => {
-    stopped = true;
-    window.cancelAnimationFrame(frame);
-    try {
-      source.disconnect();
-      analyser.disconnect();
-      void context?.close();
-    } catch {
-      // Stream teardown cleanup
-    }
-  };
-}
-
-function splitSpeechText(text: string): string[] {
-  const remaining = text.trim();
-  if (remaining.length <= LIVE_CHAT_SPEECH_CHUNK_CHARACTERS) return remaining.length === 0 ? [] : [remaining];
-  const chunks: string[] = [];
-  let cursor = remaining;
-  while (cursor.length > LIVE_CHAT_SPEECH_CHUNK_CHARACTERS) {
-    const windowText = cursor.slice(0, LIVE_CHAT_SPEECH_CHUNK_CHARACTERS);
-    const breakAt = Math.max(windowText.lastIndexOf('\n\n'), windowText.lastIndexOf('. '), windowText.lastIndexOf(' '));
-    const cut =
-      breakAt > Math.floor(LIVE_CHAT_SPEECH_CHUNK_CHARACTERS * 0.45)
-        ? breakAt + (windowText[breakAt] === '.' ? 1 : 0)
-        : LIVE_CHAT_SPEECH_CHUNK_CHARACTERS;
-    chunks.push(cursor.slice(0, cut).trim());
-    cursor = cursor.slice(cut).trimStart();
-  }
-  if (cursor.length > 0) chunks.push(cursor);
-  return chunks;
-}
-
-function speechReadySlice(text: string, completed: boolean): { text: string; consumedLength: number } {
-  if (text.length === 0) return { text: '', consumedLength: 0 };
-  if (completed) return { text: text.trim(), consumedLength: text.length };
-
-  let boundary = 0;
-  for (const match of text.matchAll(/[.!?。！？](?:["'”’)\]]*)\s+/gu)) {
-    boundary = (match.index ?? 0) + match[0].length;
-  }
-  const paragraphBoundary = text.lastIndexOf('\n\n');
-  if (paragraphBoundary >= 0) boundary = Math.max(boundary, paragraphBoundary + 2);
-  if (boundary === 0 && text.length >= LIVE_CHAT_STREAM_FLUSH_CHARACTERS) {
-    const whitespace = text.lastIndexOf(' ', LIVE_CHAT_STREAM_FLUSH_CHARACTERS);
-    boundary = whitespace > Math.floor(LIVE_CHAT_STREAM_FLUSH_CHARACTERS * 0.55) ? whitespace + 1 : LIVE_CHAT_STREAM_FLUSH_CHARACTERS;
-  }
-  return boundary === 0 ? { text: '', consumedLength: 0 } : { text: text.slice(0, boundary).trim(), consumedLength: boundary };
-}
-
 function readStreamSegmentId(activity: Activity): string {
   const segmentId = activity.metadata['segmentId'];
   return typeof segmentId === 'string' && segmentId.length > 0 ? segmentId : activity.id;
-}
-
-function playableAudioMimeType(bytes: Uint8Array, providedMimeType: string): string {
-  if (ascii(bytes, 0, 'RIFF') && ascii(bytes, 8, 'WAVE')) return 'audio/wav';
-  if (ascii(bytes, 0, 'OggS')) return 'audio/ogg';
-  if (ascii(bytes, 0, 'fLaC')) return 'audio/flac';
-  if (isAacFrame(bytes)) return 'audio/aac';
-  if (ascii(bytes, 0, 'ID3') || isMpegFrame(bytes)) return 'audio/mpeg';
-  const normalized = providedMimeType.split(';', 1)[0]?.trim().toLowerCase();
-  if (normalized === 'audio/mp3' || normalized === 'audio/x-mp3' || normalized === 'audio/x-mpeg') return 'audio/mpeg';
-  if (normalized === 'audio/x-wav' || normalized === 'audio/vnd.wave') return 'audio/wav';
-  if (normalized === 'application/ogg') return 'audio/ogg';
-  return normalized && normalized.startsWith('audio/') ? normalized : 'audio/mpeg';
-}
-
-function isAudioDecodeFailure(reason: unknown): boolean {
-  const message = reason instanceof Error ? reason.message : String(reason);
-  return /decode audio data|media (?:source|format)|not supported/iu.test(message);
-}
-
-function isMpegFrame(bytes: Uint8Array): boolean {
-  return bytes.length >= 2 && bytes[0] === 0xff && (bytes[1]! & 0xe0) === 0xe0;
-}
-
-function isAacFrame(bytes: Uint8Array): boolean {
-  return bytes.length >= 2 && bytes[0] === 0xff && (bytes[1]! & 0xf6) === 0xf0;
-}
-
-function ascii(bytes: Uint8Array, offset: number, expected: string): boolean {
-  return bytes.length >= offset + expected.length && [...expected].every((character, index) => bytes[offset + index] === character.charCodeAt(0));
-}
-
-function microphoneErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : '';
-  if (/NotAllowedError|SecurityError|permission/iu.test(message)) {
-    return 'Microphone access was denied. Enable microphone access for desktop apps in Windows Privacy settings.';
-  }
-  if (/NotFoundError|DevicesNotFoundError|no microphone/iu.test(message)) {
-    return 'No microphone is available. Connect a microphone and try again.';
-  }
-  if (/NotReadableError|TrackStartError|busy/iu.test(message)) {
-    return 'The microphone is busy or unavailable to this app.';
-  }
-  return message || 'Microphone recording failed. Check the Windows microphone settings and try again.';
 }

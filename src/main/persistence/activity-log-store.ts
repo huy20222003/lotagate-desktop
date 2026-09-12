@@ -59,7 +59,7 @@ export class ActivityLogStore {
   private readonly compactionBytes: number;
   private readonly compactionOperations: number;
   private writeChain: Promise<void> = Promise.resolve();
-  private activitiesCache: Activity[] | undefined;
+  private loaded = false;
   private sequence = 0;
   private bytesSinceSnapshot = 0;
   private operationsSinceSnapshot = 0;
@@ -75,25 +75,24 @@ export class ActivityLogStore {
 
   async read(): Promise<Activity[]> {
     await this.writeChain;
-    await this.ensureLoaded();
-    return this.activitiesCache!;
+    return this.readAll();
   }
 
   async readPage(taskId: string, options: { limit?: number; before?: string } = {}): Promise<ActivityPage> {
-    await this.read();
+    const activities = await this.read();
     const limit = Math.max(1, Math.min(options.limit ?? 40, 100));
     const collected: Activity[] = [];
-    const cursorIndex = options.before === undefined ? -1 : this.activitiesCache!.findIndex(activity => activity.taskId === taskId && activity.id === options.before);
-    const startIndex = cursorIndex < 0 ? this.activitiesCache!.length - 1 : cursorIndex - 1;
+    const cursorIndex = options.before === undefined ? -1 : activities.findIndex(activity => activity.taskId === taskId && activity.id === options.before);
+    const startIndex = cursorIndex < 0 ? activities.length - 1 : cursorIndex - 1;
     for (let index = startIndex; index >= 0; index -= 1) {
-      const activity = this.activitiesCache![index]!;
+      const activity = activities[index]!;
       if (activity.taskId !== taskId) continue;
       collected.push(activity);
       if (collected.length > limit) break;
     }
     const hasMore = collected.length > limit;
-    const activities = collected.slice(0, limit).reverse();
-    return { activities, nextCursor: hasMore ? activities[0]?.id ?? null : null, hasMore };
+    const pageActivities = collected.slice(0, limit).reverse();
+    return { activities: pageActivities, nextCursor: hasMore ? pageActivities[0]?.id ?? null : null, hasMore };
   }
 
   async append(activity: Activity): Promise<void> {
@@ -104,7 +103,6 @@ export class ActivityLogStore {
       const normalizedActivity = normalizeActivity(activity);
       const record: ActivityLogRecord = { version: ACTIVITY_LOG_VERSION, type: 'append', sequence: nextSequence, activity: normalizedActivity };
       await this.appendRecord(record);
-      this.activitiesCache = [...this.activitiesCache!, normalizedActivity];
       this.sequence = nextSequence;
       this.recordOperation(record);
     });
@@ -121,7 +119,7 @@ export class ActivityLogStore {
       if (deltas.length === 0) return;
       await this.ensureLoaded();
       await this.compactIfNeeded();
-      const next = [...this.activitiesCache!];
+      const next = await this.readAll();
       const records: ActivityLogRecord[] = [];
       for (const delta of deltas) {
         const turnId = delta.metadata['turnId'];
@@ -139,7 +137,6 @@ export class ActivityLogStore {
         updated.push(nextActivity);
       }
       await this.appendRecords(records, { sync: false });
-      this.activitiesCache = next;
       this.sequence = records[records.length - 1]?.sequence ?? this.sequence;
       for (const record of records) this.recordOperation(record);
     });
@@ -151,17 +148,17 @@ export class ActivityLogStore {
     await this.enqueue(async () => {
       await this.ensureLoaded();
       await this.compactIfNeeded();
-      const actualIndex = this.activitiesCache!.findIndex(activity => activity.taskId === taskId && activity.kind === 'assistant' && activity.metadata['segmentId'] === segmentId);
+      const activities = await this.readAll();
+      const actualIndex = activities.findIndex(activity => activity.taskId === taskId && activity.kind === 'assistant' && activity.metadata['segmentId'] === segmentId);
       if (actualIndex < 0) return;
-      const previous = activitySchema.parse(this.activitiesCache![actualIndex]);
+      const previous = activitySchema.parse(activities[actualIndex]);
       const nextMetadata = { ...previous.metadata, ...metadata, assistantPhase: phase };
       if (previous.metadata['assistantPhase'] === phase && Object.keys(metadata).every(key => previous.metadata[key] === metadata[key])) { updated = previous; return; }
       updated = activitySchema.parse({ ...previous, metadata: nextMetadata });
       const record: ActivityLogRecord = { version: ACTIVITY_LOG_VERSION, type: 'assistant.segment.completed', sequence: this.sequence + 1, taskId, segmentId, phase, ...(Object.keys(metadata).length === 0 ? {} : { metadata }) };
       await this.appendRecord(record);
-      const next = [...this.activitiesCache!];
+      const next = [...activities];
       next[actualIndex] = updated;
-      this.activitiesCache = next;
       this.sequence = record.sequence;
       this.recordOperation(record);
     });
@@ -173,7 +170,7 @@ export class ActivityLogStore {
     await this.enqueue(async () => {
       await this.ensureLoaded();
       await this.compactIfNeeded();
-      const next = [...this.activitiesCache!];
+      const next = await this.readAll();
       const records: ActivityLogRecord[] = [];
       for (const [index, activity] of next.entries()) {
         if (activity.taskId !== taskId || activity.kind !== 'assistant' || activity.metadata['turnId'] !== turnId || activity.metadata['assistantPhase'] !== 'progress') continue;
@@ -188,7 +185,6 @@ export class ActivityLogStore {
       }
       if (records.length === 0) return;
       await this.appendRecords(records);
-      this.activitiesCache = next;
       this.sequence = records[records.length - 1]!.sequence;
       for (const record of records) this.recordOperation(record);
     });
@@ -199,8 +195,9 @@ export class ActivityLogStore {
     let updated: Activity | undefined;
     await this.enqueue(async () => {
       await this.ensureLoaded();
+      const current = await this.readAll();
       const replacementId = assistantReplacementId(taskId, segmentId);
-      const existing = this.activitiesCache!.find(activity => activity.id === replacementId);
+      const existing = current.find(activity => activity.id === replacementId);
       const replacement = activitySchema.parse({
         id: replacementId,
         taskId,
@@ -209,20 +206,13 @@ export class ActivityLogStore {
         metadata: { ...metadata, turnId, segmentId, assistantPhase: 'final', assistantReplacement: true },
         createdAt: existing?.createdAt ?? new Date().toISOString(),
       });
-      const next = this.activitiesCache!
+      const next = current
         .filter(activity => activity.id !== replacementId)
         .map(activity => activity.taskId === taskId && activity.kind === 'assistant' && activity.metadata['turnId'] === turnId
           ? { ...activity, metadata: { ...activity.metadata, assistantPhase: 'progress' } }
           : activity);
       next.push(replacement);
-      const previous = this.activitiesCache;
-      this.activitiesCache = next.map(activity => activitySchema.parse(activity));
-      try {
-        await this.writeSnapshot();
-      } catch (error) {
-        this.activitiesCache = previous;
-        throw error;
-      }
+      await this.writeSnapshot(next.map(activity => activitySchema.parse(activity)));
       updated = replacement;
     });
     if (updated === undefined) throw new Error('Assistant response replacement could not be persisted.');
@@ -236,20 +226,26 @@ export class ActivityLogStore {
   }
 
   private async ensureLoaded(): Promise<void> {
-    if (this.activitiesCache !== undefined) return;
+    if (this.loaded) return;
     let raw: string;
     try {
       raw = await readFile(this.filePath, 'utf8');
     } catch (error) {
       if (!isMissingFile(error)) throw error;
       await this.importLegacyIfPresent();
-      if (this.activitiesCache === undefined) {
-        this.activitiesCache = [];
-        this.sequence = 0;
-      }
+      this.loaded = true;
       return;
     }
-    await this.replay(raw);
+    await this.replayMetadata(raw);
+    this.loaded = true;
+  }
+
+  private async readAll(): Promise<Activity[]> {
+    await this.ensureLoaded();
+    let raw: string;
+    try { raw = await readFile(this.filePath, 'utf8'); }
+    catch (error) { if (isMissingFile(error)) return []; throw error; }
+    return this.replay(raw);
   }
 
   private async importLegacyIfPresent(): Promise<void> {
@@ -262,12 +258,38 @@ export class ActivityLogStore {
       throw error;
     }
     const activities = activitySchema.array().parse(JSON.parse(raw)).map(normalizeActivity);
-    this.activitiesCache = activities;
     this.sequence = 0;
-    await this.writeSnapshot();
+    await this.writeSnapshot(activities);
   }
 
-  private async replay(raw: string): Promise<void> {
+  private async replayMetadata(raw: string): Promise<void> {
+    let sequence = -1;
+    let bytesSinceSnapshot = 0;
+    let operationsSinceSnapshot = 0;
+    const lines = raw.split(/\r?\n/u);
+    const lastRecordIndex = lines.reduce((lastIndex, line, index) => line.trim() === '' ? lastIndex : index, -1);
+    const validLines: string[] = [];
+    for (const [index, line] of lines.entries()) {
+      if (line.trim() === '') continue;
+      let record: ActivityLogRecord;
+      try { record = activityLogRecordSchema.parse(JSON.parse(line)); }
+      catch (error) {
+        if (index !== lastRecordIndex) throw new Error(`Activity log record ${index + 1} is invalid.`, { cause: error });
+        await this.repairTrailingRecord(validLines);
+        break;
+      }
+      if (record.sequence <= sequence) throw new Error('Activity log sequence is not strictly increasing.');
+      validLines.push(line);
+      if (record.type === 'snapshot') { bytesSinceSnapshot = 0; operationsSinceSnapshot = 0; }
+      else { bytesSinceSnapshot += Buffer.byteLength(`${line}\n`, 'utf8'); operationsSinceSnapshot += 1; }
+      sequence = record.sequence;
+    }
+    this.sequence = Math.max(sequence, 0);
+    this.bytesSinceSnapshot = bytesSinceSnapshot;
+    this.operationsSinceSnapshot = operationsSinceSnapshot;
+  }
+
+  private async replay(raw: string): Promise<Activity[]> {
     let activities: Activity[] = [];
     let sequence = -1;
     let bytesSinceSnapshot = 0;
@@ -306,10 +328,11 @@ export class ActivityLogStore {
       }
       sequence = record.sequence;
     }
-    this.activitiesCache = activitySchema.array().parse(activities.map(normalizeActivity));
+    const normalizedActivities = activitySchema.array().parse(activities.map(normalizeActivity));
     this.sequence = Math.max(sequence, 0);
     this.bytesSinceSnapshot = bytesSinceSnapshot;
     this.operationsSinceSnapshot = operationsSinceSnapshot;
+    return normalizedActivities;
   }
 
   private async repairTrailingRecord(validLines: string[]): Promise<void> {
@@ -353,8 +376,9 @@ export class ActivityLogStore {
     await this.writeSnapshot();
   }
 
-  private async writeSnapshot(): Promise<void> {
-    const record: ActivityLogRecord = { version: ACTIVITY_LOG_VERSION, type: 'snapshot', sequence: this.sequence, activities: this.activitiesCache ?? [] };
+  private async writeSnapshot(activities?: readonly Activity[]): Promise<void> {
+    const snapshot = activities === undefined ? await this.readAll() : activities;
+    const record: ActivityLogRecord = { version: ACTIVITY_LOG_VERSION, type: 'snapshot', sequence: this.sequence, activities: [...snapshot] };
     const raw = `${JSON.stringify(record)}\n`;
     await mkdir(dirname(this.filePath), { recursive: true });
     const temporary = `${this.filePath}.${process.pid}.snapshot.tmp`;

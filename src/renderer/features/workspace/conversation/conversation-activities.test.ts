@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Activity } from '../../../../contracts/ipc/v1/workspace.js';
-import { mergeChatActivities } from './conversation-activities.js';
+import { activitiesForUserTurn, mergeChatActivities } from './conversation-activities.js';
 
 function activity(kind: Activity['kind'], text: string, turnId?: string): Activity {
   return { id: `${kind}-${text}`, taskId: 'task-1', kind, text, metadata: turnId === undefined ? {} : { turnId }, createdAt: '2026-08-26T00:00:00.000Z' };
@@ -19,7 +19,7 @@ describe('mergeChatActivities', () => {
     expect(result[1]?.kind).toBe('error');
   });
 
-  it('keeps interrupted progress in Worked For instead of moving it into the final response', () => {
+  it('keeps interrupted progress visible instead of dropping it from the transcript', () => {
     const result = mergeChatActivities([
       activity('user', 'Open Paint'),
       { ...activity('assistant', 'I am checking the canvas.', 'turn-3'), metadata: { turnId: 'turn-3', segmentId: 'run-3:1', assistantPhase: 'progress', assistantInterrupted: true } },
@@ -27,8 +27,16 @@ describe('mergeChatActivities', () => {
     ]);
 
     expect(result).toHaveLength(2);
-    expect(result[1]?.kind).toBe('error');
-    expect(result[1]?.text).toBe('The response could not be completed.');
+    expect(result[1]?.kind).toBe('assistant');
+    expect(result[1]?.text).toBe('I am checking the canvas.\n\nThe response could not be completed.');
+  });
+
+  it('collects tool activities after a user message until the next user message', () => {
+    const user = activity('user', 'Open Paint');
+    const tool = activity('tool', 'Paint opened.', 'turn-4');
+    const nextUser = activity('user', 'Now close it');
+
+    expect(activitiesForUserTurn([user, tool, nextUser], user)).toEqual([tool]);
   });
 
   it('does not restore transient command statuses into the transcript', () => {

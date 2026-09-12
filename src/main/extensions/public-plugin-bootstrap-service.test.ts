@@ -46,4 +46,18 @@ describe('PublicPluginBootstrapService', () => {
     expect(commands.commandExecuteResult).not.toHaveBeenCalled();
     expect(sources.resolvePublicPluginSource).not.toHaveBeenCalled();
   });
+
+  it('stops before starting new CLI work when Desktop shutdown begins', async () => {
+    const store = createStore({ completed: false });
+    const commands = { commandExecuteResult: vi.fn() };
+    const sources = { resolvePublicPluginSource: vi.fn() };
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const service = new PublicPluginBootstrapService(sources, commands, logger, 'C:\\user-data', store, undefined, () => true);
+
+    await service.run();
+
+    expect(commands.commandExecuteResult).not.toHaveBeenCalled();
+    expect(store.write).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith('public.plugins.bootstrap.cancelled', { attempted: 0, installed: 0 });
+  });
 });

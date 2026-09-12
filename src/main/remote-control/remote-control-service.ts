@@ -17,11 +17,12 @@ import type { ArtifactService } from '../artifacts/artifact-service.js';
 import { artifactKind } from '../artifacts/artifact-kind.js';
 import type { WorkspaceFileSuggestions } from '../workspaces/workspace-file-suggestions.js';
 import type { SettingsService } from '../settings/settings-service.js';
+import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 import { normalizeRemoteServerGlobalPrefix, remoteServerRoute } from './remote-server-paths.js';
 import { MAX_ACTIVITY_ITEMS, MAX_PENDING_TRUST_REQUESTS, MAX_RECONNECT_DELAY_MS, MAX_TASKS_PER_WORKSPACE, MAX_TIMER_DELAY_MS, RECONNECT_STABLE_MS, REMOTE_REQUEST_TIMEOUT_MS, REMOTE_UPLOAD_CLEANUP_INTERVAL_MS, REMOTE_UPLOAD_TTL_MS } from './remote-control-constants.js';
 
 interface RemoteServerSessionResponse { sessionId: string; hostToken: string; pairingToken: string; expiresAt: string; connectUrl: string }
-interface RemoteRuntimeSession { publicState: RemoteControlSession; hostToken: string; socket: WebSocket | undefined; keyPair: RemoteKeyPair; cipher: RemoteCipher | undefined; sendChain: Promise<void>; nextSequence: number; lastReceivedSequence: number; reconnectAttempt: number; stopping: boolean; reconnectTimer: ReturnType<typeof setTimeout> | undefined; reconnectStableTimer: ReturnType<typeof setTimeout> | undefined; expiryTimer: ReturnType<typeof setTimeout> | undefined; uploadCleanupTimer: ReturnType<typeof setTimeout> | undefined; uploadStartReservations: number; uploads: Map<string, RemoteUpload>; requestLedger: Map<string, Promise<RemoteResponse>> }
+interface RemoteRuntimeSession { publicState: RemoteControlSession; hostToken: string; socket: WebSocket | undefined; keyPair: RemoteKeyPair; cipher: RemoteCipher | undefined; sendChain: Promise<void>; sendQueueEntries: number; sendQueueBytes: number; nextSequence: number; lastReceivedSequence: number; reconnectAttempt: number; stopping: boolean; reconnectTimer: ReturnType<typeof setTimeout> | undefined; reconnectStableTimer: ReturnType<typeof setTimeout> | undefined; expiryTimer: ReturnType<typeof setTimeout> | undefined; uploadCleanupTimer: ReturnType<typeof setTimeout> | undefined; uploadStartReservations: number; uploads: Map<string, RemoteUpload>; requestLedger: Map<string, Promise<RemoteResponse>> }
 interface RemoteResponse { type: 'command.result' | 'command.error'; payload: Record<string, unknown> }
 interface RemoteUpload { uploadId: string; taskId: string; name: string; mimeType: string; sizeBytes: number; chunkCount: number; chunks: Map<number, Buffer>; receivedBytes: number; expiresAt: number; completion?: Promise<unknown> }
 
@@ -50,7 +51,7 @@ export class RemoteControlService {
     if (!response.ok) throw new Error(`Remote server could not create a session (HTTP ${response.status}).`);
     const value = parseServerSession(await response.json());
     const publicState = remoteControlSessionSchema.parse({ sessionId: value.sessionId, connectUrl: value.connectUrl, expiresAt: value.expiresAt, status: 'connecting' });
-    const runtime: RemoteRuntimeSession = { publicState, hostToken: value.hostToken, socket: undefined, keyPair: createRemoteKeyPair(), cipher: undefined, sendChain: Promise.resolve(), nextSequence: 0, lastReceivedSequence: -1, reconnectAttempt: 0, stopping: false, reconnectTimer: undefined, reconnectStableTimer: undefined, expiryTimer: undefined, uploadCleanupTimer: undefined, uploadStartReservations: 0, uploads: new Map(), requestLedger: new Map() };
+    const runtime: RemoteRuntimeSession = { publicState, hostToken: value.hostToken, socket: undefined, keyPair: createRemoteKeyPair(), cipher: undefined, sendChain: Promise.resolve(), sendQueueEntries: 0, sendQueueBytes: 0, nextSequence: 0, lastReceivedSequence: -1, reconnectAttempt: 0, stopping: false, reconnectTimer: undefined, reconnectStableTimer: undefined, expiryTimer: undefined, uploadCleanupTimer: undefined, uploadStartReservations: 0, uploads: new Map(), requestLedger: new Map() };
     this.runtime = runtime;
     this.scheduleExpiry(runtime, value.expiresAt);
     this.emit();
@@ -76,7 +77,7 @@ export class RemoteControlService {
   publishAgentEvent(cwd: string, event: DesktopEvent): void {
     this.trackTrustRequest(cwd, event);
     if (!this.isConnected()) return;
-    this.sendCurrent('event', { source: 'agent', cwd: workspaceKey(cwd), event: sanitizeValue(event) });
+    this.sendCurrent('event', { source: 'agent', cwd: workspaceKey(cwd), event: sanitizeValue(event) }, 'best-effort');
   }
 
   observeAgentEvent(event: DesktopEvent): void {
@@ -93,7 +94,7 @@ export class RemoteControlService {
 
   publishApprovalRequest(request: DesktopApprovalRequest): void { if (this.isConnected()) this.sendCurrent('approval.requested', sanitizeValue(request)); }
   publishApprovalResolution(resolution: DesktopApprovalResolution): void { if (this.isConnected()) this.sendCurrent('approval.resolved', sanitizeValue(resolution)); }
-  publishAutomationState(event: AutomationStateEvent): void { if (this.isConnected()) this.sendCurrent('automation.state', sanitizeValue(event)); }
+  publishAutomationState(event: AutomationStateEvent): void { if (this.isConnected()) this.sendCurrent('automation.state', sanitizeValue(event), 'best-effort'); }
 
   private connect(runtime: RemoteRuntimeSession, sessionId: string): void {
     const serverUrl = normalizeServerUrl(this.options.serverUrl);
@@ -382,14 +383,27 @@ export class RemoteControlService {
     return this.options.agents.turnCancel(task.cwd, task.turnId);
   }
 
-  private sendCurrent(type: string, payload: unknown): void { const runtime = this.runtime; if (runtime?.socket !== undefined) this.send(runtime, runtime.socket, type, payload); }
-  private send(runtime: RemoteRuntimeSession, socket: WebSocket, type: string, payload: unknown): void {
+  private sendCurrent(type: string, payload: unknown, delivery: 'reliable' | 'best-effort' = 'reliable'): void { const runtime = this.runtime; if (runtime?.socket !== undefined) this.send(runtime, runtime.socket, type, payload, delivery); }
+  private send(runtime: RemoteRuntimeSession, socket: WebSocket, type: string, payload: unknown, delivery: 'reliable' | 'best-effort' = 'reliable'): void {
     if (runtime.cipher === undefined) return;
+    const sanitizedPayload = sanitizeOutboundPayload(type, payload);
+    const estimatedBytes = estimateRemotePayloadBytes(sanitizedPayload);
+    if (runtime.sendQueueEntries >= DESKTOP_RUNTIME_LIMITS.remoteSendQueueEntries || runtime.sendQueueBytes + estimatedBytes > DESKTOP_RUNTIME_LIMITS.remoteSendQueueBytes) {
+      if (delivery === 'best-effort') return;
+      this.options.logger.error('remote-control.send.queue-overflow', { type, entries: runtime.sendQueueEntries, bytes: runtime.sendQueueBytes });
+      socket.terminate();
+      return;
+    }
+    runtime.sendQueueEntries += 1;
+    runtime.sendQueueBytes += estimatedBytes;
     const sequence = runtime.nextSequence++;
     runtime.sendChain = runtime.sendChain.catch(() => undefined).then(() => {
       if (this.runtime !== runtime || runtime.stopping || runtime.socket !== socket || socket.readyState !== WebSocket.OPEN || runtime.cipher === undefined) return;
-      const envelope = runtime.cipher.encrypt(type, sanitizeOutboundPayload(type, payload), randomUUID(), sequence);
+      const envelope = runtime.cipher.encrypt(type, sanitizedPayload, randomUUID(), sequence);
       try { socket.send(JSON.stringify(envelope)); } catch (error) { this.options.logger.warn('remote-control.socket.send.failed', { message: error instanceof Error ? error.message : 'Remote socket send failed.' }); socket.terminate(); }
+    }).finally(() => {
+      runtime.sendQueueEntries -= 1;
+      runtime.sendQueueBytes -= estimatedBytes;
     });
   }
 
@@ -423,6 +437,7 @@ function isAuthAccepted(value: unknown): boolean { return isRecord(value) && val
 function isPeerKeyUpdated(value: unknown): boolean { return isRecord(value) && value['type'] === 'peer.key.updated'; }
 function workspaceKey(cwd: string): string { return cwd.replace(/\\/gu, '/').split('/').at(-1) ?? 'workspace'; }
 function scheduleQueueDrain(operation: () => Promise<void>): void { const timer = setTimeout(() => { void operation(); }, 100); timer.unref?.(); }
+function estimateRemotePayloadBytes(payload: unknown): number { try { return Buffer.byteLength(JSON.stringify(payload), 'utf8') + 512; } catch { return 1_024; } }
 function sanitizeValue(value: unknown, depth = 0): unknown { if (typeof value === 'string') return limitText(value); if (value === null || typeof value !== 'object') return value; if (depth > 5) return '[truncated]'; if (Array.isArray(value)) return value.slice(0, 100).map(item => sanitizeValue(item, depth + 1)); if (!isRecord(value)) return value; return Object.fromEntries(Object.entries(value).slice(0, 100).map(([key, item]) => [key, /(?:token|secret|password|authorization|cookie|api[-_]?key|private[-_]?key)/iu.test(key) ? '[redacted]' : sanitizeValue(item, depth + 1)])); }
 function sanitizeCommandResult(command: RemoteCommand, result: unknown): unknown {
   if (command.action !== 'artifact.read') return sanitizeValue(result);

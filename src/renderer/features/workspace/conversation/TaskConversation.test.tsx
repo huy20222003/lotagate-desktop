@@ -137,6 +137,29 @@ describe('TaskConversation live state', () => {
     expect(screen.queryByLabelText('Thinking...')).not.toBeInTheDocument();
   });
 
+  it('keeps completed work visible after a turn is cancelled before an assistant response arrives', () => {
+    render(<TaskConversation
+      task={{ ...task, status: 'cancelled' }}
+      activities={[
+        { id: 'user-1', taskId: task.id, kind: 'user', text: 'Check the weather', metadata: {}, createdAt: task.createdAt },
+        { id: 'timing-1', taskId: task.id, kind: 'context', text: 'Desktop turn timing marker.', metadata: { turnId: 'turn-cancelled', desktopTurnTiming: { phase: 'started', timestampMs: 1 } }, createdAt: task.createdAt },
+        { id: 'tool-1', taskId: task.id, kind: 'tool', text: 'Open webpage completed.', metadata: { turnId: 'turn-cancelled', actionId: 'action-1', toolName: 'browser.navigate', status: 'completed' }, createdAt: task.createdAt },
+        { id: 'timing-2', taskId: task.id, kind: 'context', text: 'Desktop turn timing marker.', metadata: { turnId: 'turn-cancelled', desktopTurnTiming: { phase: 'cancelled', timestampMs: 2 } }, createdAt: task.createdAt },
+      ]}
+      activityAttachments={{}}
+      activityArtifacts={{}}
+      fileChangesByTurn={{}}
+      onOpenFileChanges={() => undefined}
+      thinking={false}
+      finalResponseReceived={false}
+      turnTimings={{ 'turn-cancelled': { startedAt: 1, endedAt: 2 } }}
+      onTrust={async () => undefined}
+    />);
+
+    expect(screen.getByText('Worked for 0s')).toBeInTheDocument();
+    expect(screen.getByText('Ran Open webpage')).toBeInTheDocument();
+  });
+
   it('keeps file changes attached to a failed turn instead of rendering them at transcript end', () => {
     render(<TaskConversation
       task={task}

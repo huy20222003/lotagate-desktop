@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import type { DesktopSettingsSnapshot } from '../../../../contracts/ipc/v1/settings.js';
 import type { TerminalSession } from '../../../../contracts/ipc/v1/workspace.js';
+import { DESKTOP_RUNTIME_LIMITS } from '../../../../contracts/runtime-limits.js';
 import { IconButton, Tabs } from '../../../components/ui.js';
 import { createComposerApprovalInput } from './approval-request.js';
 import { useResizableBottomPanel, useResizableSidePanel } from '../state/use-resizable-panel.js';
@@ -33,7 +34,7 @@ export function TerminalPanel({ cwd, onClose, placement = 'bottom', open = true 
   useEffect(() => window.lotagate.terminal.onOutput(output => {
     const terminal = terminalsRef.current.get(output.sessionId);
     if (terminal) terminal.write(output.data);
-    else pendingOutputRef.current.set(output.sessionId, `${pendingOutputRef.current.get(output.sessionId) ?? ''}${output.data}`);
+    else pendingOutputRef.current.set(output.sessionId, appendBoundedOutput(pendingOutputRef.current.get(output.sessionId) ?? '', output.data));
   }), []);
 
   const registerTerminal = useCallback((sessionId: string, terminal: XTerm) => {
@@ -189,4 +190,17 @@ function terminalTheme(): ITheme {
 
 function terminalFontFamily(): string {
   return '"Cascadia Mono", "Cascadia Code", Consolas, "Courier New", Menlo, Monaco, monospace';
+}
+
+function appendBoundedOutput(existing: string, next: string): string {
+  const combined = `${existing}${next}`;
+  if (new TextEncoder().encode(combined).byteLength <= DESKTOP_RUNTIME_LIMITS.terminalPendingOutputBytes) return combined;
+  const marker = '\r\n[terminal output truncated]\r\n';
+  let result = '';
+  for (const character of combined) {
+    const candidate = `${result}${character}${marker}`;
+    if (new TextEncoder().encode(candidate).byteLength > DESKTOP_RUNTIME_LIMITS.terminalPendingOutputBytes) break;
+    result += character;
+  }
+  return `${result}${marker}`;
 }

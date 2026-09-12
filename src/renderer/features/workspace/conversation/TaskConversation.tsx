@@ -3,7 +3,7 @@ import type { Activity, Artifact, CheckpointStatus, SubagentSnapshot, Task, Trus
 import { EmptyState } from '../../../components/ui.js';
 import type { AttachmentPreview } from '../../../services/attachment-types.js';
 import type { FileChangeSummariesByTurn } from '../review/file-changes.js';
-import { isAssistantProgressActivity, mergeChatActivities } from './conversation-activities.js';
+import { activitiesForUserTurn, isAssistantProgressActivity, mergeChatActivities } from './conversation-activities.js';
 import { TrustCard } from '../shell/WorkspaceOverlays.js';
 import { ChatMessage } from './ChatMessage.js';
 import { ElapsedTime, type TurnTiming } from './ElapsedTime.js';
@@ -28,6 +28,7 @@ interface TurnActivityDetails {
 export function TaskConversation({ task, projectRoot, activities, activityAttachments, activityArtifacts, fileChangesByTurn, checkpointStatuses = {}, undoingTurns = {}, onUndoFileChanges = async () => undefined, onOpenFileChanges, onOpenAttachment = () => undefined, statusText, thinking, finalResponseReceived, thinkingStartedAt, turnTimings, trust, onTrust, subagents = [] }: { task?: Task | undefined; projectRoot?: string | undefined; activities: Activity[]; activityAttachments: Record<string, AttachmentPreview[]>; activityArtifacts: Record<string, Artifact[]>; fileChangesByTurn: FileChangeSummariesByTurn; checkpointStatuses?: Record<string, CheckpointStatus>; undoingTurns?: Record<string, boolean>; onUndoFileChanges?: (turnId: string) => Promise<void>; onOpenFileChanges: OpenFileChangesHandler; onOpenAttachment?: OpenFileTargetHandler; statusText?: string | undefined; thinking: boolean; finalResponseReceived: boolean; thinkingStartedAt?: number | undefined; turnTimings: Record<string, TurnTiming>; trust?: TrustRequest | undefined; onTrust: (trusted: boolean) => Promise<void>; subagents?: readonly SubagentSnapshot[] }) {
   const transcript = useMemo(() => mergeChatActivities(activities), [activities]);
   const conversationTimeSeparatorIds = useMemo(() => getConversationTimeSeparatorIds(transcript), [transcript]);
+  const userTurnActivities = useMemo(() => new Map(transcript.filter(activity => activity.kind === 'user').map(activity => [activity.id, activitiesForUserTurn(activities, activity)])), [activities, transcript]);
   const activityDetailsByTurn = useMemo(() => {
     const grouped = new Map<string, TurnActivityDetails>();
     for (const activity of activities) {
@@ -60,10 +61,27 @@ export function TaskConversation({ task, projectRoot, activities, activityAttach
   const messageWorkspaceRoot = projectRoot ?? task.cwd;
   const messages = transcript.map(activity => {
     const turnId = activityTurnId(activity);
-    const turnDetails = turnId === undefined ? undefined : activityDetailsByTurn.get(turnId);
+    const userTurnDetails = activity.kind === 'user' ? userTurnActivities.get(activity.id) : undefined;
+    const userTurnId = userTurnDetails?.map(activity => activityTurnId(activity)).find((value): value is string => value !== undefined);
+    const messageTurnId = turnId ?? userTurnId;
+    const turnDetails = messageTurnId === undefined ? undefined : activityDetailsByTurn.get(messageTurnId);
     const turnActivities = turnDetails?.all ?? EMPTY_ACTIVITIES;
+    const messageTimingValue = activity.kind === 'user'
+      ? userTurnId === undefined ? undefined : turnTimings[userTurnId]
+      : messageTiming(activity, turnTimings).timing;
+    const hasResponse = userTurnDetails?.some(item => item.kind === 'error' || (item.kind === 'assistant' && !isAssistantProgressActivity(item))) === true;
+    const userWorkedForActivities = activity.kind === 'user'
+      && !thinking
+      && !hasResponse
+      && userTurnId !== undefined
+      && userTurnDetails !== undefined
+      && userTurnDetails.some(item => item.kind === 'tool' || isContextCompactionActivity(item))
+      ? userTurnDetails
+      : undefined;
     const fileChangeSummary = !thinking && (activity.kind === 'assistant' || activity.kind === 'error') && turnId !== undefined ? fileChangesByTurn[turnId] : undefined;
-    return <Fragment key={activity.id}>{conversationTimeSeparatorIds.has(activity.id) ? <ConversationTimeSeparator timestamp={activity.createdAt} /> : null}<ChatMessage activity={activity} attachments={activityAttachments[activity.id] ?? EMPTY_ATTACHMENTS} artifacts={activityArtifacts[activity.id] ?? EMPTY_ARTIFACTS} workspaceCwd={messageWorkspaceRoot} onUndoFileChanges={onUndoFileChanges} undoState={turnId === undefined ? undefined : checkpointStatuses[turnId]?.state} undoBusy={turnId === undefined ? false : undoingTurns[turnId] === true} onOpenFileChanges={onOpenFileChanges} onOpenAttachment={onOpenAttachment} activities={turnActivities} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...messageTiming(activity, turnTimings)} /></Fragment>;
+    const chatMessage = <ChatMessage activity={activity} attachments={activityAttachments[activity.id] ?? EMPTY_ATTACHMENTS} artifacts={activityArtifacts[activity.id] ?? EMPTY_ARTIFACTS} workspaceCwd={messageWorkspaceRoot} onUndoFileChanges={onUndoFileChanges} undoState={messageTurnId === undefined ? undefined : checkpointStatuses[messageTurnId]?.state} undoBusy={messageTurnId === undefined ? false : undoingTurns[messageTurnId] === true} onOpenFileChanges={onOpenFileChanges} onOpenAttachment={onOpenAttachment} activities={turnActivities} {...(fileChangeSummary === undefined ? {} : { fileChangeSummary })} {...(messageTimingValue === undefined ? {} : { timing: messageTimingValue })} />;
+    const terminalWorkDetails = userWorkedForActivities === undefined ? null : <div className="message agent-message"><div className="message-body"><ElapsedTime fallback={activity.createdAt} activities={userWorkedForActivities} {...(messageTimingValue === undefined ? {} : { timing: messageTimingValue })} /></div></div>;
+    return <Fragment key={activity.id}>{conversationTimeSeparatorIds.has(activity.id) ? <ConversationTimeSeparator timestamp={activity.createdAt} /> : null}{chatMessage}{terminalWorkDetails}</Fragment>;
   });
   const showLiveWorkedFor = thinking && workingTiming !== undefined && !hasActiveAssistant;
   const showTypingIndicator = thinking && !finalResponseReceived && !hasRunningTool && !hasActiveAssistant;

@@ -33,6 +33,7 @@ interface PublicPluginSourceResolver {
 export class PublicPluginBootstrapService {
   private readonly store: BootstrapStore;
   private readonly now: () => string;
+  private readonly shouldStop: () => boolean;
 
   constructor(
     private readonly sources: PublicPluginSourceResolver,
@@ -41,9 +42,11 @@ export class PublicPluginBootstrapService {
     private readonly cwd: string,
     store?: BootstrapStore,
     now: () => string = () => new Date().toISOString(),
+    shouldStop: () => boolean = () => false,
   ) {
     this.store = store ?? new JsonFileStore<BootstrapState>(desktopDataPath('public-plugin-bootstrap.json'), { completed: false }, value => bootstrapStateSchema.parse(value));
     this.now = now;
+    this.shouldStop = shouldStop;
   }
 
   async run(): Promise<void> {
@@ -53,10 +56,13 @@ export class PublicPluginBootstrapService {
     let attempted = 0;
     let installed = 0;
     let inspectionSucceeded = true;
+    let cancelled = false;
     try {
+      if (this.shouldStop()) { cancelled = true; return; }
       const result = await this.commands.commandExecuteResult(this.cwd, { actionId: 'plugin.list', positionals: [], options: {} });
       const installedPlugins = readInstalledPluginNames(result.structured);
       for (const pluginName of BOOTSTRAP_PLUGINS) {
+        if (this.shouldStop()) { cancelled = true; return; }
         if (installedPlugins.has(pluginName)) continue;
         attempted += 1;
         try {
@@ -72,7 +78,8 @@ export class PublicPluginBootstrapService {
       inspectionSucceeded = false;
       this.logger.warn('public.plugins.bootstrap.failed', { message: error instanceof Error ? error.message : 'Unable to inspect bundled public plugins.' });
     } finally {
-      if (inspectionSucceeded && attempted === installed) await this.complete(attempted, installed);
+      if (cancelled) this.logger.info('public.plugins.bootstrap.cancelled', { attempted, installed });
+      else if (inspectionSucceeded && attempted === installed) await this.complete(attempted, installed);
       else this.logger.warn('public.plugins.bootstrap.incomplete', { attempted, installed });
     }
   }

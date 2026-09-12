@@ -1,11 +1,36 @@
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AgentManager } from './agent-manager.js';
 import type { DesktopEvent } from '../../contracts/agent-protocol/v1/desktop.js';
 
 describe('AgentManager response routing', () => {
+  it('evicts one idle session synchronously before admitting another session process', async () => {
+    const manager = new AgentManager({ onEvent: () => undefined });
+    const shutdown = vi.fn(async () => undefined);
+    const bindings = ['session-1', 'session-2', 'session-3'].map(sessionId => ({ key: `session:${sessionId}`, projectRoot: 'C:\\workspace', sessionId, process: { shutdown, initialize: async () => undefined, request: async () => ({}), isAvailable: () => true } }));
+    const internals = manager as unknown as { sessionBindings: Map<string, unknown>; sessionLastUsed: Map<string, number>; ensureSessionCapacity(): Promise<void> };
+    bindings.forEach((binding, index) => { internals.sessionBindings.set(binding.sessionId, binding); internals.sessionLastUsed.set(binding.sessionId, index + 1); });
+
+    await internals.ensureSessionCapacity();
+
+    expect(internals.sessionBindings.has('session-1')).toBe(false);
+    expect(internals.sessionBindings.size).toBe(2);
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    await manager.shutdownAll();
+  });
+
+  it('rejects admission when every session process is active', async () => {
+    const manager = new AgentManager({ onEvent: () => undefined });
+    const bindings = ['session-1', 'session-2', 'session-3'].map(sessionId => ({ key: `session:${sessionId}`, projectRoot: 'C:\\workspace', sessionId, process: { shutdown: vi.fn(async () => undefined), initialize: async () => undefined, request: async () => ({}), isAvailable: () => true } }));
+    const internals = manager as unknown as { sessionBindings: Map<string, unknown>; turnBindings: Map<string, unknown>; ensureSessionCapacity(): Promise<void> };
+    bindings.forEach((binding, index) => { internals.sessionBindings.set(binding.sessionId, binding); internals.turnBindings.set(`turn-${index}`, binding); });
+
+    await expect(internals.ensureSessionCapacity()).rejects.toThrow('maximum of 3 concurrent CLI sessions');
+    await manager.shutdownAll();
+  });
+
   it('releases approval and trust routes after the CLI response settles', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lotagate-agent-manager-'));
     try {

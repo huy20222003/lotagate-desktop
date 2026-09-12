@@ -79,6 +79,13 @@ export class InteractiveTerminalService {
     }
   }
 
+  closeAll(): void {
+    for (const [id, session] of this.sessions) {
+      this.sessions.delete(id);
+      session.child.kill();
+    }
+  }
+
   private requireOwned(id: string, ownerId: number): InteractiveSession {
     const session = this.sessions.get(id);
     if (!session || session.ownerId !== ownerId) throw new Error('Terminal session was not found.');
