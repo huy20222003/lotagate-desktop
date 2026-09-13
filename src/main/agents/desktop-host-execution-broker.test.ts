@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DesktopHostExecutionBroker } from './desktop-host-execution-broker.js';
 import type { DesktopHostRequest } from '../../contracts/agent-protocol/v1/desktop.js';
-import type { SandboxExecutionProvider } from './sandbox-execution-provider.js';
-import { SandboxUnavailableError } from './sandbox-execution-provider.js';
+import type { SandboxExecutionProvider } from '../sandbox/vm-sandbox-execution-provider.js';
+import { SandboxUnavailableError } from '../sandbox/vm-sandbox-execution-provider.js';
 
 function request(tool: DesktopHostRequest['tool'], action: string, params: Record<string, unknown>, boundary: DesktopHostRequest['executionBoundary'] = 'host', hostFallback: DesktopHostRequest['hostFallback'] = 'deny'): DesktopHostRequest {
   return { version: 1, type: 'host.request', requestId: `request-${action}`, tool, sessionId: 'session-1', runId: 'run-1', action, params, executionBoundary: boundary, hostFallback };

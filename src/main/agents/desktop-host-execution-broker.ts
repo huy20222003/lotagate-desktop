@@ -2,8 +2,8 @@ import { spawn } from 'node:child_process';
 import { access, mkdir, opendir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import type { DesktopHostRequest, DesktopHostResponse } from '../../contracts/agent-protocol/v1/desktop.js';
-import type { SandboxExecutionProvider } from './sandbox-execution-provider.js';
-import { SandboxUnavailableError } from './sandbox-execution-provider.js';
+import type { SandboxExecutionProvider } from '../sandbox/vm-sandbox-execution-provider.js';
+import { SandboxUnavailableError } from '../sandbox/vm-sandbox-execution-provider.js';
 import type { FileChangeDiff, FileDiffLine } from '../../contracts/ipc/v1/workspace.js';
 import { requireWorkspaceWritePath } from '../security/path-policy.js';
 import { terminateDesktopProcess } from '../process/process-termination.js';
@@ -32,8 +32,8 @@ export class DesktopHostExecutionBroker {
     if (this.options.sandbox === undefined) return this.sandboxFallback(cwd, request, signal, 'The Desktop sandbox runtime is not configured.');
     try {
       const result = await this.options.sandbox.execute({ root: cwd, action: request.action, params: request.params, ...(signal === undefined ? {} : { signal }) });
-      if (result.fileChange !== undefined) this.options.onFileChanged?.(cwd, { path: result.fileChange.path, kind: result.fileChange.deletions === 0 ? 'created' : 'modified' });
-      return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, executionBoundary: 'sandbox', ok: true, result: result.result, ...(result.fileChange === undefined ? {} : { fileChange: result.fileChange }) };
+      if (result.fileChange !== undefined) this.options.onFileChanged?.(cwd, { path: result.fileChange.path, kind: result.fileChangeKind ?? (result.fileChange.deletions === 0 ? 'created' : 'modified') });
+      return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, executionBoundary: 'sandbox', ok: true, ...(result.environmentId === undefined ? {} : { environmentId: result.environmentId }), result: result.result, ...(result.fileChange === undefined ? {} : { fileChange: result.fileChange }) };
     } catch (error) {
       if (error instanceof SandboxUnavailableError) return this.sandboxFallback(cwd, request, signal, error.message);
       return this.errorResponse(request, 'SANDBOX_EXECUTION_FAILED', error instanceof Error ? error.message : 'Sandbox execution failed.', 'sandbox');

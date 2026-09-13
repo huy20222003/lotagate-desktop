@@ -4,7 +4,7 @@ import type { Artifact } from '../../../../contracts/ipc/v1/workspace.js';
 import { Icon, Tooltip } from '../../../components/ui.js';
 import { fileIconFor } from '../../../components/file-icon.js';
 import { openFilePath } from '../../../services/open-file.js';
-import { PROMPT_REFERENCE_TOKEN_PATTERN } from '../prompt-token-pattern.js';
+import { PROMPT_REFERENCE_TOKEN_PATTERN, SLASH_COMMAND_TOKEN_PATTERN } from '../prompt-token-pattern.js';
 
 export interface MessageFileReference {
   path: string;
@@ -102,7 +102,16 @@ function mergeFileReferences(references: readonly MessageFileReference[], extrac
 
 function extractAbsoluteFilePaths(content: string): string[] {
   const matches = content.matchAll(/(?:[A-Za-z]:[\\/]|\\\\|\/(?!\/))[^<>`\r\n]*?\.[A-Za-z0-9][A-Za-z0-9_-]{0,15}(?=$|[\s),.;:!?])/gu);
-  return [...matches].map(match => match[0]!.trim()).filter(path => !/^https?:/iu.test(path) && isAbsoluteFilePath(path));
+  return [...matches]
+    .filter(match => !startsWithSlashCommand(content, match.index ?? -1))
+    .map(match => match[0]!.trim())
+    .filter(path => !/^https?:/iu.test(path) && isAbsoluteFilePath(path));
+}
+
+function startsWithSlashCommand(content: string, index: number): boolean {
+  if (index < 0) return false;
+  const match = [...content.slice(index).matchAll(SLASH_COMMAND_TOKEN_PATTERN)][0];
+  return match?.index === 0;
 }
 
 function extractTaggedFileReferences(content: string, workspaceCwd?: string): MessageFileReference[] {

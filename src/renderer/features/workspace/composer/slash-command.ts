@@ -1,7 +1,9 @@
 import type { DesktopCommandDescriptor, DesktopCommandInvocation } from '../../../services/desktop-command-client.js';
+import type { ExtensionRow } from '../../../services/extension-command-client.js';
 import { z } from 'zod';
 import { filterModelsByCategory, modelCategoryForCommand, type MediaModelCategory, type WorkspaceModelOption } from '../../../services/model-catalog.js';
 import { REMOTE_SLASH_COMMAND_DEFINITIONS, type RemoteSlashCommandDefinition, type RemoteSlashCommandField } from '../../../../contracts/remote-control/v1/slash-command-catalog.js';
+import { slashCommandLabelForId } from '../slash-command-token-pattern.js';
 
 export type SlashCommandField = RemoteSlashCommandField;
 export type SlashCommandDefinition = Omit<RemoteSlashCommandDefinition, 'modelCategory' | 'fields' | 'advancedFields'> & { modelCategory?: MediaModelCategory; fields: SlashCommandField[]; advancedFields: SlashCommandField[] };
@@ -30,6 +32,11 @@ export function availableSlashCommands(descriptors: readonly DesktopCommandDescr
 export function filterSlashCommands(commands: readonly SlashCommandDefinition[], query: string): SlashCommandDefinition[] {
   const normalized = query.trim().toLocaleLowerCase();
   return commands.filter(command => !normalized || command.label.toLocaleLowerCase().startsWith(normalized) || command.id.toLocaleLowerCase().startsWith(normalized));
+}
+
+/** Plugin contributions remain model-invocable, but are not Composer slash commands. */
+export function isComposerSkillSuggestion(skill: Pick<ExtensionRow, 'scope'>): boolean {
+  return skill.scope !== 'plugin';
 }
 
 export function createSlashCommandForm(command?: SlashCommandDefinition, models: readonly WorkspaceModelOption[] = []): SlashCommandForm {
@@ -159,6 +166,5 @@ export function slashCommandPreview(command: SlashCommandDefinition, form: Slash
 }
 
 export function slashCommandLabel(command: SlashCommandDefinition): string {
-  const [namespace, action] = command.id.split('.');
-  return `/${namespace} ${action}`;
+  return slashCommandLabelForId(command.id);
 }

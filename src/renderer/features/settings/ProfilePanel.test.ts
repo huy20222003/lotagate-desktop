@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loadWorkspaceTasks } from './ProfilePanel.js';
+import { loadWorkspaceTasks, peakModelTokens } from './ProfilePanel.js';
 
 describe('loadWorkspaceTasks', () => {
   it('limits concurrent workspace task requests while preserving workspace order', async () => {
@@ -21,5 +21,15 @@ describe('loadWorkspaceTasks', () => {
 
     await expect(pending).resolves.toEqual(['a', 'b', 'c', 'd', 'e']);
     expect(maximumActive).toBe(4);
+  });
+});
+
+describe('peakModelTokens', () => {
+  it('uses the largest total from model usage instead of lifetime dashboard tokens', () => {
+    expect(peakModelTokens([
+      { modelCode: 'model-a', totalTokens: 84_600_000, totalRequests: 10 },
+      { modelCode: 'model-b', totalTokens: 1_200_000, totalRequests: 3 },
+    ])).toBe(84_600_000);
+    expect(peakModelTokens([])).toBe(0);
   });
 });

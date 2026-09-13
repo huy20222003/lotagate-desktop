@@ -3,7 +3,7 @@ import type { AutomationRun } from '../../contracts/ipc/v1/automation.js';
 import type { ArtifactService } from '../artifacts/artifact-service.js';
 import { artifactKind } from '../artifacts/artifact-kind.js';
 import type { AgentManager } from '../agents/agent-manager.js';
-import type { BrowserHostToolBroker } from '../agents/browser-host-tool-broker.js';
+import type { BrowserBoundaryBroker } from '../agents/browser-host-tool-broker.js';
 import { buildAutomationExecutionPolicy, supportsAutomationExecution } from './automation-execution-policy.js';
 import { prepareAutomationWorkspace } from './automation-workspace.js';
 import type { GitService } from '../git/git-service.js';
@@ -20,7 +20,7 @@ export interface AutomationExecutionDependencies {
   tasks: TaskStore;
   agents: AgentManager;
   settings: SettingsService;
-  browserHost: BrowserHostToolBroker;
+  browserHost: BrowserBoundaryBroker;
   artifacts: ArtifactService;
   logger: DesktopLogger;
   sessions: Map<string, { runId: string; cwd: string }>;

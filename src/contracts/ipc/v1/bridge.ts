@@ -1,7 +1,7 @@
 import type { DesktopRendererAuthApi } from './auth.js';
 import type { ExtensionDetail, ExtensionDetailInput, ExtensionDetailWriteInput, HookCreateInput, HookRemoveInput, PluginIcon, PluginIconInput, PublicPluginCatalogEntry, PublicPluginContributionInput } from './extensions.js';
 import type { DesktopAgentResult } from '../../agent-protocol/v1/desktop.js';
-import type { DesktopWorkspaceApi, DesktopTaskApi, DesktopCheckpointApi, AgentEventEnvelope, AgentDiagnosticEnvelope, DesktopGitApi, DesktopTerminalApi, DesktopSettingsApi, DesktopAutomationApi, DesktopBrowserApi } from './workspace.js';
+import type { DesktopWorkspaceApi, DesktopTaskApi, DesktopCheckpointApi, AgentEventEnvelope, AgentDiagnosticEnvelope, DesktopGitApi, DesktopTerminalApi, DesktopSettingsApi, DesktopSandboxApi, DesktopAutomationApi, DesktopBrowserApi } from './workspace.js';
 import type { DesktopApprovalApi } from './approval.js';
 import type { DesktopRemoteControlApi } from '../../remote-control/v1/remote-control.js';
 import type { DesktopUpdatesApi } from './update.js';
@@ -60,6 +60,7 @@ export interface DesktopBridge {
   git: DesktopGitApi;
   terminal: DesktopTerminalApi;
   settings: DesktopSettingsApi;
+  sandbox: DesktopSandboxApi;
   automations: DesktopAutomationApi;
   browser: DesktopBrowserApi;
   approvals: DesktopApprovalApi;

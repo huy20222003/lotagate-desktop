@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Automation, AutomationCreateInput, AutomationRun, AutomationStateEvent, AutomationUpdateInput } from './automation.js';
-import type { DesktopSettingsSnapshot } from './settings.js';
+import type { DesktopSettingsSnapshot, SandboxHealthSnapshot } from './settings.js';
 
 export const workspaceSchema = z.object({
   id: z.string().min(1),
@@ -257,6 +257,11 @@ export type TerminalExecutionInput = z.infer<typeof terminalExecutionInputSchema
 export interface DesktopSettingsApi {
   get(): Promise<DesktopSettingsSnapshot>;
   update(patch: Partial<DesktopSettingsSnapshot>): Promise<DesktopSettingsSnapshot>;
+}
+
+export interface DesktopSandboxApi {
+  health(): Promise<SandboxHealthSnapshot>;
+  repair(): Promise<SandboxHealthSnapshot>;
 }
 
 export interface DesktopAutomationApi {

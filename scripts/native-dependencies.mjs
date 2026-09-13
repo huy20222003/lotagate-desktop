@@ -14,7 +14,7 @@ if (!['win32', 'darwin', 'linux'].includes(platform)) fail(`Unsupported platform
 if (options.install && platform !== process.platform) fail(`Installation must run on the target host. Current host is '${process.platform}', target is '${platform}'.`);
 
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-const dependencies = manifest.dependencies.filter(dependency => dependency.platforms.includes(platform));
+const dependencies = manifest.dependencies.filter(dependency => (dependency.target ?? 'host') === 'host' && dependency.platforms.includes(platform));
 const statuses = [];
 
 for (const dependency of dependencies) statuses.push({ dependency, installed: await probe(dependency.probe) });

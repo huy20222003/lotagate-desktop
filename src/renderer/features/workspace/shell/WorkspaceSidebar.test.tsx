@@ -41,6 +41,19 @@ describe('WorkspaceSidebar', () => {
     expect(screen.getByRole('status', { name: 'New agent message' })).toBeInTheDocument();
   });
 
+  it('does not treat a persisted active status as a live turn', () => {
+    Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
+    const workspace = { id: 'workspace', name: 'Workspace', rootPath: '/workspace' } as Workspace;
+    const task = { id: 'task', workspaceId: workspace.id, title: 'Completed session', cwd: workspace.rootPath, status: 'active', pinned: false, archived: false, draft: '', draftAttachmentIds: [], lastEventCursor: 0, createdAt: '2026-08-30T00:00:00.000Z', updatedAt: '2026-08-30T00:00:00.000Z' } as Task;
+    const props: WorkspaceSidebarProps = {
+      accountName: 'Nguyễn Huy', avatarProps: { name: 'Nguyễn Huy' }, workspaces: [workspace], activeWorkspace: workspace, tasks: [task], activeTask: undefined, runningTaskIds: new Set(), unreadTaskIds: new Set(), loading: false,
+      accountOpen: false, onAccount: vi.fn(), onCloseAccount: vi.fn(), onSettings: vi.fn(), onPlugins: vi.fn(), onAutomations: vi.fn(), onRemoteControl: vi.fn(), onLogout: vi.fn(), onNewChat: vi.fn(), onWorkspace: vi.fn(), onTask: vi.fn(), onAddWorkspace: vi.fn(), onRenameWorkspace: vi.fn(), onRemoveWorkspace: vi.fn(), onArchiveTask: vi.fn(), onPinTask: vi.fn(), onRenameTask: vi.fn(), collapsed: false, onToggleCollapsed: vi.fn(), sidebarResizing: false, onStartResize: vi.fn(), onResizeKeyDown: vi.fn(),
+    };
+
+    render(<WorkspaceSidebar {...props} />);
+    expect(screen.queryByRole('status', { name: 'Agent is responding' })).not.toBeInTheDocument();
+  });
+
   it('reveals sessions in pages of five and resets with Show less', () => {
     Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
     const workspace = { id: 'workspace', name: 'Workspace', rootPath: '/workspace' } as Workspace;

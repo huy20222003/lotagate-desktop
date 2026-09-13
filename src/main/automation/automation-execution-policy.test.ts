@@ -9,6 +9,7 @@ describe('automation execution policy', () => {
     expect(buildAutomationExecutionPolicy(automation, 1)).toEqual({
       permissionPolicy: 'ask',
       browserAccess: 'disabled',
+      browserExecution: 'isolated',
       isolation: 'sandbox',
       hostFallback: 'ask',
       timeoutMs: 60 * 60 * 1_000,
@@ -21,6 +22,7 @@ describe('automation execution policy', () => {
       permissionPolicy: 'allowlist',
       allowedTools: ['filesystem.read'],
       browserAccess: 'disabled',
+      browserExecution: 'isolated',
       isolation: 'sandbox',
       hostFallback: 'ask',
       timeoutMs: 60 * 60 * 1_000,

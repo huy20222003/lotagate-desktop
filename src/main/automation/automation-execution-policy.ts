@@ -7,6 +7,7 @@ export function buildAutomationExecutionPolicy(automation: Automation, attempt: 
     permissionPolicy: automation.permissionPolicy,
     ...(automation.tools.length === 0 && automation.permissionPolicy !== 'allowlist' ? {} : { allowedTools: automation.tools }),
     browserAccess: automation.browserAccess,
+    browserExecution: 'isolated',
     isolation: 'sandbox',
     hostFallback: automation.permissionPolicy === 'autonomous' ? 'deny' : configuredFallback,
     timeoutMs: automation.timeoutMs,

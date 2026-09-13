@@ -115,15 +115,34 @@ version deliberately.
 ## Execution boundaries
 
 Desktop protocol v1 sends filesystem and shell actions through the Desktop
-execution broker. Interactive turns and automations request the sandbox by
-default; the broker mounts only the selected workspace into a disposable
-Docker/Podman container, disables networking by default, applies memory and
-process limits, and never passes Desktop credentials into the container. Set
-`LOTAGATE_SANDBOX_RUNTIME` or `LOTAGATE_SANDBOX_IMAGE` when a non-default
-runtime or image is required. If the sandbox is unavailable, `ask` policies
-reuse the existing approval card before retrying the exact action on the host;
-`deny` policies fail closed. Standalone CLI execution remains local because it
-does not receive the Desktop host bridge.
+execution broker. Interactive turns and automations request a shared warm
+isolated environment by default: WSL2 + bubblewrap on Windows, bubblewrap on
+Linux, and macOS Seatbelt on macOS. Bubblewrap mounts the selected workspace at
+`/workspace`, keeps the runtime root read-only, applies cgroup v2 quotas on
+Linux when the user systemd scope is available and otherwise uses the existing
+guest process guards, disables networking by default, and runs an authenticated
+JSONL guest bridge without Desktop credentials. The same
+manifest-driven dependency service provisions the Windows guest image; Linux
+and macOS use the host-installed document utilities inside the OS sandbox.
+
+Browser execution uses the existing Electron browser host and its
+`WebContentsView` tabs. Playwright is a development-only E2E dependency and
+Chromium is not installed into the VM. Computer Use and the Terminal drawer are
+intentionally host-native and do not enter the VM. If the selected VM is
+unavailable, `ask` policies reuse the existing approval card before retrying
+the exact action on the host, `allow` policies perform that approved fallback
+automatically, and `deny` policies fail closed. The network `allowlist` mode
+remains explicitly unavailable until a guest proxy and transparent enforcement
+boundary are implemented; it fails closed rather than allowing direct guest
+egress. `none` and `full` are supported by all three local runtime boundaries.
+Standalone CLI execution remains local because it does not receive the Desktop
+host bridge.
+
+VM runtime, distribution, profile, network, workspace access, resource,
+concurrency, idle-timeout, and fallback settings are persisted through the
+Desktop Settings page. Local development can opt into dependency installation
+with `LOTAGATE_AUTO_INSTALL_NATIVE_DEPENDENCIES=1`; otherwise missing host or
+guest prerequisites are reported without blocking startup.
 
 ## Portable native providers
 
@@ -136,23 +155,27 @@ supported screen-capture utility. Linux accessibility-tree operations additional
 use Python AT-SPI (`pyatspi`) when it is available; macOS uses System Events and
 requires the application to be granted Accessibility permission.
 
-Portable document operations use helpers installed by the user or by the
-manifest-driven first-run bootstrap:
-LibreOffice (`soffice` or `libreoffice`) for office conversion, and Poppler
-utilities (`pdfinfo`, `pdftotext`, `pdftoppm`, and `pdfunite`) for PDF work.
-The richer Office editing bridge requires a Python runtime able to import
-LibreOffice UNO (`uno`); optional PDF editing, attachments, optimization, and OCR
-operations use `pdftk`/`qpdf`, Ghostscript, and Tesseract when present.
-Packaged Desktop runs the same dependency manifest on first launch after
-installation. It uses only the host package manager when available (`winget` on
-Windows, Homebrew on macOS, and the detected Linux package manager), invokes it
-without a shell, and restarts once after a successful installation so capability
-detection sees the refreshed PATH. Missing managers or manual prerequisites are
-reported and never prevent Desktop from starting. Microsoft Office and macOS
-Accessibility permission remain user-managed because they are proprietary or
-protected by the operating system. Developers can inspect or install the host
-set with `npm run native:check` and `npm run native:install` (or
-`npm run native:install:windows`).
+Portable document operations for agent execution use the isolated runtime
+selected by the VM profile. On Windows, the WSL2 document profile owns
+LibreOffice, Poppler, PDFtk, qpdf, Ghostscript, and Tesseract inside the selected
+distribution. Windows release installers include an architecture-specific,
+checksum-verified WSL2 guest image built from the same dependency manifest; on
+first use, Desktop imports that image into the configured distribution when it is
+not already present. On Linux and macOS, the same document runner is started
+inside bubblewrap or Seatbelt and uses the corresponding host OS utilities;
+missing utilities are reported by Sandbox health and do not silently fall back
+to an unsandboxed document process.
+
+The host document dependency entries remain available for an explicitly selected
+host-native fallback and for diagnostics. They are not part of the packaged
+startup auto-install set. `npm run native:check` and `npm run native:install`
+(or `npm run native:install:windows`) continue to inspect or install that host
+fallback set deliberately. Microsoft Office and macOS Accessibility permission
+remain user-managed because they are proprietary or protected by the operating
+system. Missing host fallback prerequisites never prevent Desktop from starting.
+The runtime status reports the concrete backend (`wsl2`, `bubblewrap`, or
+`seatbelt`) so unsupported hosts fail closed instead of silently running agent
+shell or filesystem actions on the host.
 
 All native providers use one Desktop host path. `src/main/host/native-host-provider-factory.ts`
 selects the platform adapters, `src/main/host/host-capability-registry.ts` creates

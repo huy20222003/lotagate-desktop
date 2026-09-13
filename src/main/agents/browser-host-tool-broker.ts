@@ -2,10 +2,18 @@ import type { DesktopHostRequest, DesktopHostResponse } from '../../contracts/ag
 import type { AutomationBrowserAccess } from '../../contracts/ipc/v1/automation.js';
 import { BrowserService, type BrowserTarget, type BrowserWaitCondition } from '../browser/browser-service.js';
 import { requireExistingPath, requireWorkspaceMutationPath } from '../security/path-policy.js';
+import { assertBrowserAccess } from './browser-access-policy.js';
 
 export interface BrowserHostActivity {
   event: 'browser.session.created' | 'browser.action.started' | 'browser.action.completed';
   data: Record<string, unknown>;
+}
+
+export interface BrowserBoundaryBroker {
+  setRunPolicy(runId: string, access: AutomationBrowserAccess): void;
+  bindSessionToRun(cwd: string, sessionId: string, runId: string): void;
+  clearRunPolicy(runId: string): void;
+  closeRun(runId: string): Promise<void>;
 }
 
 /**
@@ -15,6 +23,7 @@ export interface BrowserHostActivity {
  */
 export class BrowserHostToolBroker {
   private readonly sessions = new Map<string, string>();
+  private readonly sessionRoots = new Map<string, string>();
   private readonly sessionRuns = new Map<string, string>();
   private readonly runSessions = new Map<string, Set<string>>();
   private readonly runPolicies = new Map<string, AutomationBrowserAccess>();
@@ -53,6 +62,7 @@ export class BrowserHostToolBroker {
     this.bumpGeneration(key);
     const browserSessionId = this.sessions.get(key);
     this.sessions.delete(key);
+    this.sessionRoots.delete(key);
     this.sessionRuns.delete(key);
     try {
       if (browserSessionId !== undefined) await this.browser.close(browserSessionId);
@@ -67,6 +77,7 @@ export class BrowserHostToolBroker {
 
   async handle(cwd: string, request: DesktopHostRequest, signal?: AbortSignal): Promise<DesktopHostResponse> {
     const key = `${cwd}\u0000${request.sessionId}`;
+    if (!this.sessionRoots.has(key)) this.sessionRoots.set(key, request.executionCwd ?? cwd);
     const generation = this.sessionGenerations.get(key) ?? 0;
     const previous = this.serial.get(key) ?? Promise.resolve();
     let active = false;
@@ -114,6 +125,7 @@ export class BrowserHostToolBroker {
     for (const key of this.sessions.keys()) if (key.startsWith(prefix)) keys.add(key);
     for (const key of this.sessionRuns.keys()) if (key.startsWith(prefix)) keys.add(key);
     for (const key of this.serial.keys()) if (key.startsWith(prefix)) keys.add(key);
+    for (const key of this.sessionRoots.keys()) if (key.startsWith(prefix)) keys.add(key);
     for (const key of keys) await this.closeForKey(key);
     for (const key of this.sessionRuns.keys()) if (key.startsWith(prefix)) this.sessionRuns.delete(key);
   }
@@ -123,12 +135,13 @@ export class BrowserHostToolBroker {
     const policyRunId = this.sessionRuns.get(`${cwd}\u0000${request.sessionId}`) ?? request.runId;
     assertBrowserAccess(request, this.runPolicies.get(policyRunId));
     const browserSessionId = await this.ensureSession(cwd, request, key, generation, signal);
+    const executionRoot = this.sessionRoots.get(key) ?? request.executionCwd ?? cwd;
     this.assertActive(key, generation, signal);
     const tabId = optionalId(request.params['tabId']);
     const activeTabId = tabId ?? this.browser.get(browserSessionId).activeTabId;
     this.onActivity?.(cwd, { event: 'browser.action.started', data: { sessionId: request.sessionId, runId: request.runId, browserSessionId, tabId: activeTabId, action: request.action } });
     try {
-      const result = await this.runAction(cwd, browserSessionId, activeTabId, request.action, request.params);
+      const result = await this.runAction(executionRoot, browserSessionId, activeTabId, request.action, request.params);
       this.assertActive(key, generation, signal);
       this.onActivity?.(cwd, { event: 'browser.action.completed', data: { sessionId: request.sessionId, runId: request.runId, browserSessionId, tabId: activeTabId, action: request.action, success: true } });
       return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: true, result: { browserSessionId, tabId: activeTabId, ...asRecord(result) } };
@@ -144,7 +157,8 @@ export class BrowserHostToolBroker {
     if (existing !== undefined) return existing;
     // Agent browser profiles must be isolated by the owning CLI session. The
     // human-operated browser keeps its existing default profile separately.
-    const snapshot = await this.browser.create(`${cwd}\u0000${request.sessionId}`);
+    const executionRoot = this.sessionRoots.get(key) ?? request.executionCwd ?? cwd;
+    const snapshot = await this.browser.create(`${executionRoot}\u0000${request.sessionId}`);
     if ((this.sessionGenerations.get(key) ?? 0) !== generation || signal?.aborted === true) {
       await this.browser.close(snapshot.id).catch(() => undefined);
       throw new Error('Browser action was cancelled.');
@@ -165,7 +179,7 @@ export class BrowserHostToolBroker {
   private bumpGeneration(key: string): void { this.sessionGenerations.set(key, (this.sessionGenerations.get(key) ?? 0) + 1); }
 
   private cleanupGeneration(key: string): void {
-    if (!this.sessions.has(key) && !this.sessionRuns.has(key) && !this.serial.has(key)) this.sessionGenerations.delete(key);
+    if (!this.sessions.has(key) && !this.sessionRuns.has(key) && !this.serial.has(key) && !this.sessionRoots.has(key)) this.sessionGenerations.delete(key);
   }
 
   private async runAction(cwd: string, sessionId: string, activeTabId: string, action: string, params: Record<string, unknown>): Promise<unknown> {
@@ -257,13 +271,6 @@ export class BrowserHostToolBroker {
         throw new Error(`Unsupported browser action: ${action}.`);
     }
   }
-}
-
-function assertBrowserAccess(request: DesktopHostRequest, access: AutomationBrowserAccess | undefined): void {
-  if (access === undefined || access === 'autonomous' || access === 'interactive') return;
-  if (access === 'disabled') throw new Error('Browser access is disabled for this automation.');
-  const readOnlyActions = new Set(['browser.navigate', 'browser.inspect', 'browser.inspectElement', 'browser.extractTable', 'browser.listFrames', 'browser.console', 'browser.network', 'browser.accessibility', 'browser.setViewport', 'browser.resetViewport', 'browser.screenshot', 'browser.readField', 'browser.waitFor', 'browser.tabs', 'browser.back', 'browser.forward', 'browser.reload']);
-  if (!readOnlyActions.has(request.action)) throw new Error('This automation only has read-only browser access.');
 }
 
 function requiredString(params: Record<string, unknown>, key: string, maxLength: number): string {

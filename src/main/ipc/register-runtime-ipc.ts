@@ -7,9 +7,11 @@ import type { IpcRegistrationContext } from './ipc-registration-context.js';
 import { fileOpenDestinationSchema } from '../../contracts/ipc/v1/settings.js';
 
 export function registerRuntimeIpcHandlers(context: IpcRegistrationContext): void {
-  const { handle, settings, browser, approvals, automations, operations, updates, runAutomation, retryAutomation, idSchema, browserBoundsSchema, objectSchema, logger, cwdSchema } = context;
+  const { handle, settings, sandboxHealth, browser, approvals, automations, operations, updates, runAutomation, retryAutomation, idSchema, browserBoundsSchema, objectSchema, logger, cwdSchema } = context;
 handle('settings.get', async event => { assertTrustedRenderer(event); return settings.get(); });
 handle('settings.update', async (event, patch: unknown) => { assertTrustedRenderer(event); const updated = await settings.update(objectSchema.parse(patch)); logger.setRetentionDays(updated.sandbox.diagnosticsRetentionDays); return updated; });
+handle('sandbox.health', async event => { assertTrustedRenderer(event); return sandboxHealth.health(); });
+handle('sandbox.repair', async event => { assertTrustedRenderer(event); return sandboxHealth.repair(); });
 handle('browser.create', async event => { assertTrustedRenderer(event); return browser.create(); });
 handle('browser.open', async (event, url: unknown, approved: unknown) => { assertTrustedRenderer(event); return browser.open(z.string().url().parse(url), z.boolean().parse(approved)); });
 handle('browser.close', async (event, id: unknown) => { assertTrustedRenderer(event); return browser.close(idSchema.parse(id)); });

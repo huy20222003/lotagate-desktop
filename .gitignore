@@ -29,3 +29,5 @@ credentials/
 resources/speech/runtime/
 resources/speech/models/
 resources/speech/manifest.json
+resources/sandbox/document-runner.mjs
+resources/sandbox/wsl2/**/lotagate-guest.tar

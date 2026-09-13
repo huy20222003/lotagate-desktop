@@ -36,7 +36,7 @@ export function ProfilePanel({ user, accountName }: { user: UserProfile; account
       const dashboardTokens = readNumber(dashboardValue(dashboard, 'totalTokens')) ?? 0;
       const usageTokens = usageModels.reduce((total, model) => total + model.totalTokens, 0);
       if (!mounted) return;
-      setSummary({ workspaceCount: workspaces.length, chatCount: tasks.filter(task => !task.archived).length, lifetimeTokens: dashboardTokens || usageTokens, peakTokens: usageModels.reduce((peak, model) => Math.max(peak, model.totalTokens), dashboardTokens), modelsUsed: usageModels.length, dailyTokens, modelUsage: usageModels });
+      setSummary({ workspaceCount: workspaces.length, chatCount: tasks.filter(task => !task.archived).length, lifetimeTokens: dashboardTokens || usageTokens, peakTokens: peakModelTokens(usageModels), modelsUsed: usageModels.length, dailyTokens, modelUsage: usageModels });
     })().catch(() => { if (mounted) setProfileError(true); }).finally(() => { if (mounted) setLoading(false); });
     return () => { mounted = false; };
   }, [organization?.organizationCode, user.defaultWorkspaceCode]);
@@ -72,6 +72,7 @@ function normalizeUsage(value: unknown): ModelUsageSummary[] {
   }
   return [...models.values()].sort((left, right) => right.totalTokens - left.totalTokens || left.modelCode.localeCompare(right.modelCode));
 }
+export function peakModelTokens(models: readonly ModelUsageSummary[]): number { return models.reduce((peak, model) => Math.max(peak, model.totalTokens), 0); }
 function readTokens(value: unknown): number { if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, value); if (typeof value === 'string' && Number.isFinite(Number(value))) return Math.max(0, Number(value)); if (typeof value !== 'object' || value === null) return 0; const record = value as Record<string, unknown>; const total = readNumber(record['totalTokens']); if (total !== undefined) return total; return Math.max(0, (readNumber(record['promptTokens']) ?? 0) + (readNumber(record['completionTokens']) ?? 0)); }
 function normalizeDailyTokens(value: unknown): Map<string, number> { const record = typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined; return new Map(extractArray(record?.['sevenDaySpend']).flatMap(item => { if (typeof item !== 'object' || item === null) return []; const row = item as Record<string, unknown>; const date = typeof row['date'] === 'string' ? row['date'].slice(0, 10) : undefined; return date === undefined ? [] : [[date, readNumber(row['tokens']) ?? 0] as [string, number]]; })); }
 function dashboardValue(value: unknown, key: string): unknown { return typeof value === 'object' && value !== null ? (value as Record<string, unknown>)[key] : undefined; }

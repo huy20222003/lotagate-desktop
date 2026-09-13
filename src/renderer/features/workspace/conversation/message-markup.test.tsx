@@ -53,6 +53,19 @@ describe('message markup', () => {
     expect(container.querySelector('.prompt-token')).toHaveTextContent('/goal');
   });
 
+  it('does not highlight qualified plugin skills as slash commands', () => {
+    const { container } = render(<MessageMarkup content="/browser-use:browser-use tiếp theo em" highlightPromptTokens />);
+
+    expect(container.querySelector('.prompt-token')).not.toBeInTheDocument();
+  });
+
+  it('highlights the complete catalog command in a user message without its scope', () => {
+    const { container } = render(<MessageMarkup content="/goal run 1. Xác định workspace" highlightPromptTokens />);
+
+    expect(container.querySelector('.prompt-token')).toHaveTextContent('/goal run');
+    expect(container.querySelector('.prompt-token')).not.toHaveTextContent('1. Xác định workspace');
+  });
+
   it('preserves mention highlighting alongside slash command highlighting', () => {
     const { container } = render(<MessageMarkup content="Use @research" highlightPromptTokens />);
 
@@ -67,6 +80,13 @@ describe('message markup', () => {
     expect(link.querySelector('.file-icon-typescript')).toBeInTheDocument();
     fireEvent.pointerMove(link, { pointerType: 'mouse' });
     await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('D:/workspace/src/index.ts'));
+  });
+
+  it('does not treat a slash command containing a dotted tool name as an absolute file', () => {
+    const { container } = render(<MessageMarkup content="/goal run Dùng shell.exec đúng một lần." highlightPromptTokens />);
+
+    expect(container.querySelector('.message-file-reference')).not.toBeInTheDocument();
+    expect(container.querySelector('.prompt-token')).toHaveTextContent('/goal run');
   });
 
   it('renders an explicit @file tag as an interactive file reference', async () => {

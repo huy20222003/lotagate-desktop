@@ -41,4 +41,17 @@ describe('PromptMarkup', () => {
 
     expect(container.querySelector('.prompt-token')).toHaveTextContent('/goal');
   });
+
+  it('does not highlight qualified plugin skills as slash commands', () => {
+    const { container } = render(<PromptMarkup content="/browser-use:browser-use tiếp theo em" />);
+
+    expect(container.querySelector('.prompt-token')).not.toBeInTheDocument();
+  });
+
+  it('highlights the complete catalog command without highlighting its scope', () => {
+    const { container } = render(<PromptMarkup content="/goal run 1. Xác định workspace" />);
+
+    expect(container.querySelector('.prompt-token')).toHaveTextContent('/goal run');
+    expect(container.querySelector('.prompt-token')).not.toHaveTextContent('1. Xác định workspace');
+  });
 });

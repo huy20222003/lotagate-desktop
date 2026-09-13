@@ -19,15 +19,17 @@ if (options.githubMatrix) {
 const target = targets.find(candidate => candidate.id === options.target);
 if (target === undefined) throw new Error(`Unknown target '${options.target}'. Use --list to see supported targets.`);
 const args = ['scripts/build-installers.mjs', '--platform', target.platform, '--arch', target.architecture];
+if (options.dryRun) args.push('--dry-run');
 if (options.skipInstall) args.push('--skip-install');
 if (options.skipValidation) args.push('--skip-validation');
 await run(process.execPath, args);
 
 function parseOptions(args) {
-  const parsed = { githubMatrix: false, list: false, skipInstall: false, skipValidation: false, target: undefined };
+  const parsed = { dryRun: false, githubMatrix: false, list: false, skipInstall: false, skipValidation: false, target: undefined };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
-    if (argument === '--github-matrix') parsed.githubMatrix = true;
+    if (argument === '--dry-run') parsed.dryRun = true;
+    else if (argument === '--github-matrix') parsed.githubMatrix = true;
     else if (argument === '--list') parsed.list = true;
     else if (argument === '--skip-install') parsed.skipInstall = true;
     else if (argument === '--skip-validation') parsed.skipValidation = true;

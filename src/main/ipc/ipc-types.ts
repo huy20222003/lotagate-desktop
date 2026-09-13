@@ -23,6 +23,7 @@ import type { RemoteControlService } from '../remote-control/remote-control-serv
 import type { DesktopUpdateService } from '../updates/desktop-update-service.js';
 import type { TaskTurnCoordinator } from '../tasks/task-turn-coordinator.js';
 import type { WhisperCppSpeechTranscriptionService } from '../speech/whisper-cpp-speech-transcription-service.js';
+import type { VmHealthService } from '../sandbox/vm-health-service.js';
 
 export interface DesktopIpcServices {
   auth: DesktopAuthApi;
@@ -38,6 +39,7 @@ export interface DesktopIpcServices {
   terminal: TerminalService;
   interactiveTerminal: InteractiveTerminalService;
   settings: SettingsService;
+  sandboxHealth: VmHealthService;
   artifacts: ArtifactService;
   browser: BrowserService;
   automations: AutomationService;

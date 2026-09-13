@@ -56,3 +56,11 @@ jobs:
 
       - name: Build Desktop
         run: npm run build
+
+      - name: Prepare the packaged WSL2 guest image
+        if: matrix.os == 'windows-latest'
+        run: npm run sandbox:image -- --arch x64
+
+      - name: Run real WSL2 image and document smoke test
+        if: matrix.os == 'windows-latest'
+        run: npm run test:e2e:sandbox

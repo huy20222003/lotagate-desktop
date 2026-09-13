@@ -5,12 +5,14 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UserProfile } from '../../../contracts/ipc/v1/auth.js';
 import { DEFAULT_COMPUTER_APPLICATION_ALLOWLIST } from '../../../contracts/ipc/v1/computer-application-allowlist.js';
+import { SANDBOX_DEFAULTS } from '../../../contracts/ipc/v1/settings.js';
 import { ToastProvider } from '../../components/ui.js';
 import { SettingsPage, type SettingsSection } from './SettingsPage.js';
 
 const user: UserProfile = { id: 'user-1', email: 'user@example.test', fullName: 'Test User', defaultOrganizationCode: 'org-1', organizations: [{ id: 'org-1', organizationCode: 'org-1', displayName: 'Test Org', role: 'Member', workspaces: [] }] };
 const browser = { viewportProfile: 'desktop', customViewport: { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 }, downloadDirectory: '', sessionRetention: 'persistent', sessionRetentionMinutes: 60, originAllowlist: [], clearDataOnClose: false, evidenceRetentionDays: 30 };
-const sandbox = { backend: 'auto', image: 'node:22-bookworm-slim', networkPolicy: 'none', mountMode: 'read-write', memoryMb: 2_048, cpuCores: 2, pidsLimit: 128, hostFallback: 'ask', cleanup: 'always', diagnosticsRetentionDays: 30 };
+const sandbox = { ...SANDBOX_DEFAULTS, allowedDomains: [...SANDBOX_DEFAULTS.allowedDomains] };
+const sandboxHealth = { state: 'ready', runtime: { runtime: 'wsl2', available: true, distribution: sandbox.distribution }, dependencies: { profile: sandbox.profile, available: true, statuses: [], installed: [], missing: [], manual: [], failed: [] }, checkedAt: '2026-01-01T00:00:00.000Z' };
 const computer = { applicationAllowlist: [...DEFAULT_COMPUTER_APPLICATION_ALLOWLIST] };
 
 describe('SettingsPage', () => {
@@ -96,6 +98,7 @@ function installBridge() {
   const update = vi.fn((patch: Record<string, unknown>) => Promise.resolve({ ...baseSettings(), ...patch }));
   window.lotagate = {
     settings: { get: vi.fn().mockResolvedValue(baseSettings()), update },
+    sandbox: { health: vi.fn().mockResolvedValue(sandboxHealth), repair: vi.fn().mockResolvedValue(sandboxHealth) },
     userContext: { usage: vi.fn().mockResolvedValue([]), dashboardStats: vi.fn().mockResolvedValue({}), wallet: vi.fn().mockResolvedValue(null), paymentHistory: vi.fn().mockResolvedValue({ data: [], total: 0 }) },
     workspaces: { list: vi.fn().mockResolvedValue([]) },
     tasks: { list: vi.fn().mockResolvedValue([]), activities: vi.fn().mockResolvedValue([]) },

@@ -98,6 +98,7 @@ await runNpm(['run', 'cli:prepare', '--', '--platform', targetPlatform, '--arch'
 const stagedCliManifest = JSON.parse(await readFile(resolve(stagedCliPath, 'manifest.json'), 'utf8'));
 if (typeof stagedCliManifest.binary !== 'string' || stagedCliManifest.binary.trim() === '') fail(`CLI staging manifest is missing the target binary name: ${resolve(stagedCliPath, 'manifest.json')}.`);
 process.env['LOTAGATE_PACKAGED_CLI_PATH'] = resolve(stagedCliPath, stagedCliManifest.binary);
+if (targetPlatform === 'win32') await runNpm(['run', 'sandbox:image', '--', '--arch', options.arch], 'Preparing the packaged WSL2 guest image');
 await rm(outputRoot, { recursive: true, force: true });
 await runNpm(['run', 'build'], 'Building Desktop bundles');
 process.env['LOTAGATE_BUILD_PLATFORM'] = targetPlatform;
@@ -381,6 +382,7 @@ function printPlan(plan, selectedOptions) {
   }
   console.log(`Validation: ${selectedOptions.skipValidation ? 'skipped' : 'typecheck, lint, file-size, tests'}`);
   console.log(`Dependency install: ${selectedOptions.skipInstall ? 'skipped' : 'only when node_modules is missing'}`);
+  console.log(`Guest image: ${plan.name === 'Windows' ? `WSL2 Ubuntu guest image for ${selectedOptions.arch}, built from the dependency manifest` : 'not bundled; this target has no VM image backend'}`);
 }
 
 function printHelp() {

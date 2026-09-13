@@ -96,6 +96,7 @@ export const desktopHostResponseSchema = z.object({
   requestId: id,
   tool: z.enum(['browser', 'computer', 'document', 'filesystem', 'shell', 'git', 'artifact']),
   ok: z.boolean(),
+  environmentId: id.optional(),
   result: z.unknown().optional(),
   error: z.object({
     code: z.string().min(1).max(128),
@@ -125,6 +126,7 @@ export type DesktopExecutionPolicy = {
   permissionPolicy: 'ask' | 'allowlist' | 'review' | 'autonomous';
   allowedTools?: readonly string[];
   browserAccess: 'disabled' | 'read-only' | 'interactive' | 'autonomous';
+  browserExecution: 'isolated' | 'interactive';
   isolation: 'sandbox' | 'host';
   hostFallback: 'ask' | 'deny' | 'allow';
   timeoutMs: number;

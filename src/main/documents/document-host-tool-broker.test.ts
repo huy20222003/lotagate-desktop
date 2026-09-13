@@ -7,8 +7,8 @@ import { DocumentHostToolBroker } from './document-host-tool-broker.js';
 
 vi.mock('electron', () => ({ app: { getPath: () => process.env['LOTAGATE_DOCUMENT_TEST_USER_DATA'] ?? process.cwd() } }));
 
-function request(action: string, params: Record<string, unknown>, taskId?: string): DesktopHostRequest {
-  return { version: 1, type: 'host.request', requestId: `request-${action}`, tool: 'document', sessionId: 'session-1', runId: 'run-1', action, params, executionBoundary: 'host', hostFallback: 'deny', ...(taskId === undefined ? {} : { taskId }) };
+function request(action: string, params: Record<string, unknown>, taskId?: string, overrides: Partial<DesktopHostRequest> = {}): DesktopHostRequest {
+  return { version: 1, type: 'host.request', requestId: `request-${action}`, tool: 'document', sessionId: 'session-1', runId: 'run-1', action, params, executionBoundary: 'host', hostFallback: 'deny', ...(taskId === undefined ? {} : { taskId }), ...overrides };
 }
 
 describe('DocumentHostToolBroker', () => {
@@ -107,6 +107,33 @@ describe('DocumentHostToolBroker', () => {
     } finally {
       delete process.env['LOTAGATE_DOCUMENT_TEST_USER_DATA'];
       await rm(root, { recursive: true, force: true });
+      await rm(userData, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps a handle valid when the execution path or mount identity changes within one session', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-document-broker-'));
+    const relocatedExecutionRoot = await mkdtemp(join(tmpdir(), 'lotagate-document-relocated-'));
+    const userData = await mkdtemp(join(tmpdir(), 'lotagate-document-user-data-'));
+    const backend = {
+      id: 'stable-workspace-backend',
+      capabilities: { docs: { available: true, provider: 'test', operations: ['docs.create', 'docs.save'] } },
+      execute: vi.fn(async (_cwd: string, input: { action: string; path: string }) => { await writeFile(input.path, input.action === 'docs.create' ? 'created document' : 'updated document', 'utf8'); return { saved: input.action === 'docs.save' }; }),
+    };
+    process.env['LOTAGATE_DOCUMENT_TEST_USER_DATA'] = userData;
+    try {
+      const broker = new DocumentHostToolBroker(backend, {
+        importFile: vi.fn(async (taskId: string, sourcePath: string) => ({ id: 'artifact-1', taskId, name: 'report.docx', path: sourcePath, kind: 'binary' as const, size: 16, createdAt: new Date().toISOString() })),
+        replaceFile: vi.fn(async (taskId: string, artifactId: string, sourcePath: string) => ({ id: artifactId, taskId, name: 'report.docx', path: sourcePath, kind: 'binary' as const, size: 16, createdAt: new Date().toISOString() })),
+      });
+      const created = await broker.handle(root, request('docs.create', { path: 'report.docx' }, 'task-1', { executionCwd: root, executionWorkspaceId: 'workspace-1' }));
+      expect(created.ok).toBe(true);
+      const handleId = (created.result as { handleId: string }).handleId;
+      await expect(broker.handle(root, request('docs.save', { handleId }, 'task-1', { executionCwd: relocatedExecutionRoot, executionWorkspaceId: 'workspace-remounted' }))).resolves.toMatchObject({ ok: true });
+    } finally {
+      delete process.env['LOTAGATE_DOCUMENT_TEST_USER_DATA'];
+      await rm(root, { recursive: true, force: true });
+      await rm(relocatedExecutionRoot, { recursive: true, force: true });
       await rm(userData, { recursive: true, force: true });
     }
   });

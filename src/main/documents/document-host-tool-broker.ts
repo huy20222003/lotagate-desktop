@@ -10,6 +10,7 @@ import { DOCUMENT_FORMATS, FORMAT_EXTENSIONS, type DocumentFormat } from './docu
 import { HostCapabilityRegistry } from '../host/host-capability-registry.js';
 import { artifactKind } from '../artifacts/artifact-kind.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
+import { SandboxUnavailableError } from '../sandbox/vm-sandbox-execution-provider.js';
 
 export interface DocumentArtifactPublisher {
   importFile(taskId: string, sourcePath: string, kind: Artifact['kind']): Promise<Artifact>;
@@ -18,7 +19,7 @@ export interface DocumentArtifactPublisher {
 
 export interface DocumentArtifactDescriptor { id: string; name: string; kind: Artifact['kind']; sizeBytes: number; }
 
-interface DocumentHandle { id: string; sessionKey: string; cwd: string; path: string; format: DocumentFormat; backendId: string; openedAt: string; taskId?: string; artifactId?: string; stagingRoot?: string; }
+interface DocumentHandle { id: string; sessionId: string; cwd: string; path: string; format: DocumentFormat; backendId: string; openedAt: string; taskId?: string; artifactId?: string; stagingRoot?: string; }
 interface ArtifactOutputContext { taskId: string; root: string; persistent: boolean; }
 
 /** Owns document handles and delegates format-specific work to a bounded native backend. */
@@ -41,54 +42,54 @@ export class DocumentHostToolBroker {
     let executionRoot: string;
     try { executionRoot = request.executionCwd === undefined ? await requireDirectory(cwd) : await requireDirectory(request.executionCwd); }
     catch (error) { return this.error(request, 'DOCUMENT_PATH_INVALID', error instanceof Error ? error.message : 'The document execution workspace is invalid.'); }
-    const key = `${cwd}\u0000${request.sessionId}\u0000${executionRoot}`;
+    // A document handle belongs to the broker/session, not to the current
+    // materialized execution path. The execution workspace can be relocated
+    // or remounted during one Desktop session while the handle remains valid.
+    // The broker instance already scopes the backend, so sessionId is the
+    // stable ownership boundary for both serialization and handle lookup.
+    const key = request.sessionId;
     const previous = this.serial.get(key) ?? Promise.resolve();
     const operation = previous.catch(() => undefined).then(() => this.execute(executionRoot, request, key, signal));
     const barrier = operation.then(() => undefined, () => undefined);
     this.serial.set(key, barrier);
     try { return await operation; }
-    catch (error) { return this.error(request, 'DOCUMENT_HOST_ERROR', error instanceof Error ? error.message : 'Document action failed.'); }
+    catch (error) {
+      if (error instanceof SandboxUnavailableError) return this.error(request, request.hostFallback === 'ask' ? 'SANDBOX_FALLBACK_REQUIRED' : 'SANDBOX_UNAVAILABLE', error.message);
+      return this.error(request, 'DOCUMENT_HOST_ERROR', error instanceof Error ? error.message : 'Document action failed.');
+    }
     finally { if (this.serial.get(key) === barrier) this.serial.delete(key); }
   }
 
   async closeForSession(cwd: string, sessionId: string): Promise<void> {
-    const prefix = `${cwd}\u0000${sessionId}\u0000`;
-    for (const key of [...this.sessions.keys()]) if (key.startsWith(prefix)) {
-      for (const handleId of this.sessions.get(key) ?? []) await this.closeHandle(handleId);
-      this.sessions.delete(key);
-      this.serial.delete(key);
-    }
+    const handleIds = this.sessions.get(sessionId) ?? new Set<string>();
+    for (const handleId of handleIds) await this.closeHandle(handleId);
+    this.sessions.delete(sessionId);
+    this.serial.delete(sessionId);
   }
 
   async closeForWorkspace(cwd: string): Promise<void> {
-    for (const key of [...this.sessions.keys()]) if (key.startsWith(`${cwd}\u0000`)) {
-      for (const handleId of this.sessions.get(key) ?? []) await this.closeHandle(handleId);
-      this.sessions.delete(key);
-      this.serial.delete(key);
-    }
+    const sessionIds = new Set<string>();
+    for (const handle of this.handles.values()) if (handle.cwd === cwd) sessionIds.add(handle.sessionId);
+    for (const sessionId of sessionIds) await this.closeForSession(cwd, sessionId);
   }
 
   async closeAll(): Promise<void> {
-    for (const key of [...this.sessions.keys()]) {
-      for (const handleId of this.sessions.get(key) ?? []) await this.closeHandle(handleId);
-      this.sessions.delete(key);
-      this.serial.delete(key);
-    }
+    for (const sessionId of [...this.sessions.keys()]) await this.closeForSession('', sessionId);
   }
 
-  private async execute(cwd: string, request: DesktopHostRequest, sessionKey: string, signal?: AbortSignal): Promise<DesktopHostResponse> {
+  private async execute(cwd: string, request: DesktopHostRequest, sessionId: string, signal?: AbortSignal): Promise<DesktopHostResponse> {
     if (signal?.aborted === true) throw new Error('Document action was cancelled.');
     const [formatToken, actionToken] = request.action.split('.', 2);
     if (!isDocumentFormat(formatToken) || actionToken === undefined) throw new Error('Invalid document action.');
     this.requireCapability(formatToken, request.action);
-    if (actionToken === 'open' || actionToken === 'create') return this.open(cwd, request, sessionKey, formatToken, actionToken, signal);
+    if (actionToken === 'open' || actionToken === 'create') return this.open(cwd, request, sessionId, formatToken, actionToken, signal);
     if (actionToken === 'validate') {
       const target = await requireExistingPath(requiredPath(request.params['path']), cwd);
       assertFormat(target, formatToken);
       return this.success(request, await this.backend.execute(cwd, { action: request.action, path: target, params: request.params }, signal));
     }
     if (formatToken === 'pdf' && actionToken === 'merge') {
-      const artifactContext = await this.requireArtifactOutputContext(request, false);
+      const artifactContext = await this.requireArtifactOutputContext(cwd, request, false);
       try {
         const outputPath = await resolveOutputPath(cwd, requiredPath(request.params['outputPath']), artifactContext);
         assertFormat(outputPath, 'pdf');
@@ -99,13 +100,13 @@ export class DocumentHostToolBroker {
       } finally { await this.cleanupArtifactOutputContext(artifactContext); }
     }
     if (actionToken === 'close') {
-      const handle = this.requireHandle(request, formatToken, sessionKey);
-      await this.closeHandle(handle.id); this.sessions.get(sessionKey)?.delete(handle.id);
+      const handle = this.requireHandle(request, formatToken, sessionId);
+      await this.closeHandle(handle.id); this.sessions.get(sessionId)?.delete(handle.id);
       return this.success(request, { closed: true, handleId: handle.id });
     }
-    const handle = this.requireHandle(request, formatToken, sessionKey);
+    const handle = this.requireHandle(request, formatToken, sessionId);
     if (actionToken !== 'validate') await access(handle.path);
-    const artifactContext = this.artifactContextForHandle(handle, request) ?? await this.createArtifactOutputContext(request, shouldStageHandleOutput(handle, actionToken, request.params));
+    const artifactContext = this.artifactContextForHandle(handle, request) ?? await this.createArtifactOutputContext(cwd, request, shouldStageHandleOutput(handle, actionToken, request.params));
     try {
       const params = await normalizePathParams(cwd, request.params, path => resolveOutputPath(cwd, path, artifactContext));
       const result = await this.backend.execute(cwd, { action: request.action, path: handle.path, params }, signal);
@@ -119,11 +120,11 @@ export class DocumentHostToolBroker {
     } finally { await this.cleanupArtifactOutputContext(artifactContext); }
   }
 
-  private async open(cwd: string, request: DesktopHostRequest, sessionKey: string, format: DocumentFormat, action: string, signal?: AbortSignal): Promise<DesktopHostResponse> {
+  private async open(cwd: string, request: DesktopHostRequest, sessionId: string, format: DocumentFormat, action: string, signal?: AbortSignal): Promise<DesktopHostResponse> {
     const rawPath = requiredPath(request.params['path']);
     const validatedPath = action === 'create' ? await requireWorkspaceMutationPath(rawPath, cwd) : await requireExistingPath(rawPath, cwd);
     assertFormat(validatedPath, format);
-    const artifactContext = await this.requireArtifactOutputContext(request, true);
+    const artifactContext = await this.requireArtifactOutputContext(cwd, request, true);
     const target = join(artifactContext.root, basename(validatedPath));
     try {
       if (action === 'create') {
@@ -132,9 +133,9 @@ export class DocumentHostToolBroker {
         const published = await this.publishGeneratedArtifacts(artifactContext, undefined, [target], result);
         const artifact = published.find(item => item.path === target)?.artifact;
         if (artifact === undefined) throw new Error('The document was created but could not be stored as a Desktop artifact.');
-        const handle: DocumentHandle = { id: randomUUID(), sessionKey, cwd, path: target, format, backendId: this.backend.id, openedAt: new Date().toISOString(), taskId: artifactContext.taskId, stagingRoot: artifactContext.root, artifactId: artifact.id };
+        const handle: DocumentHandle = { id: randomUUID(), sessionId, cwd, path: target, format, backendId: this.backend.id, openedAt: new Date().toISOString(), taskId: artifactContext.taskId, stagingRoot: artifactContext.root, artifactId: artifact.id };
         this.handles.set(handle.id, handle);
-        const handles = this.sessions.get(sessionKey) ?? new Set<string>(); handles.add(handle.id); this.sessions.set(sessionKey, handles);
+        const handles = this.sessions.get(sessionId) ?? new Set<string>(); handles.add(handle.id); this.sessions.set(sessionId, handles);
         const details = await stat(target);
         return this.success(request, { handleId: handle.id, format, path: relative(cwd, validatedPath) || '.', sizeBytes: details.size, openedAt: handle.openedAt }, published);
       }
@@ -142,9 +143,9 @@ export class DocumentHostToolBroker {
       const published = await this.publishGeneratedArtifacts(artifactContext, undefined, [target], undefined);
       const artifact = published.find(item => item.path === target)?.artifact;
       if (artifact === undefined) throw new Error('The document could not be stored as a Desktop artifact.');
-      const handle: DocumentHandle = { id: randomUUID(), sessionKey, cwd, path: target, format, backendId: this.backend.id, openedAt: new Date().toISOString(), taskId: artifactContext.taskId, stagingRoot: artifactContext.root, artifactId: artifact.id };
+      const handle: DocumentHandle = { id: randomUUID(), sessionId, cwd, path: target, format, backendId: this.backend.id, openedAt: new Date().toISOString(), taskId: artifactContext.taskId, stagingRoot: artifactContext.root, artifactId: artifact.id };
       this.handles.set(handle.id, handle);
-      const handles = this.sessions.get(sessionKey) ?? new Set<string>(); handles.add(handle.id); this.sessions.set(sessionKey, handles);
+      const handles = this.sessions.get(sessionId) ?? new Set<string>(); handles.add(handle.id); this.sessions.set(sessionId, handles);
       const details = await stat(target);
       return this.success(request, { handleId: handle.id, format, path: relative(cwd, validatedPath) || '.', sizeBytes: details.size, openedAt: handle.openedAt }, published);
     } catch (error) {
@@ -153,11 +154,11 @@ export class DocumentHostToolBroker {
     }
   }
 
-  private requireHandle(request: DesktopHostRequest, format: DocumentFormat, sessionKey: string): DocumentHandle {
+  private requireHandle(request: DesktopHostRequest, format: DocumentFormat, sessionId: string): DocumentHandle {
     const id = request.params['handleId'];
     if (typeof id !== 'string' || id.length === 0) throw new Error('A document handleId is required.');
     const handle = this.handles.get(id);
-    if (handle === undefined || handle.format !== format || handle.sessionKey !== sessionKey || handle.backendId !== this.backend.id) throw new Error('The document handle is invalid or belongs to another session, format, or backend.');
+    if (handle === undefined || handle.format !== format || handle.sessionId !== sessionId || handle.backendId !== this.backend.id) throw new Error('The document handle is invalid or belongs to another session, format, or backend.');
     return handle;
   }
 
@@ -165,18 +166,18 @@ export class DocumentHostToolBroker {
     if (!this.capabilities.supportsDocument(format, action)) throw new Error(this.capabilities.documentReason(format, action) ?? `The configured document provider does not support ${action}.`);
   }
 
-  private success(request: DesktopHostRequest, result: unknown, artifacts: readonly PublishedArtifact[] = []): DesktopHostResponse { return { version: 1, type: 'host.response', requestId: request.requestId, tool: 'document', executionBoundary: 'host', ok: true, result, ...(artifacts.length === 0 ? {} : { artifacts: artifacts.map(item => artifactDescriptor(item.artifact)) }) }; }
-  private error(request: DesktopHostRequest, code: string, message: string): DesktopHostResponse { return { version: 1, type: 'host.response', requestId: request.requestId, tool: 'document', executionBoundary: 'host', ok: false, error: { code, category: 'document', message, retryable: false } }; }
+  private success(request: DesktopHostRequest, result: unknown, artifacts: readonly PublishedArtifact[] = []): DesktopHostResponse { return { version: 1, type: 'host.response', requestId: request.requestId, tool: 'document', executionBoundary: request.executionBoundary, ok: true, result, ...(artifacts.length === 0 ? {} : { artifacts: artifacts.map(item => artifactDescriptor(item.artifact)) }) }; }
+  private error(request: DesktopHostRequest, code: string, message: string): DesktopHostResponse { return { version: 1, type: 'host.response', requestId: request.requestId, tool: 'document', executionBoundary: request.executionBoundary, ok: false, error: { code, category: 'document', message, retryable: code === 'SANDBOX_FALLBACK_REQUIRED' } }; }
 
-  private async createArtifactOutputContext(request: DesktopHostRequest, persistent: boolean): Promise<ArtifactOutputContext | undefined> {
+  private async createArtifactOutputContext(cwd: string, request: DesktopHostRequest, persistent: boolean): Promise<ArtifactOutputContext | undefined> {
     if (this.artifactPublisher === undefined || request.taskId === undefined) return undefined;
-    const parent = desktopDataPath('document-output');
+    const parent = request.executionBoundary === 'sandbox' ? join(cwd, '.lotagate', 'document-output') : desktopDataPath('document-output');
     await mkdir(parent, { recursive: true });
     return { taskId: request.taskId, root: await mkdtemp(join(parent, 'document-')), persistent };
   }
 
-  private async requireArtifactOutputContext(request: DesktopHostRequest, persistent: boolean): Promise<ArtifactOutputContext> {
-    const context = await this.createArtifactOutputContext(request, persistent);
+  private async requireArtifactOutputContext(cwd: string, request: DesktopHostRequest, persistent: boolean): Promise<ArtifactOutputContext> {
+    const context = await this.createArtifactOutputContext(cwd, request, persistent);
     if (context === undefined) throw new Error('Document artifact storage is required for generated files.');
     return context;
   }

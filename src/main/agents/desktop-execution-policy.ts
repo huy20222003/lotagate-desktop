@@ -4,6 +4,7 @@ import type { SandboxHostFallback } from '../../contracts/ipc/v1/settings.js';
 export const INTERACTIVE_DESKTOP_EXECUTION_POLICY: DesktopExecutionPolicy = {
   permissionPolicy: 'ask',
   browserAccess: 'interactive',
+  browserExecution: 'interactive',
   isolation: 'sandbox',
   hostFallback: 'ask',
   timeoutMs: 60 * 60 * 1_000,

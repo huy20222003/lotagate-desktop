@@ -25,7 +25,7 @@
     "node-pty@1.1.0": true
   },
   "scripts": {
-    "dev": "npm run cli:build && electron-vite dev",
+    "dev": "npm run cli:build && npm run sandbox:prepare && electron-vite dev",
     "cli:build": "npm --prefix ../cli run build",
     "build": "electron-vite build",
     "cli:link": "node scripts/link-cli.mjs",
@@ -35,6 +35,7 @@
     "test:component": "vitest run src/renderer",
     "test:contract": "vitest run src/contracts src/main/api",
     "test:e2e": "npm run package && playwright test",
+    "test:e2e:sandbox": "node tests/e2e/sandbox-runtime.mjs",
     "lint": "eslint .",
     "check:file-size": "node scripts/check-file-sizes.mjs",
     "cli:prepare": "node scripts/prepare-cli-runtime.mjs",
@@ -42,7 +43,9 @@
     "native:check": "node scripts/native-dependencies.mjs --check",
     "native:install": "node scripts/native-dependencies.mjs --install",
     "native:install:windows": "node scripts/native-dependencies.mjs --platform win32 --install",
-    "prepackage": "npm run speech:prepare",
+    "sandbox:prepare": "node scripts/prepare-sandbox-runtime.mjs",
+    "sandbox:image": "node scripts/prepare-wsl2-image.mjs",
+    "prepackage": "npm run speech:prepare && npm run sandbox:prepare",
     "package": "electron-forge package",
     "premake": "node scripts/prepare-speech-lifecycle.mjs",
     "make": "electron-forge make",

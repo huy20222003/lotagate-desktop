@@ -2,8 +2,33 @@
   "schemaVersion": 1,
   "dependencies": [
     {
+      "id": "sandbox.wsl2.base",
+      "label": "LotaGate VM base runtime",
+      "target": "guest",
+      "platforms": ["win32"],
+      "probe": { "type": "guestCommandsAll", "commands": ["bwrap", "python3", "node"] },
+      "guest": {
+        "runtime": "wsl2",
+        "profiles": ["general"],
+        "packages": { "apt": ["bubblewrap", "python3", "nodejs"] }
+      }
+    },
+    {
+      "id": "sandbox.wsl2.documents",
+      "label": "LotaGate VM document runtime",
+      "target": "guest",
+      "platforms": ["win32"],
+      "probe": { "type": "guestCommandsAll", "commands": ["soffice", "pdfinfo", "pdftotext", "pdftoppm", "pdfunite", "pdfimages", "pdftohtml", "pdfdetach", "pdftk", "qpdf", "gs", "tesseract"] },
+      "guest": {
+        "runtime": "wsl2",
+        "profiles": ["general"],
+        "packages": { "apt": ["libreoffice-core", "libreoffice-writer", "libreoffice-calc", "libreoffice-impress", "python3-uno", "poppler-utils", "pdftk-java", "qpdf", "ghostscript", "tesseract-ocr"] }
+      }
+    },
+    {
       "id": "documents.libreoffice",
       "label": "LibreOffice",
+      "automaticInstall": true,
       "platforms": ["win32", "darwin", "linux"],
       "probe": { "type": "commandAny", "commands": ["soffice", "libreoffice"] },
       "install": {
@@ -19,6 +44,7 @@
     {
       "id": "documents.poppler",
       "label": "Poppler PDF utilities",
+      "automaticInstall": true,
       "platforms": ["win32", "darwin", "linux"],
       "probe": {
         "type": "commandsAll",
@@ -37,6 +63,7 @@
     {
       "id": "documents.pdftk",
       "label": "PDFtk",
+      "automaticInstall": true,
       "platforms": ["win32", "darwin", "linux"],
       "probe": { "type": "command", "command": "pdftk" },
       "install": {
@@ -52,6 +79,7 @@
     {
       "id": "documents.qpdf",
       "label": "qpdf",
+      "automaticInstall": true,
       "platforms": ["win32", "darwin", "linux"],
       "probe": { "type": "command", "command": "qpdf" },
       "install": {
@@ -67,6 +95,7 @@
     {
       "id": "documents.ghostscript",
       "label": "Ghostscript",
+      "automaticInstall": true,
       "platforms": ["win32", "darwin", "linux"],
       "probe": { "type": "commandAny", "commands": ["gs", "gswin64c"] },
       "install": {
@@ -82,6 +111,7 @@
     {
       "id": "documents.tesseract",
       "label": "Tesseract OCR",
+      "automaticInstall": true,
       "platforms": ["win32", "darwin", "linux"],
       "probe": { "type": "command", "command": "tesseract" },
       "install": {
@@ -147,6 +177,7 @@
     {
       "id": "documents.windows.office",
       "label": "Microsoft Office desktop applications",
+      "automaticInstall": true,
       "platforms": ["win32"],
       "probe": {
         "type": "commandsAll",

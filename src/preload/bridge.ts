@@ -163,6 +163,7 @@ const bridge: DesktopBridge = {
     onOutput: listener => { const handler = (_event: Electron.IpcRendererEvent, output: Parameters<typeof listener>[0]) => listener(output); ipcRenderer.on('terminal.output', handler); return () => ipcRenderer.removeListener('terminal.output', handler); },
   },
   settings: { get: () => ipcRenderer.invoke('settings.get'), update: patch => ipcRenderer.invoke('settings.update', patch) },
+  sandbox: { health: () => ipcRenderer.invoke('sandbox.health'), repair: () => ipcRenderer.invoke('sandbox.repair') },
   automations: {
     list: () => ipcRenderer.invoke('automation.list'),
     get: id => ipcRenderer.invoke('automation.get', id),

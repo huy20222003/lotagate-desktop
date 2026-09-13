@@ -3,7 +3,7 @@ import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 import { normalizeOriginAllowlist } from '../../contracts/ipc/v1/origin-allowlist.js';
 import { defaultComputerApplicationAllowlist, normalizeComputerApplicationAllowlist, type ComputerApplicationPlatform } from '../../contracts/ipc/v1/computer-application-allowlist.js';
-import { DEFAULT_FILE_OPEN_DESTINATION, fileOpenDestinationSchema } from '../../contracts/ipc/v1/settings.js';
+import { DEFAULT_FILE_OPEN_DESTINATION, fileOpenDestinationSchema, SANDBOX_DEFAULTS, SANDBOX_LIMITS } from '../../contracts/ipc/v1/settings.js';
 
 const browserSettingsSchema = z.object({
   viewportProfile: z.enum(['desktop', 'laptop', 'tablet', 'mobile', 'custom']).default('desktop'),
@@ -16,17 +16,24 @@ const browserSettingsSchema = z.object({
   evidenceRetentionDays: z.number().int().min(1).max(365).default(30),
 });
 
+const sandboxProfileSchema = z.preprocess(value => value === 'documents' ? 'general' : value, z.literal('general'));
+
 const sandboxSettingsSchema = z.object({
-  backend: z.enum(['auto', 'docker', 'podman', 'disabled']).default('auto'),
-  image: z.string().trim().min(1).max(256).default('node:22-bookworm-slim'),
-  networkPolicy: z.enum(['none', 'full']).default('none'),
-  mountMode: z.enum(['read-only', 'read-write']).default('read-write'),
-  memoryMb: z.number().int().min(128).max(16_384).default(2_048),
-  cpuCores: z.number().min(0.25).max(16).default(2),
-  pidsLimit: z.number().int().min(16).max(4_096).default(128),
-  hostFallback: z.enum(['ask', 'allow', 'deny']).default('ask'),
-  cleanup: z.enum(['always', 'on-success']).default('always'),
-  diagnosticsRetentionDays: z.number().int().min(1).max(365).default(30),
+  runtime: z.enum(['auto', 'wsl2', 'disabled']).default(SANDBOX_DEFAULTS.runtime),
+  distribution: z.string().trim().min(1).max(256).default(SANDBOX_DEFAULTS.distribution),
+  profile: sandboxProfileSchema.default(SANDBOX_DEFAULTS.profile),
+  networkPolicy: z.enum(['none', 'allowlist', 'full']).default(SANDBOX_DEFAULTS.networkPolicy),
+  allowedDomains: z.array(z.string().trim().min(1).max(2_048)).max(256).default([...SANDBOX_DEFAULTS.allowedDomains]),
+  workspaceAccess: z.enum(['read-only', 'read-write']).default(SANDBOX_DEFAULTS.workspaceAccess),
+  memoryMb: z.number().int().min(SANDBOX_LIMITS.memoryMb.min).max(SANDBOX_LIMITS.memoryMb.max).default(SANDBOX_DEFAULTS.memoryMb),
+  cpuCores: z.number().min(SANDBOX_LIMITS.cpuCores.min).max(SANDBOX_LIMITS.cpuCores.max).default(SANDBOX_DEFAULTS.cpuCores),
+  pidsLimit: z.number().int().min(SANDBOX_LIMITS.pidsLimit.min).max(SANDBOX_LIMITS.pidsLimit.max).default(SANDBOX_DEFAULTS.pidsLimit),
+  diskMb: z.number().int().min(SANDBOX_LIMITS.diskMb.min).max(SANDBOX_LIMITS.diskMb.max).default(SANDBOX_DEFAULTS.diskMb),
+  maxConcurrentEnvironments: z.number().int().min(SANDBOX_LIMITS.maxConcurrentEnvironments.min).max(SANDBOX_LIMITS.maxConcurrentEnvironments.max).default(SANDBOX_DEFAULTS.maxConcurrentEnvironments),
+  maxConcurrentOperations: z.number().int().min(SANDBOX_LIMITS.maxConcurrentOperations.min).max(SANDBOX_LIMITS.maxConcurrentOperations.max).default(SANDBOX_DEFAULTS.maxConcurrentOperations),
+  idleTimeoutMinutes: z.number().int().min(SANDBOX_LIMITS.idleTimeoutMinutes.min).max(SANDBOX_LIMITS.idleTimeoutMinutes.max).default(SANDBOX_DEFAULTS.idleTimeoutMinutes),
+  hostFallback: z.enum(['ask', 'allow', 'deny']).default(SANDBOX_DEFAULTS.hostFallback),
+  diagnosticsRetentionDays: z.number().int().min(SANDBOX_LIMITS.diagnosticsRetentionDays.min).max(SANDBOX_LIMITS.diagnosticsRetentionDays.max).default(SANDBOX_DEFAULTS.diagnosticsRetentionDays),
 });
 
 const computerApplicationPlatform: ComputerApplicationPlatform = process.platform === 'darwin' ? 'darwin' : process.platform === 'linux' ? 'linux' : 'win32';

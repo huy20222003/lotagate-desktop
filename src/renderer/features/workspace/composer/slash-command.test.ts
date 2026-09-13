@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { availableSlashCommands, createSlashCommandForm, createSlashInvocation, filterSlashCommands, modelsForSlashCommand, slashCommandLabel, SLASH_COMMAND_DEFINITIONS, validateSlashCommandForm } from './slash-command.js';
+import { availableSlashCommands, createSlashCommandForm, createSlashInvocation, filterSlashCommands, isComposerSkillSuggestion, modelsForSlashCommand, slashCommandLabel, SLASH_COMMAND_DEFINITIONS, validateSlashCommandForm } from './slash-command.js';
 
 describe('slash commands', () => {
   it('only exposes commands advertised by the CLI catalog', () => {
@@ -46,6 +46,13 @@ describe('slash commands', () => {
   it('filters the picker by command name', () => {
     const commands = filterSlashCommands(SLASH_COMMAND_DEFINITIONS, 'image.g');
     expect(commands.map(command => command.id)).toEqual(['image.generate']);
+  });
+
+  it('keeps plugin skills out of Composer slash suggestions', () => {
+    expect(isComposerSkillSuggestion({ scope: 'plugin' })).toBe(false);
+    expect(isComposerSkillSuggestion({ scope: 'user' })).toBe(true);
+    expect(isComposerSkillSuggestion({ scope: 'project' })).toBe(true);
+    expect(isComposerSkillSuggestion({ scope: 'builtin' })).toBe(true);
   });
 
   it('serializes form values into the existing command invocation shape', () => {
