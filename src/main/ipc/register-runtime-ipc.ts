@@ -53,6 +53,7 @@ handle('automation.approvalRespond', async (event, runId: unknown, approvalId: u
 handle('automation.runs', async (event, id: unknown, limit?: unknown) => { assertTrustedRenderer(event); return automations.runs(idSchema.parse(id), limit === undefined ? 100 : z.number().int().min(1).max(100).parse(limit)); });
 handle('operations.notify', async (event, title: unknown, body: unknown) => { assertTrustedRenderer(event); operations.notify(z.string().min(1).parse(title), z.string().max(2_000).parse(body)); });
 handle('operations.showWindow', async event => { assertTrustedRenderer(event); operations.showWindow(); });
+handle('operations.openExternal', async (event, url: unknown) => { assertTrustedRenderer(event); await operations.openExternal(z.string().url().parse(url)); });
 handle('operations.revealPath', async (event, path: unknown) => { assertTrustedRenderer(event); await operations.revealPath(cwdSchema.parse(path)); });
 handle('operations.openFile', async (event, path: unknown, destination?: unknown) => { assertTrustedRenderer(event); await operations.openFile(cwdSchema.parse(path), destination === undefined ? undefined : fileOpenDestinationSchema.parse(destination)); });
 handle('operations.listDirectory', async (event, path: unknown) => { assertTrustedRenderer(event); return operations.listDirectory(cwdSchema.parse(path)); });

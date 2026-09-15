@@ -38,6 +38,9 @@ import { useWorkspaceModelPreferences } from './use-workspace-model-preferences.
 import { finalAssistantResponseForTurn, type AssistantFinalResponse } from '../conversation/assistant-response.js';
 import { useWorkspaceBootstrap } from './use-workspace-bootstrap.js';
 import { useApprovalMode } from './use-approval-mode.js';
+
+const INITIAL_ACTIVITY_PAGE_LIMIT = 100;
+
 export function useWorkspaceController() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspace, setWorkspace] = useState<Workspace | undefined>();
@@ -73,6 +76,7 @@ export function useWorkspaceController() {
   const taskReloadTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const initialTasksLoadedRef = useRef(false);
   const activityRequestRef = useRef(0);
+  const activitySelectionRevisionRef = useRef(0);
   const pendingAssistantStreamsRef = useRef(new Map<string, PendingAssistantStream>());
   const activitiesRef = useRef<Activity[]>([]);
   const activityPageCursorRef = useRef<string | null>(null);
@@ -141,7 +145,7 @@ export function useWorkspaceController() {
   }, [workspace, reloadTasks]);
   const loadActivities = useCallback(async (taskId: string, reset = true, restorePlan = true): Promise<void> => {
     const requestId = ++activityRequestRef.current;
-    const page = await window.lotagate.tasks.activitiesPage(taskId);
+    const page = await window.lotagate.tasks.activitiesPage(taskId, { limit: INITIAL_ACTIVITY_PAGE_LIMIT });
     const persisted = reset ? page.activities : mergeActivities(activitiesRef.current.filter(activity => activity.taskId === taskId), page.activities);
     const pending = new Map(pendingAssistantStreamsRef.current);
     for (const [key, stream] of pending) if (stream.taskId === taskId && isAssistantStreamPersisted(persisted, stream)) pending.delete(key);
@@ -150,18 +154,24 @@ export function useWorkspaceController() {
     const nextActivityAttachments = await loadActivityAttachmentPreviews(taskId, next);
     const nextActivityArtifacts = await loadActivityArtifactPreviews(taskId, next);
     if (requestId === activityRequestRef.current) {
-      const summaries = fileChangeSummariesFromActivities(next);
-      activitiesRef.current = next;
-      publishActivities(next);
+      // A history page can finish while this refresh is loading attachment or
+      // artifact previews. Rebuild from the current ref at commit time so a
+      // refresh cannot overwrite a page that was loaded in the meantime.
+      const committedPersisted = reset ? page.activities : mergeActivities(activitiesRef.current.filter(activity => activity.taskId === taskId), page.activities);
+      const committedPending = [...pendingAssistantStreamsRef.current.values()].filter(stream => stream.taskId === taskId);
+      const committedNext = reconcilePendingAssistantStreams(committedPersisted, committedPending);
+      const summaries = fileChangeSummariesFromActivities(committedNext);
+      activitiesRef.current = committedNext;
+      publishActivities(committedNext);
       if (reset || activityPageCursorRef.current === null || activitiesRef.current.length === 0) {
         activityPageCursorRef.current = page.nextCursor;
         setHasOlderActivities(page.hasMore);
       }
-      setTurnTimings(current => mergeTurnTimings(turnTimingsFromActivities(next), current));
-      setActivityAttachments(nextActivityAttachments);
-      setActivityArtifacts(nextActivityArtifacts);
+      setTurnTimings(current => mergeTurnTimings(turnTimingsFromActivities(committedNext), current));
+      setActivityAttachments(current => reset ? nextActivityAttachments : { ...current, ...nextActivityAttachments });
+      setActivityArtifacts(current => reset ? nextActivityArtifacts : { ...current, ...nextActivityArtifacts });
       setFileChangesByTurn(current => mergeFileChangeSummaries(current, summaries));
-      setPlan(restorePlan ? restoreWorkPlan(next) : undefined);
+      setPlan(restorePlan ? restoreWorkPlan(committedNext) : undefined);
       const liveTurnId = activeTurnRef.current?.turnId;
       if (liveTurnId === undefined) setFileChanges(EMPTY_FILE_CHANGE_SUMMARY);
       else setFileChanges(current => summaries[liveTurnId] === undefined ? current : mergeFileChangeSummaries({ [liveTurnId]: current }, summaries)[liveTurnId] ?? current);
@@ -175,16 +185,20 @@ export function useWorkspaceController() {
     if (taskId === undefined || before === null || !hasOlderActivities || loadingOlderActivitiesRef.current) return false;
     loadingOlderActivitiesRef.current = true;
     setLoadingOlderActivities(true);
-    const requestId = activityRequestRef.current;
+    const selectionRevision = activitySelectionRevisionRef.current;
     try {
       const page = await window.lotagate.tasks.activitiesPage(taskId, { before });
-      if (requestId !== activityRequestRef.current || draftTaskRef.current?.id !== taskId) return false;
+      // Refreshes may run while the user is loading history. They merge the
+      // newest page into activitiesRef, so they must not invalidate this
+      // independent pagination request. Only a task selection change makes
+      // the result stale.
+      if (selectionRevision !== activitySelectionRevisionRef.current || draftTaskRef.current?.id !== taskId) return false;
       const persisted = mergeActivities(activitiesRef.current.filter(activity => activity.taskId === taskId), page.activities);
       const pending = [...pendingAssistantStreamsRef.current.values()].filter(stream => stream.taskId === taskId);
       const next = reconcilePendingAssistantStreams(persisted, pending);
       const nextActivityAttachments = await loadActivityAttachmentPreviews(taskId, next);
       const nextActivityArtifacts = await loadActivityArtifactPreviews(taskId, next);
-      if (requestId !== activityRequestRef.current || draftTaskRef.current?.id !== taskId) return false;
+      if (selectionRevision !== activitySelectionRevisionRef.current || draftTaskRef.current?.id !== taskId) return false;
       const summaries = fileChangeSummariesFromActivities(next);
       activitiesRef.current = next;
       publishActivities(next);
@@ -203,6 +217,7 @@ export function useWorkspaceController() {
   }, [hasOlderActivities, publishActivities, task?.id]);
   useEffect(() => {
     let mounted = true;
+    activitySelectionRevisionRef.current += 1;
     activityRequestRef.current += 1;
     if (!task) { activitiesRef.current = []; activityPageCursorRef.current = null; pendingAssistantStreamsRef.current.clear(); publishActivities([]); setHasOlderActivities(false); setLoadingOlderActivities(false); setTurnTimings({}); setActivityAttachments({}); setActivityArtifacts({}); setFileChanges(EMPTY_FILE_CHANGE_SUMMARY); setFileChangesByTurn(EMPTY_FILE_CHANGE_SUMMARIES); setActiveTurnId(undefined); setPlan(undefined); setSubagents([]); setAttachments([]); setActivitiesLoading(false); setFinalResponseReceived(false); setAssistantFinalResponse(undefined); return; }
     activityPageCursorRef.current = null;

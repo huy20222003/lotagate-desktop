@@ -73,11 +73,11 @@ describe('BrowserPanel', () => {
     render(<BrowserPanel onClose={vi.fn()} />);
     const panel = await screen.findByRole('complementary', { name: 'Browser' });
     await waitFor(() => {
-      expect(panel).toHaveStyle({ width: '1024px' });
+      expect(panel).toHaveStyle({ width: '1000px' });
     });
   });
 
-  it('clamps panel width to 55vw max viewport ratio', async () => {
+  it('clamps panel width to 50vw max viewport ratio', async () => {
     const onState = vi.fn(() => vi.fn());
     const setViewBounds = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(window, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
@@ -90,9 +90,9 @@ describe('BrowserPanel', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1000 });
     render(<BrowserPanel onClose={vi.fn()} />);
     const panel = await screen.findByRole('complementary', { name: 'Browser' });
-    // 1000 * 0.55 = 550px max width for desktop profile (1280px)
+    // 1000 * 0.5 = 500px max width for desktop profile (1280px)
     await waitFor(() => {
-      expect(panel).toHaveStyle({ width: '550px' });
+      expect(panel).toHaveStyle({ width: '500px' });
     });
   });
 });

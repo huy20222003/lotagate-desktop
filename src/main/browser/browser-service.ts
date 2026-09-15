@@ -307,6 +307,10 @@ export class BrowserService {
     const tab = this.requireTab(entry, tabId ?? entry.activeTabId);
     await setViewport(tab.view.webContents, viewport);
     tab.viewport = { ...viewport };
+    // A responsive viewport is an emulation override. Mark it as configured so
+    // the next visible native layout clears it instead of inheriting the
+    // emulated desktop/mobile width and clipping the page inside the drawer.
+    tab.viewportMode = 'configured';
     return { tab: { ...tab.snapshot }, viewport: { ...viewport } };
   }
 

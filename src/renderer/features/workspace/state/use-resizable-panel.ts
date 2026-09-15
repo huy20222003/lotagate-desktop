@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKe
 import { clamp, FILE_PANEL_DEFAULT_WIDTH, FILE_PANEL_MAX_WIDTH, FILE_PANEL_MIN_WIDTH } from '../review/file-change-view.js';
 export { FILE_PANEL_DEFAULT_WIDTH, FILE_PANEL_MAX_WIDTH, FILE_PANEL_MIN_WIDTH };
 
-const SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.55;
+const SIDE_PANEL_MAX_VIEWPORT_RATIO = 0.5;
 
 type ResizeSide = 'left' | 'right';
 interface ResizableSidePanelOptions { side?: ResizeSide; initialWidth?: number; minWidth?: number; maxWidth?: number; maxViewportRatio?: number }

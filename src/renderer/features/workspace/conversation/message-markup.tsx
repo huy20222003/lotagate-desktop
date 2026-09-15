@@ -1,8 +1,11 @@
-import { Children, useState, type ReactNode } from 'react';
+import { Children, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Globe2 } from 'lucide-react';
 import type { Artifact } from '../../../../contracts/ipc/v1/workspace.js';
 import { Icon, Tooltip } from '../../../components/ui.js';
 import { fileIconFor } from '../../../components/file-icon.js';
+import { useClipboard } from '../../../hooks/use-clipboard.js';
+import { openInWorkspaceBrowser } from '../../../services/browser-navigation.js';
 import { openFilePath } from '../../../services/open-file.js';
 import { PROMPT_REFERENCE_TOKEN_PATTERN, SLASH_COMMAND_TOKEN_PATTERN } from '../prompt-token-pattern.js';
 
@@ -30,8 +33,51 @@ export function MessageMarkup({ content, fileReferences = [], workspaceCwd, exec
 export function MessageExternalLink({ href, children }: { href: string; children?: ReactNode }) {
   const parsed = parseExternalUrl(href);
   if (parsed === undefined) return <span>{children ?? href}</span>;
-  const label = textContent(children) || websiteLabel(href);
-  return <Tooltip label={parsed.toString()}><a className="message-external-link" href={parsed.toString()} target="_blank" rel="noreferrer"><MessageLinkIcon url={parsed} /><span>{label}</span></a></Tooltip>;
+  return <MessageExternalLinkContent url={parsed} label={textContent(children) || websiteLabel(href)} />;
+}
+
+const LINK_CONTEXT_MENU_WIDTH = 236;
+const LINK_CONTEXT_MENU_HEIGHT = 142;
+
+function MessageExternalLinkContent({ url, label }: { url: URL; label: string }) {
+  const [position, setPosition] = useState<{ x: number; y: number }>();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const firstMenuItemRef = useRef<HTMLButtonElement>(null);
+  const { copy } = useClipboard();
+  const target = url.toString();
+
+  useEffect(() => {
+    if (position === undefined) return;
+    const close = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setPosition(undefined); };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setPosition(undefined); };
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('keydown', closeOnEscape);
+    window.requestAnimationFrame(() => firstMenuItemRef.current?.focus());
+    return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', closeOnEscape); };
+  }, [position]);
+
+  const handleContextMenu = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setPosition({
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - LINK_CONTEXT_MENU_WIDTH - 8)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - LINK_CONTEXT_MENU_HEIGHT - 8)),
+    });
+  };
+  const closeMenu = () => setPosition(undefined);
+  const openInBrowser = () => { closeMenu(); void openInWorkspaceBrowser(target).catch(() => undefined); };
+  const openInExternalBrowser = () => { closeMenu(); void window.lotagate.operations.openExternal(target).catch(() => undefined); };
+  const copyLink = () => { closeMenu(); void copy(target); };
+
+  return <>
+    <Tooltip label={target}><a className="message-external-link" href={target} target="_blank" rel="noreferrer" onContextMenu={handleContextMenu}><MessageLinkIcon url={url} /><span>{label}</span></a></Tooltip>
+    {position === undefined ? null : createPortal(<div ref={menuRef} className="message-link-context-menu" style={{ left: position.x, top: position.y }} role="menu" aria-label={`Actions for ${target}`} onContextMenu={event => event.preventDefault()}>
+      <button ref={firstMenuItemRef} type="button" className="message-link-context-menu-item" role="menuitem" onClick={openInBrowser}>Open in browser</button>
+      <button type="button" className="message-link-context-menu-item" role="menuitem" onClick={openInExternalBrowser}>Open in external browser</button>
+      <div className="message-link-context-menu-separator" />
+      <button type="button" className="message-link-context-menu-item" role="menuitem" onClick={copyLink}>Copy link</button>
+    </div>, document.body)}
+  </>;
 }
 
 function MessageLinkIcon({ url }: { url: URL }) {

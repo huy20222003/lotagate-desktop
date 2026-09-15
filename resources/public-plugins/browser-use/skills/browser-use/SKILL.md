@@ -1,6 +1,41 @@
 ---
 name: browser-use
 description: Browse, inspect, and interact with web pages through LotaGate's governed browser tools.
+allowed-tools:
+  - browser.navigate
+  - browser.newTab
+  - browser.closeTab
+  - browser.selectTab
+  - browser.inspect
+  - browser.inspectElement
+  - browser.extractTable
+  - browser.drag
+  - browser.listFrames
+  - browser.console
+  - browser.network
+  - browser.accessibility
+  - browser.setViewport
+  - browser.resetViewport
+  - browser.screenshot
+  - browser.click
+  - browser.focus
+  - browser.clear
+  - browser.hover
+  - browser.check
+  - browser.select
+  - browser.readField
+  - browser.type
+  - browser.upload
+  - browser.download
+  - browser.exportPdf
+  - browser.dialog
+  - browser.press
+  - browser.scroll
+  - browser.back
+  - browser.forward
+  - browser.reload
+  - browser.waitFor
+  - browser.tabs
 ---
 
 # Browser Use

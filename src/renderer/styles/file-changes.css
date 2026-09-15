@@ -16,7 +16,7 @@
 .file-change-card-more:hover { color: var(--color-text); }
 .file-change-card .file-change-item, .file-review-list .file-change-item { position: relative; margin: 0; overflow: hidden; border: 0; border-radius: 0; background: transparent; }
 .file-review-list .file-change-item + .file-change-item { border-top: 1px solid var(--color-border-subtle); }
-.file-changes-panel { position: relative; display: flex; min-width: 360px; max-width: 55vw; min-height: 0; flex: 0 0 auto; flex-direction: column; border-left: 1px solid var(--color-border); background: var(--color-surface-drawer); box-shadow: -20px 0 45px var(--shadow-drawer); animation: file-changes-slide-in .18s ease-out; }
+.file-changes-panel { position: relative; display: flex; min-width: 360px; max-width: 50vw; min-height: 0; flex: 0 0 auto; flex-direction: column; border-left: 1px solid var(--color-border); background: var(--color-surface-drawer); box-shadow: -20px 0 45px var(--shadow-drawer); animation: file-changes-slide-in .18s ease-out; }
 .file-changes-panel.is-expanded { position: absolute; inset: 0; z-index: 10; width: auto !important; max-width: none; border-left: 0; box-shadow: none; }
 .file-changes-panel.is-resizing { user-select: none; }
 .file-changes-resize-handle { position: absolute; top: 0; bottom: 0; left: -5px; z-index: 3; width: 10px; cursor: col-resize; outline: none; }

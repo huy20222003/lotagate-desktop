@@ -18,12 +18,38 @@ describe('message markup', () => {
     await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('D:/workspace/reports/result.json'));
   });
 
-  it('renders external links with the website favicon and hostname label', () => {
+  it('renders external links with the website favicon, hostname label, and full-url tooltip', async () => {
     render(<MessageMarkup content="Open https://example.com/docs now." />);
 
     const link = screen.getByRole('link', { name: 'example.com' });
     expect(link).toHaveClass('message-external-link');
     expect(link.querySelector('img')).toHaveAttribute('src', 'https://example.com/favicon.ico');
+    fireEvent.pointerMove(link, { pointerType: 'mouse' });
+    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent('https://example.com/docs'));
+  });
+
+  it('opens the shared link context menu and routes each action to its owning service', async () => {
+    const openInBrowser = vi.fn().mockResolvedValue({ id: 'browser-1', url: 'https://example.com/docs' });
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    window.lotagate = { browser: { open: openInBrowser }, operations: { openExternal } } as unknown as typeof window.lotagate;
+    render(<MessageMarkup content="Open https://example.com/docs now." />);
+
+    fireEvent.contextMenu(screen.getByRole('link', { name: 'example.com' }), { clientX: 200, clientY: 100 });
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    expect(screen.getAllByRole('menuitem')).toHaveLength(3);
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open in browser' }));
+    await waitFor(() => expect(openInBrowser).toHaveBeenCalledWith('https://example.com/docs', true));
+
+    fireEvent.contextMenu(screen.getByRole('link', { name: 'example.com' }), { clientX: 200, clientY: 100 });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open in external browser' }));
+    await waitFor(() => expect(openExternal).toHaveBeenCalledWith('https://example.com/docs'));
+
+    fireEvent.contextMenu(screen.getByRole('link', { name: 'example.com' }), { clientX: 200, clientY: 100 });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('https://example.com/docs'));
   });
 
   it('falls back to the globe icon when the site favicon cannot load', () => {

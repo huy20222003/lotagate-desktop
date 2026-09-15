@@ -80,6 +80,22 @@ describe('BrowserService layout lifecycle', () => {
     await service.close(snapshot.id);
   });
 
+  it('clears a responsive emulation override when the tab returns to the native drawer', async () => {
+    const settings: BrowserSettings = { viewportProfile: 'desktop', customViewport: { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 }, downloadDirectory: '', sessionRetention: 'persistent', sessionRetentionMinutes: 60, originAllowlist: [], clearDataOnClose: false, evidenceRetentionDays: 30 };
+    const service = new BrowserService(undefined, async () => settings);
+    service.attachWindow({ contentView: { addChildView: vi.fn(), removeChildView: vi.fn() }, on: vi.fn() } as never);
+    const snapshot = await service.create();
+    const view = mocks.views.at(-1)!;
+    view.webContents.getURL = vi.fn(() => 'https://example.test/');
+    await service.navigate(snapshot.id, snapshot.activeTabId, 'https://example.test/', true);
+    await service.setViewBounds(snapshot.id, snapshot.activeTabId, { x: 10, y: 20, width: 519, height: 664 }, true);
+    await service.setResponsiveViewport(snapshot.id, snapshot.activeTabId, { width: 1_024, height: 768, mobile: true, deviceScaleFactor: 2 });
+    await service.setViewBounds(snapshot.id, snapshot.activeTabId, { x: 10, y: 20, width: 519, height: 664 }, true);
+
+    expect(view.webContents.debugger.sendCommand).toHaveBeenLastCalledWith('Emulation.clearDeviceMetricsOverride');
+    await service.close(snapshot.id);
+  });
+
   it('opens DevTools for the selected webpage view', async () => {
     const service = new BrowserService();
     const snapshot = await service.create();

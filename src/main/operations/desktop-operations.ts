@@ -35,6 +35,11 @@ export class DesktopOperations {
 
   notify(title: string, body: string): void { this.notifications.notify({ title, body } satisfies DesktopNotificationInput); }
   showWindow(): void { const window = BrowserWindow.getAllWindows()[0]; if (window === undefined) return; if (window.isMinimized()) window.restore(); window.show(); window.focus(); }
+  async openExternal(input: string): Promise<void> {
+    const url = new URL(input);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('Only HTTP(S) URLs can be opened externally.');
+    await shell.openExternal(url.toString());
+  }
   async revealPath(input: string): Promise<void> {
     await this.openFile(input, 'file-explorer');
   }

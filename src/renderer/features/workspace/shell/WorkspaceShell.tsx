@@ -26,6 +26,7 @@ import { NewChatWelcome } from './NewChatWelcome.js';
 import { TerminalPanel } from '../integrations/TerminalPanel.js';
 import { SourcesDrawer } from '../artifacts/SourcesDrawer.js';
 import { BrowserPanel } from '../integrations/BrowserPanel.js';
+import { BROWSER_OPENED_EVENT, type BrowserOpenedDetail } from '../../../services/browser-navigation.js';
 import { LiveChatDrawer } from '../conversation/LiveChatDrawer.js';
 import { useResizableSidePanel } from '../state/use-resizable-panel.js';
 import { ApiKeyPromptModal } from '../../settings/ApiKeyPromptModal.js';
@@ -164,6 +165,20 @@ export function WorkspaceShell({ user, onLoggedOut }: { user: UserProfile; onLog
     setLiveChatOpen(false);
     setBrowserOpen(true);
   }), [browserTaskSessionId, browserWorkspaceRoot]);
+  useEffect(() => {
+    const openBrowser = (event: Event) => {
+      const detail = (event as CustomEvent<BrowserOpenedDetail>).detail;
+      if (detail === undefined || typeof detail.id !== 'string') return;
+      setAgentBrowserSessionId(detail.id);
+      setChangesOpen(false);
+      setSourcesOpen(false);
+      setGitOpen(false);
+      setLiveChatOpen(false);
+      setBrowserOpen(true);
+    };
+    window.addEventListener(BROWSER_OPENED_EVENT, openBrowser);
+    return () => window.removeEventListener(BROWSER_OPENED_EVENT, openBrowser);
+  }, []);
   useEffect(() => {
     if (settingsOpen) return;
     followLatestRef.current = true;

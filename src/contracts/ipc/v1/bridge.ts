@@ -70,6 +70,7 @@ export interface DesktopBridge {
   operations: {
     notify(title: string, body: string): Promise<void>;
     showWindow(): Promise<void>;
+    openExternal(url: string): Promise<void>;
     revealPath(path: string): Promise<void>;
     openFile(path: string, destination?: import('./settings.js').FileOpenDestination): Promise<void>;
     listDirectory(path: string): Promise<import('./workspace.js').WorkspaceFileSuggestion[]>;

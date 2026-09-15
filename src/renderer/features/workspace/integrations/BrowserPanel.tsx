@@ -17,7 +17,7 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
     initialWidth: FILE_PANEL_DEFAULT_WIDTH,
     minWidth: 360,
     maxWidth: FILE_PANEL_MAX_WIDTH,
-    maxViewportRatio: 0.55,
+    maxViewportRatio: 0.5,
   });
   const activeTab = browserSession?.tabs.find(tab => tab.id === browserSession.activeTabId);
 
@@ -26,7 +26,7 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
     void window.lotagate.settings?.get?.().then(settings => {
       if (!active) return;
       const profile = settings.browser.viewportProfile;
-      const maxPanelWidth = Math.max(360, Math.floor(window.innerWidth * 0.55));
+      const maxPanelWidth = Math.max(360, Math.floor(window.innerWidth * 0.5));
       const profileWidths: Record<string, number> = {
         desktop: 1280,
         laptop: 1440,
