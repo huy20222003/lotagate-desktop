@@ -15,7 +15,7 @@ export type { BrowserConsoleEntry, BrowserElementInspection, BrowserFrameSnapsho
 export interface BrowserConsoleSnapshot { tab: BrowserTabSnapshot; console: BrowserConsoleEntry[]; errors: string[]; }
 export interface BrowserNetworkEntry { tabId: string; method: string; url: string; resourceType: string; statusCode?: number; fromCache?: boolean; error?: string; timestamp: string; }
 export interface BrowserAccessibilitySnapshot { tab: BrowserTabSnapshot; nodes: BrowserAccessibilityNode[]; }
-type BrowserTabEntry = { view: WebContentsView; snapshot: BrowserTabSnapshot; viewport: BrowserViewport | undefined; nativeBounds: BrowserViewBounds | undefined };
+type BrowserTabEntry = { view: WebContentsView; snapshot: BrowserTabSnapshot; viewport: BrowserViewport | undefined; viewportMode: 'configured' | 'native'; nativeBounds: BrowserViewBounds | undefined };
 type BrowserDownloadListener = (event: Electron.Event, item: Electron.DownloadItem) => void;
 type BrowserSessionEntry = { id: string; browserSession: Session; settings: BrowserSettings; tabs: Map<string, BrowserTabEntry>; activeTabId: string; evidence: BrowserEvidence; network: BrowserNetworkEntry[]; dialogs: Map<string, BrowserDialog>; downloadState: BrowserDownloadState; createdAt: string; recordingTimer: ReturnType<typeof setInterval> | undefined; retentionTimer: ReturnType<typeof setTimeout> | undefined; recordingCaptureInFlight: boolean; downloadListener?: BrowserDownloadListener };
 type BrowserStateListener = (snapshot: BrowserSessionSnapshot) => void;
@@ -98,14 +98,20 @@ export class BrowserService {
     this.sessions.delete(sessionId);
   }
 
-  hide(sessionId: string): void {
+  async hide(sessionId: string): Promise<void> {
     const entry = this.sessions.get(sessionId);
     if (entry === undefined) return;
+    const restoreOperations: Array<Promise<void>> = [];
     for (const tab of entry.tabs.values()) {
       tab.view.setVisible(false);
       tab.view.setBounds(EMPTY_BOUNDS);
       tab.nativeBounds = undefined;
+      if (tab.viewportMode === 'native' && tab.viewport !== undefined) {
+        tab.viewportMode = 'configured';
+        restoreOperations.push(setViewport(tab.view.webContents, tab.viewport).catch(() => undefined));
+      }
     }
+    await Promise.all(restoreOperations);
   }
 
   async createTab(sessionId: string): Promise<BrowserTabSnapshot> {
@@ -146,9 +152,17 @@ export class BrowserService {
     const entry = this.require(sessionId);
     assertOriginAllowed(parsed, entry.settings.originAllowlist);
     const tab = this.requireTab(entry, tabId);
+    if (this.hostWindow !== undefined && tab.viewportMode !== 'native') {
+      tab.viewportMode = 'native';
+      try { await resetViewport(tab.view.webContents); }
+      catch { tab.viewportMode = 'configured'; }
+    }
     tab.snapshot.loading = true;
     this.emit(entry);
     await tab.view.webContents.loadURL(parsed.toString());
+    if (typeof tab.view.webContents.insertCSS === 'function') {
+      void tab.view.webContents.insertCSS('html, body { margin: 0 !important; padding: 0 !important; }').catch(() => undefined);
+    }
     tab.snapshot.loading = false;
     tab.snapshot.url = tab.view.webContents.getURL() || parsed.toString();
     tab.snapshot.title = await tab.view.webContents.getTitle();
@@ -183,7 +197,7 @@ export class BrowserService {
     if (!tab.view.webContents.isDevToolsOpened()) tab.view.webContents.openDevTools({ mode: 'detach', activate: true });
   }
 
-  setViewBounds(sessionId: string, tabId: string, bounds: BrowserViewBounds, visible: boolean): void {
+  async setViewBounds(sessionId: string, tabId: string, bounds: BrowserViewBounds, visible: boolean): Promise<void> {
     // Layout updates are best-effort. A renderer resize callback can arrive
     // after the browser drawer or its session has already been closed.
     const entry = this.sessions.get(sessionId);
@@ -191,12 +205,15 @@ export class BrowserService {
     const tab = entry.tabs.get(tabId);
     if (tab === undefined) return;
     const isVisible = visible && entry.activeTabId === tabId && tab.snapshot.url !== 'about:blank' && bounds.width > 0 && bounds.height > 0 && this.hostWindow !== undefined;
-    const hadNativeBounds = tab.nativeBounds !== undefined;
+    if (isVisible && tab.viewportMode !== 'native') {
+      tab.viewportMode = 'native';
+      try { await resetViewport(tab.view.webContents); }
+      catch { tab.viewportMode = 'configured'; tab.nativeBounds = undefined; }
+    }
     tab.view.setVisible(isVisible);
     const nextBounds = isVisible ? normalizeBounds(bounds) : EMPTY_BOUNDS;
     tab.view.setBounds(nextBounds);
     tab.nativeBounds = isVisible ? nextBounds : undefined;
-    if (isVisible && !hadNativeBounds && tab.viewport !== undefined) void setViewport(tab.view.webContents, tab.viewport).catch(() => undefined);
   }
 
   async screenshot(sessionId: string, tabId?: string): Promise<BrowserScreenshot> {
@@ -378,8 +395,9 @@ export class BrowserService {
   private async createTabEntry(entry: BrowserSessionEntry): Promise<BrowserTabEntry> {
     const id = randomUUID();
     const view = new WebContentsView({ webPreferences: { session: entry.browserSession, nodeIntegration: false, contextIsolation: true, sandbox: true } });
+    if (typeof view.setBackgroundColor === 'function') view.setBackgroundColor('#10151c');
     const snapshot: BrowserTabSnapshot = { id, title: 'New tab', url: 'about:blank', loading: false, canGoBack: false, canGoForward: false };
-    const tab: BrowserTabEntry = { view, snapshot, viewport: undefined, nativeBounds: undefined };
+    const tab: BrowserTabEntry = { view, snapshot, viewport: undefined, viewportMode: 'configured', nativeBounds: undefined };
     entry.tabs.set(id, tab);
     this.hostWindow?.contentView.addChildView(view);
     this.configureTab(entry, tab);
@@ -414,6 +432,11 @@ export class BrowserService {
     contents.on('page-title-updated', (_event, title) => { tab.snapshot.title = title || 'New tab'; this.emit(entry); });
     contents.on('did-fail-load', (_event, errorCode, errorDescription) => { tab.snapshot.loading = false; appendCapped(entry.evidence.errors, redact(`${errorCode}: ${errorDescription}`), MAX_ERROR_ENTRIES); this.emit(entry); });
     contents.on('render-process-gone', (_event, details) => { appendCapped(entry.evidence.errors, redact(`Render process ended: ${details.reason}`), MAX_ERROR_ENTRIES); this.emit(entry); });
+    contents.on('dom-ready', () => {
+      if (typeof contents.insertCSS === 'function') {
+        void contents.insertCSS('html, body { margin: 0 !important; padding: 0 !important; }').catch(() => undefined);
+      }
+    });
     if (entry.tabs.size === 1) {
       entry.browserSession.webRequest.onCompleted(details => {
         const owner = [...entry.tabs.values()].find(candidate => candidate.view.webContents.id === details.webContentsId);

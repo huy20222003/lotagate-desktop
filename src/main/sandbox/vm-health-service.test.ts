@@ -4,7 +4,7 @@ import { SANDBOX_DEFAULTS } from '../../contracts/ipc/v1/settings.js';
 import type { GuestDependencyReport } from '../dependencies/native-dependency-service.js';
 import { VmHealthService } from './vm-health-service.js';
 
-const settings: SandboxSettings = { ...SANDBOX_DEFAULTS, allowedDomains: [...SANDBOX_DEFAULTS.allowedDomains] };
+const settings: SandboxSettings = { ...SANDBOX_DEFAULTS };
 
 describe('VmHealthService', () => {
   it('reports a ready runtime when the selected guest profile is healthy', async () => {
@@ -23,6 +23,7 @@ describe('VmHealthService', () => {
     const service = new VmHealthService({
       getSettings: async () => settings,
       inspectRuntime: async () => ({ runtime: 'wsl2', available: false, distribution: settings.distribution }),
+      repairRuntime: async () => ({ runtime: 'wsl2', available: false, distribution: settings.distribution }),
       inspectDependencies,
       repairDependencies,
     });
@@ -32,15 +33,30 @@ describe('VmHealthService', () => {
     expect(repairDependencies).not.toHaveBeenCalled();
   });
 
-  it('marks the unimplemented network allowlist unavailable instead of reporting ready', async () => {
-    const allowlistSettings = { ...settings, networkPolicy: 'allowlist' as const, allowedDomains: ['example.com'] };
-    const service = new VmHealthService({
-      getSettings: async () => allowlistSettings,
-      inspectRuntime: async () => ({ runtime: 'bubblewrap', available: true, distribution: settings.distribution }),
-      inspectDependencies: async () => healthyDependencies(),
-      repairDependencies: async () => healthyDependencies(),
+  it('repairs host-native sandbox dependencies before the final runtime probe', async () => {
+    let available = false;
+    const inspectRuntime = vi.fn(async () => ({ runtime: 'bubblewrap' as const, available, distribution: settings.distribution, isolation: 'host-sandbox' as const }));
+    const repairDependencies = vi.fn(async () => {
+      available = true;
+      return { ...healthyDependencies(), runtime: 'bubblewrap' as const, available: true };
     });
-    await expect(service.health()).resolves.toMatchObject({ state: 'unavailable', runtime: { available: false, reason: expect.stringContaining('guest proxy') } });
+    const service = new VmHealthService({ getSettings: async () => settings, inspectRuntime, inspectDependencies: async () => healthyDependencies(), repairDependencies });
+
+    await expect(service.repair()).resolves.toMatchObject({ state: 'ready', runtime: { runtime: 'bubblewrap', available: true } });
+    expect(repairDependencies).toHaveBeenCalledWith({ runtime: settings.runtime, distribution: settings.distribution, profile: settings.profile });
+    expect(inspectRuntime).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not repair a sandbox that is disabled in settings', async () => {
+    const disabledSettings = { ...settings, runtime: 'disabled' as const };
+    const repairRuntime = vi.fn(async () => ({ runtime: 'wsl2' as const, available: true, distribution: settings.distribution }));
+    const repairDependencies = vi.fn(async () => healthyDependencies());
+    const inspectRuntime = vi.fn(async () => ({ runtime: 'unsupported' as const, available: false, distribution: settings.distribution }));
+    const service = new VmHealthService({ getSettings: async () => disabledSettings, inspectRuntime, repairRuntime, inspectDependencies: async () => healthyDependencies(), repairDependencies });
+
+    await expect(service.repair()).resolves.toMatchObject({ state: 'disabled' });
+    expect(repairRuntime).not.toHaveBeenCalled();
+    expect(repairDependencies).not.toHaveBeenCalled();
   });
 
   it('repairs through the dependency owner and refreshes health', async () => {
@@ -49,12 +65,23 @@ describe('VmHealthService', () => {
     await service.repair();
     expect(repair).toHaveBeenCalledWith({ runtime: settings.runtime, distribution: settings.distribution, profile: settings.profile });
   });
+
+  it('imports the shared guest image after host WSL repair makes the runtime available', async () => {
+    const repairRuntime = vi.fn(async () => ({ runtime: 'wsl2' as const, available: true, distribution: '', isolation: 'vm' as const }));
+    const inspectRuntime = vi.fn(async () => ({ runtime: 'wsl2' as const, available: true, distribution: settings.distribution, isolation: 'vm' as const }));
+    const repairDependencies = vi.fn(async () => healthyDependencies());
+    const service = new VmHealthService({ getSettings: async () => settings, inspectRuntime, repairRuntime, inspectDependencies: async () => healthyDependencies(), repairDependencies });
+
+    await expect(service.repair()).resolves.toMatchObject({ state: 'ready', runtime: { distribution: settings.distribution } });
+    expect(repairDependencies).toHaveBeenCalledWith({ runtime: settings.runtime, distribution: settings.distribution, profile: settings.profile });
+    expect(inspectRuntime).toHaveBeenCalledWith(settings.distribution);
+  });
 });
 
 function createService(runtime: { available: boolean; reason?: string }, dependency: Partial<GuestDependencyReport>): VmHealthService {
   return new VmHealthService({
     getSettings: async () => settings,
-    inspectRuntime: async () => ({ runtime: 'wsl2', available: runtime.available, distribution: settings.distribution, ...(runtime.reason === undefined ? {} : { reason: runtime.reason }) }),
+    inspectRuntime: async () => ({ runtime: 'wsl2', available: runtime.available, distribution: settings.distribution, isolation: 'vm', ...(runtime.reason === undefined ? {} : { reason: runtime.reason }) }),
     inspectDependencies: async () => ({ ...healthyDependencies(), ...dependency, statuses: dependency.statuses ?? [], missing: dependency.missing ?? [], manual: dependency.manual ?? [], failed: dependency.failed ?? [] }),
     repairDependencies: async () => healthyDependencies(),
   });

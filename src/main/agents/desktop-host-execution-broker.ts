@@ -12,7 +12,17 @@ import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 
 export interface DesktopHostExecutionBrokerOptions {
   sandbox?: SandboxExecutionProvider;
+  artifactPublisher?: DesktopArtifactPublisher;
   onFileChanged?: (cwd: string, change: { path: string; kind: 'created' | 'modified' }) => void;
+}
+
+export interface DesktopArtifactPublisher {
+  publishFile(taskId: string, sourcePath: string): Promise<{
+    readonly id: string;
+    readonly name: string;
+    readonly kind: string;
+    readonly sizeBytes: number;
+  }>;
 }
 
 /**
@@ -24,14 +34,41 @@ export class DesktopHostExecutionBroker {
   constructor(private readonly options: DesktopHostExecutionBrokerOptions = {}) {}
 
   async handle(cwd: string, request: DesktopHostRequest, signal?: AbortSignal): Promise<DesktopHostResponse> {
+    // Artifact registration is a host-owned storage operation. It never runs
+    // code outside the guest and is therefore available after a sandboxed
+    // script has produced a workspace-relative output.
+    if (request.tool === 'artifact') return this.handleArtifact(cwd, request);
     if (request.executionBoundary === 'sandbox') return this.handleSandbox(cwd, request, signal);
     return this.handleHost(cwd, request, signal);
+  }
+
+  private async handleArtifact(cwd: string, request: DesktopHostRequest): Promise<DesktopHostResponse> {
+    try {
+      if (request.action !== 'artifact.publish') throw new Error(`Unsupported artifact host action: ${request.action}.`);
+      if (this.options.artifactPublisher === undefined) throw new Error('Artifact publishing is not configured for this Desktop runtime.');
+      if (request.taskId === undefined) throw new Error('artifact.publish requires a task id.');
+      const sourcePath = await this.resolveExistingPath(cwd, requiredString(request.params, 'path'));
+      const artifact = await this.options.artifactPublisher.publishFile(request.taskId, sourcePath);
+      return {
+        version: 1,
+        type: 'host.response',
+        requestId: request.requestId,
+        tool: request.tool,
+        executionBoundary: 'host',
+        ok: true,
+        result: { published: true, artifact },
+        artifacts: [artifact],
+      };
+    } catch (error) {
+      return this.errorResponse(request, 'ARTIFACT_PUBLISH_FAILED', error instanceof Error ? error.message : 'Artifact publishing failed.', 'host');
+    }
   }
 
   private async handleSandbox(cwd: string, request: DesktopHostRequest, signal?: AbortSignal): Promise<DesktopHostResponse> {
     if (this.options.sandbox === undefined) return this.sandboxFallback(cwd, request, signal, 'The Desktop sandbox runtime is not configured.');
     try {
-      const result = await this.options.sandbox.execute({ root: cwd, action: request.action, params: request.params, ...(signal === undefined ? {} : { signal }) });
+      const timeoutMs = typeof request.params['timeoutMs'] === 'number' && Number.isFinite(request.params['timeoutMs']) ? request.params['timeoutMs'] : undefined;
+      const result = await this.options.sandbox.execute({ root: cwd, action: request.action, params: request.params, ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(signal === undefined ? {} : { signal }) });
       if (result.fileChange !== undefined) this.options.onFileChanged?.(cwd, { path: result.fileChange.path, kind: result.fileChangeKind ?? (result.fileChange.deletions === 0 ? 'created' : 'modified') });
       return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, executionBoundary: 'sandbox', ok: true, ...(result.environmentId === undefined ? {} : { environmentId: result.environmentId }), result: result.result, ...(result.fileChange === undefined ? {} : { fileChange: result.fileChange }) };
     } catch (error) {
@@ -46,9 +83,7 @@ export class DesktopHostExecutionBroker {
         ? await this.filesystem(cwd, request.action, request.params)
         : request.tool === 'shell' || request.tool === 'git'
           ? await this.shell(cwd, request.params, signal)
-          : request.tool === 'artifact'
-            ? this.unsupported('Artifact host execution is not available yet.')
-            : this.unsupported('The requested host operation is not available through this broker.');
+          : this.unsupported('The requested host operation is not available through this broker.');
       const result = isFilesystemOutcome(outcome) ? outcome.result : outcome;
       const fileChange = isFilesystemOutcome(outcome) ? outcome.fileChange : undefined;
       return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, executionBoundary: 'host', ok: true, result, ...(fileChange === undefined ? {} : { fileChange }) };

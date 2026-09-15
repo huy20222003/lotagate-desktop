@@ -39,6 +39,7 @@ import { AutomationOsScheduler } from './automation/automation-os-scheduler.js';
 import { ApprovalCoordinator } from './approvals/approval-coordinator.js';
 import { CheckpointService } from './checkpoints/checkpoint-service.js';
 import type { DesktopApprovalInput } from '../contracts/ipc/v1/approval.js';
+import type { DesktopHostResponse } from '../contracts/agent-protocol/v1/desktop.js';
 import { automationNotification } from './automation/automation-notification.js';
 import { configureWindowsAppIdentity, configureWindowsDevelopmentShortcut } from './windows/windows-app-identity.js';
 import { desktopAssetPath, desktopResourcePath } from './app-assets.js';
@@ -46,15 +47,13 @@ import { AutomationExecutionService } from './automation/automation-execution-se
 import { RemoteControlService } from './remote-control/remote-control-service.js';
 import { DesktopUpdateService } from './updates/desktop-update-service.js';
 import { ComputerHostToolBroker } from './computer/computer-host-tool-broker.js';
-import { DocumentHostToolBroker } from './documents/document-host-tool-broker.js';
-import { VmDocumentBackend } from './documents/vm-document-backend.js';
 import { VmHealthService } from './sandbox/vm-health-service.js';
 import { ComputerOverlay } from './computer/computer-overlay.js';
 import { createNativeHostProviders } from './host/native-host-provider-factory.js';
 import { PublicPluginBootstrapService } from './extensions/public-plugin-bootstrap-service.js';
 import { WhisperCppSpeechTranscriptionService } from './speech/whisper-cpp-speech-transcription-service.js';
 import { AgentEventCoordinator } from './agents/agent-event-coordinator.js';
-import { NativeDependencyService } from './dependencies/native-dependency-service.js';
+import { NativeDependencyService, type GuestDependencyReport } from './dependencies/native-dependency-service.js';
 import { DESKTOP_RUNTIME_LIMITS } from '../contracts/runtime-limits.js';
 import { HostCapabilityRegistry } from './host/host-capability-registry.js';
 import type { VmSandboxOptions } from './sandbox/vm-types.js';
@@ -67,8 +66,6 @@ const nativeDependencyRestarted = process.argv.includes('--native-dependencies-r
 let agentManager: AgentManager | undefined;
 let browserService: BrowserService | undefined;
 let computerBroker: ComputerHostToolBroker | undefined;
-let documentBroker: DocumentHostToolBroker | undefined;
-let nativeDocumentBroker: DocumentHostToolBroker | undefined;
 let vmSandboxProvider: VmSandboxExecutionProvider | undefined;
 let interactiveTerminalService: InteractiveTerminalService | undefined;
 let automationService: AutomationService | undefined;
@@ -133,19 +130,28 @@ app.whenReady().then(async () => {
     guestDataDirectory: desktopDataDirectory('sandbox/wsl2'),
     log: (message, fields) => logger.warn(message, fields),
   });
-  const guestDependencyCache = new Map<string, Promise<Awaited<ReturnType<NativeDependencyService['ensureGuestInstalled']>>>>();
+  const guestDependencyCache = new Map<string, GuestDependencyReport>();
+  const guestDependencyInFlight = new Map<string, Promise<GuestDependencyReport>>();
   const automaticDependencyBootstrap = app.isPackaged || process.env['LOTAGATE_AUTO_INSTALL_NATIVE_DEPENDENCIES'] === '1';
   const vmRuntime = createVmRuntimeAdapter();
   const prepareGuestDependencies = async (options: Pick<VmSandboxOptions, 'runtime' | 'distribution' | 'profile'>): Promise<void> => {
     if (options.runtime === 'disabled') return;
-    await vmRuntime.ensureAvailable?.(automaticDependencyBootstrap);
-    const key = guestDependencyKey(options);
-    let report = guestDependencyCache.get(key);
-    if (report === undefined) {
-      report = nativeDependencies.ensureGuestInstalled({ runtime: options.runtime, distribution: options.distribution, profile: options.profile, automatic: automaticDependencyBootstrap });
-      guestDependencyCache.set(key, report);
+    const runtimeStatus = vmRuntime.ensureAvailable === undefined
+      ? await vmRuntime.inspect(options.distribution)
+      : await vmRuntime.ensureAvailable(options.distribution, automaticDependencyBootstrap);
+    if (!runtimeStatus.available) {
+      logger.warn('sandbox-runtime.bootstrap.unavailable', {
+        runtime: runtimeStatus.runtime,
+        distribution: options.distribution,
+        reason: runtimeStatus.reason,
+        restartRequired: runtimeStatus.restartRequired === true,
+        adminRequired: runtimeStatus.adminRequired === true,
+      });
+      return;
     }
-    const result = await report;
+    const key = guestDependencyKey(options);
+    const cached = guestDependencyCache.get(key);
+    const result = cached ?? await getGuestDependencyReport(key, () => nativeDependencies.ensureGuestInstalled({ runtime: options.runtime, distribution: options.distribution, profile: options.profile, automatic: automaticDependencyBootstrap }), guestDependencyInFlight, guestDependencyCache);
     if (result.manual.length > 0 || result.missing.length > 0 || result.failed.length > 0 || !result.available) {
       logger.warn('sandbox-dependency.bootstrap.incomplete', {
         runtime: result.runtime,
@@ -174,27 +180,30 @@ app.whenReady().then(async () => {
   });
   const sandboxProvider = new VmSandboxExecutionProvider(async () => resolveVmSandboxOptions((await settings.get()).sandbox, {
     guestRunnerPath: desktopResourcePath('sandbox', 'guest-runner.py'),
-    guestDocumentRunnerPath: desktopResourcePath('sandbox', 'document-runner.mjs'),
-    guestDocumentResourcesPath: desktopResourcePath('document-use'),
   }), vmRuntime, prepareGuestDependencies);
   vmSandboxProvider = sandboxProvider;
   const sandboxHealth = new VmHealthService({
     getSettings: async () => (await settings.get()).sandbox,
     inspectRuntime: () => sandboxProvider.inspect(),
     inspectDependencies: options => nativeDependencies.inspectGuest(options),
-    repairRuntime: async () => {
-      await vmRuntime.repair?.();
-      return vmRuntime.inspect((await settings.get()).sandbox.distribution);
-    },
+    ...(vmRuntime.repair === undefined ? {} : {
+      repairRuntime: async () => {
+        const currentSettings = await settings.get();
+        return vmRuntime.repair!(currentSettings.sandbox.distribution);
+      },
+    }),
     repairDependencies: async options => {
+      const key = guestDependencyKey(options);
+      guestDependencyCache.delete(key);
       const report = await nativeDependencies.ensureGuestInstalled({ ...options, automatic: true });
-      guestDependencyCache.set(guestDependencyKey(options), Promise.resolve(report));
+      guestDependencyCache.set(key, report);
       return report;
     },
   });
   const browserHost = hostBrowser;
   const hostExecution = new DesktopHostExecutionBroker({
     sandbox: sandboxProvider,
+    artifactPublisher: { publishFile: (taskId, sourcePath) => artifacts.publishFile(taskId, sourcePath) },
     onFileChanged: (cwd, change) => logger.debug('agent.host.file.changed', { cwd, path: change.path, kind: change.kind }),
   });
   const operations = new DesktopOperations(undefined, async () => ({ defaultFileOpenDestination: (await settings.get()).defaultFileOpenDestination }));
@@ -226,10 +235,7 @@ app.whenReady().then(async () => {
     getApplicationAllowlist: async () => (await settings.get()).computer.applicationAllowlist,
   });
   computerBroker = new ComputerHostToolBroker(nativeHostProviders.computer, new ComputerOverlay());
-  const vmDocumentBackend = new VmDocumentBackend(sandboxProvider);
-  documentBroker = new DocumentHostToolBroker(vmDocumentBackend, artifacts);
-  nativeDocumentBroker = new DocumentHostToolBroker(nativeHostProviders.documents, artifacts);
-  const hostCapabilities = new HostCapabilityRegistry({ ...(nativeHostProviders.capabilities.computer === undefined ? {} : { computer: nativeHostProviders.capabilities.computer }), documents: vmDocumentBackend.capabilities }).snapshot;
+  const hostCapabilities = new HostCapabilityRegistry({ ...(nativeHostProviders.capabilities.computer === undefined ? {} : { computer: nativeHostProviders.capabilities.computer }) }).snapshot;
   const eventCoordinator = new AgentEventCoordinator({
     taskTurns,
     checkpoints,
@@ -270,20 +276,16 @@ app.whenReady().then(async () => {
     },
     onDiagnostic: (projectRoot, diagnostic) => { logger[diagnostic.severity === 'error' ? 'error' : 'warn']('agent.diagnostic', { projectRoot, kind: diagnostic.kind, message: diagnostic.message, ...(diagnostic.sessionId === undefined ? {} : { sessionId: diagnostic.sessionId }), ...(diagnostic.turnId === undefined ? {} : { turnId: diagnostic.turnId }) }); broadcastToActiveWindows('agent.diagnostic', { cwd: projectRoot, diagnostic }); },
     onHostRequest: async (projectRoot, request, signal) => {
-      if (request.tool === 'browser') return browserHost.handle(projectRoot, request, signal);
+      if (request.tool === 'browser') {
+        if (request.executionBoundary === 'sandbox') {
+          const response: DesktopHostResponse = { version: 1, type: 'host.response', requestId: request.requestId, tool: 'browser', executionBoundary: 'sandbox', ok: false, error: { code: 'SANDBOX_FALLBACK_REQUIRED', category: 'browser', message: 'The visible browser surface is host-native in this Desktop build. Approve host execution to continue.', retryable: true } };
+          return response;
+        }
+        return browserHost.handle(projectRoot, request, signal);
+      }
       if (request.tool === 'computer') {
         if (computerBroker === undefined) throw new Error('Computer Use is unavailable on this platform.');
         return computerBroker.handle(projectRoot, request, signal);
-      }
-      if (request.tool === 'document') {
-        const broker = request.executionBoundary === 'sandbox' ? documentBroker : nativeDocumentBroker;
-        if (broker === undefined) throw new Error('Document tools are unavailable on this platform.');
-        const response = await checkpoints.withHostRequest(projectRoot, request, () => broker.handle(projectRoot, request, signal));
-        if (request.executionBoundary === 'sandbox' && request.hostFallback === 'allow' && response.ok === false && response.error?.code === 'SANDBOX_UNAVAILABLE' && nativeDocumentBroker !== undefined) {
-          const hostRequest = { ...request, executionBoundary: 'host' as const, hostFallback: 'deny' as const };
-          return checkpoints.withHostRequest(projectRoot, hostRequest, () => nativeDocumentBroker!.handle(projectRoot, hostRequest, signal));
-        }
-        return response;
       }
       if (request.executionCwd === undefined) throw new Error('The CLI host request is missing its execution workspace.');
       return checkpoints.withHostRequest(projectRoot, request, () => hostExecution.handle(request.executionCwd as string, request, signal));
@@ -293,8 +295,6 @@ app.whenReady().then(async () => {
       if (sessionId !== undefined) {
         void browserHost.closeForSession(projectRoot, sessionId).catch(error => logger.debug('agent.browser.close.failed', { projectRoot, sessionId, message: error instanceof Error ? error.message : 'Unable to close browser session.' }));
         if (computerBroker !== undefined) computerBroker.cancelForSession(projectRoot, sessionId);
-        void documentBroker?.closeForSession(projectRoot, sessionId);
-        void nativeDocumentBroker?.closeForSession(projectRoot, sessionId);
         void tasks.interruptActiveBySession(sessionId, error.message).catch(() => undefined);
         taskTurns.releaseSession(sessionId);
       }
@@ -304,7 +304,7 @@ app.whenReady().then(async () => {
   }, cache, async () => {
     const configured = await settings.get();
     return buildInteractiveDesktopExecutionPolicy(configured.sandbox.hostFallback);
-  }, { computerHost: nativeHostProviders.capabilities.computer?.available === true, documentHost: Object.values(nativeHostProviders.capabilities.documents ?? {}).some(capability => capability?.available === true), hostCapabilities });
+  }, { computerHost: nativeHostProviders.capabilities.computer?.available === true, hostCapabilities });
   agentManager = agents;
   const extensionFiles = new ExtensionFileService(workspaces, desktopResourcePath('public-plugins'), {
     listPublicPlugins: root => agents.extensionListPublicPlugins(root),
@@ -341,7 +341,7 @@ app.whenReady().then(async () => {
   const auth = new DesktopAuthService(transport, async () => { await remoteControl.stop(); await approvals.cancelAll(); await agents.shutdownAll(); await computerBroker?.close(); }, () => userContext.resetSession());
   const interactiveTerminal = new InteractiveTerminalService(workspaces, settings);
   interactiveTerminalService = interactiveTerminal;
-  registerIpc({ auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, taskTurns, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal, settings, sandboxHealth, artifacts, browser, automations, approvals, remoteControl, operations, speech, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); taskTurns.releaseWorkspace(removedWorkspace.rootPath); await browserHost.closeForWorkspace(removedWorkspace.rootPath); await documentBroker?.closeForWorkspace(removedWorkspace.rootPath); await nativeDocumentBroker?.closeForWorkspace(removedWorkspace.rootPath); await sandboxProvider.closeWorkspace(removedWorkspace.rootPath); } });
+  registerIpc({ auth, userContext, agents, workspaces, workspaceFileSuggestions, tasks, taskTurns, checkpoints, extensionFiles, git, terminal: new TerminalService(workspaces, tasks, undefined, async () => (await settings.get()).sandbox.diagnosticsRetentionDays), interactiveTerminal, settings, sandboxHealth, artifacts, browser, automations, approvals, remoteControl, operations, speech, updates, runAutomation, retryAutomation, setMenuContext: setApplicationMenu, logger, onWorkspaceRemoved: async removedWorkspace => { await remoteControl.stop(); await approvals.cancelWhere(request => request.workspaceCwd === removedWorkspace.rootPath); await agents.shutdown(removedWorkspace.rootPath, 'workspace.removed'); taskTurns.releaseWorkspace(removedWorkspace.rootPath); await browserHost.closeForWorkspace(removedWorkspace.rootPath); await sandboxProvider.closeWorkspace(removedWorkspace.rootPath); } });
   await osScheduler.sync(await automations.list()).catch(error => logger.warn('automation.scheduler.sync.failed', { message: error instanceof Error ? error.message : 'Unable to synchronize the automation scheduler.' }));
   automationDispatchHandler = async () => { await automations.runDueNow(executeAutomation); };
   if (pendingAutomationDispatch) { pendingAutomationDispatch = false; await automationDispatchHandler(); }
@@ -389,8 +389,6 @@ app.on('before-quit', (event) => {
     interactiveTerminalService?.closeAll();
     await computerBroker?.close();
     await vmSandboxProvider?.closeAll();
-    await documentBroker?.closeAll();
-    await nativeDocumentBroker?.closeAll();
     await taskProjector?.flush();
     await browserService?.closeAll();
   })().catch(error => logger.error('app.shutdown.failed', { message: error instanceof Error ? error.message : 'Desktop shutdown failed.' })).finally(async () => {
@@ -402,4 +400,25 @@ app.on('before-quit', (event) => {
 
 function guestDependencyKey(options: Pick<VmSandboxOptions, 'runtime' | 'distribution' | 'profile'>): string {
   return `${options.runtime}\u0000${options.distribution}\u0000${options.profile}`;
+}
+
+async function getGuestDependencyReport(
+  key: string,
+  operation: () => Promise<GuestDependencyReport>,
+  inFlight: Map<string, Promise<GuestDependencyReport>>,
+  cache: Map<string, GuestDependencyReport>,
+): Promise<GuestDependencyReport> {
+  const running = inFlight.get(key);
+  if (running !== undefined) return running;
+  const promise = operation();
+  inFlight.set(key, promise);
+  try {
+    const report = await promise;
+    // Do not retry a failed import/apt operation before every tool call. The
+    // explicit Repair action invalidates this entry and is the retry boundary.
+    cache.set(key, report);
+    return report;
+  } finally {
+    if (inFlight.get(key) === promise) inFlight.delete(key);
+  }
 }

@@ -11,7 +11,7 @@ import { SettingsPage, type SettingsSection } from './SettingsPage.js';
 
 const user: UserProfile = { id: 'user-1', email: 'user@example.test', fullName: 'Test User', defaultOrganizationCode: 'org-1', organizations: [{ id: 'org-1', organizationCode: 'org-1', displayName: 'Test Org', role: 'Member', workspaces: [] }] };
 const browser = { viewportProfile: 'desktop', customViewport: { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 }, downloadDirectory: '', sessionRetention: 'persistent', sessionRetentionMinutes: 60, originAllowlist: [], clearDataOnClose: false, evidenceRetentionDays: 30 };
-const sandbox = { ...SANDBOX_DEFAULTS, allowedDomains: [...SANDBOX_DEFAULTS.allowedDomains] };
+const sandbox = { ...SANDBOX_DEFAULTS };
 const sandboxHealth = { state: 'ready', runtime: { runtime: 'wsl2', available: true, distribution: sandbox.distribution }, dependencies: { profile: sandbox.profile, available: true, statuses: [], installed: [], missing: [], manual: [], failed: [] }, checkedAt: '2026-01-01T00:00:00.000Z' };
 const computer = { applicationAllowlist: [...DEFAULT_COMPUTER_APPLICATION_ALLOWLIST] };
 

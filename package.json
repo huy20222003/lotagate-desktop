@@ -25,7 +25,7 @@
     "node-pty@1.1.0": true
   },
   "scripts": {
-    "dev": "npm run cli:build && npm run sandbox:prepare && electron-vite dev",
+    "dev": "npm run cli:build && electron-vite dev",
     "cli:build": "npm --prefix ../cli run build",
     "build": "electron-vite build",
     "cli:link": "node scripts/link-cli.mjs",
@@ -43,9 +43,8 @@
     "native:check": "node scripts/native-dependencies.mjs --check",
     "native:install": "node scripts/native-dependencies.mjs --install",
     "native:install:windows": "node scripts/native-dependencies.mjs --platform win32 --install",
-    "sandbox:prepare": "node scripts/prepare-sandbox-runtime.mjs",
     "sandbox:image": "node scripts/prepare-wsl2-image.mjs",
-    "prepackage": "npm run speech:prepare && npm run sandbox:prepare",
+    "prepackage": "npm run speech:prepare",
     "package": "electron-forge package",
     "premake": "node scripts/prepare-speech-lifecycle.mjs",
     "make": "electron-forge make",
@@ -68,7 +67,6 @@
     "lucide-react": "0.468.0",
     "mermaid": "11.17.2",
     "node-pty": "^1.1.0",
-    "pdf-lib": "1.17.1",
     "qrcode": "^1.5.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",

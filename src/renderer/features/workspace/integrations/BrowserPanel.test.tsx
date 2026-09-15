@@ -58,4 +58,41 @@ describe('BrowserPanel', () => {
     await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
     expect(close).not.toHaveBeenCalled();
   });
+
+  it('applies panel width according to configured viewport profile in settings', async () => {
+    const onState = vi.fn(() => vi.fn());
+    const setViewBounds = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: {
+      settings: { get: vi.fn().mockResolvedValue({ browser: { viewportProfile: 'tablet' } }) },
+      approvals: { request: vi.fn().mockResolvedValue({ approvalId: 'approval-1', approved: true }) },
+      browser: { create: vi.fn().mockResolvedValue(session), close: vi.fn().mockResolvedValue(undefined), hide: vi.fn().mockResolvedValue(undefined), onState, setViewBounds, navigate: vi.fn(), createTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() },
+    } });
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 2000 });
+    render(<BrowserPanel onClose={vi.fn()} />);
+    const panel = await screen.findByRole('complementary', { name: 'Browser' });
+    await waitFor(() => {
+      expect(panel).toHaveStyle({ width: '1024px' });
+    });
+  });
+
+  it('clamps panel width to 55vw max viewport ratio', async () => {
+    const onState = vi.fn(() => vi.fn());
+    const setViewBounds = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: {
+      settings: { get: vi.fn().mockResolvedValue({ browser: { viewportProfile: 'desktop' } }) },
+      approvals: { request: vi.fn().mockResolvedValue({ approvalId: 'approval-1', approved: true }) },
+      browser: { create: vi.fn().mockResolvedValue(session), close: vi.fn().mockResolvedValue(undefined), hide: vi.fn().mockResolvedValue(undefined), onState, setViewBounds, navigate: vi.fn(), createTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() },
+    } });
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1000 });
+    render(<BrowserPanel onClose={vi.fn()} />);
+    const panel = await screen.findByRole('complementary', { name: 'Browser' });
+    // 1000 * 0.55 = 550px max width for desktop profile (1280px)
+    await waitFor(() => {
+      expect(panel).toHaveStyle({ width: '550px' });
+    });
+  });
 });

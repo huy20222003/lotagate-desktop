@@ -7,7 +7,10 @@ export function buildAutomationExecutionPolicy(automation: Automation, attempt: 
     permissionPolicy: automation.permissionPolicy,
     ...(automation.tools.length === 0 && automation.permissionPolicy !== 'allowlist' ? {} : { allowedTools: automation.tools }),
     browserAccess: automation.browserAccess,
-    browserExecution: 'isolated',
+    // The current browser surface is Electron WebContentsView. It is visible
+    // to the user and therefore intentionally remains host-native; only the
+    // generic filesystem/shell/artifact path enters the shared guest.
+    browserExecution: 'interactive',
     isolation: 'sandbox',
     hostFallback: automation.permissionPolicy === 'autonomous' ? 'deny' : configuredFallback,
     timeoutMs: automation.timeoutMs,

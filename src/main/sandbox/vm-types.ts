@@ -14,8 +14,6 @@ export interface VmRuntimeStartInput {
   readonly pidsLimit: number;
   readonly diskMb: number;
   readonly guestRunnerPath: string;
-  readonly guestDocumentRunnerPath?: string;
-  readonly guestDocumentResourcesPath?: string;
   readonly idleTimeoutMinutes: number;
   readonly signal?: AbortSignal;
 }
@@ -45,6 +43,7 @@ export interface VmRuntimeStatus {
   readonly distribution: string;
   readonly restartRequired?: boolean;
   readonly adminRequired?: boolean;
+  readonly isolation?: 'vm' | 'host-sandbox';
   readonly resourceQuota?: 'cgroup' | 'process';
   readonly reason?: string;
 }
@@ -52,8 +51,8 @@ export interface VmRuntimeStatus {
 export interface VmRuntimeAdapter {
   inspect(distribution: string): Promise<VmRuntimeStatus>;
   start(input: VmRuntimeStartInput): Promise<VmRuntimeEnvironment>;
-  repair?(): Promise<VmRuntimeStatus>;
-  ensureAvailable?(automatic: boolean): Promise<VmRuntimeStatus>;
+  repair?(distribution?: string): Promise<VmRuntimeStatus>;
+  ensureAvailable?(distribution: string, automatic: boolean): Promise<VmRuntimeStatus>;
 }
 
 export interface VmSandboxOptions {
@@ -61,7 +60,6 @@ export interface VmSandboxOptions {
   readonly distribution: string;
   readonly profile: VmEnvironmentProfile;
   readonly networkPolicy: SandboxNetworkPolicy;
-  readonly allowedDomains: readonly string[];
   readonly workspaceAccess: SandboxWorkspaceAccess;
   readonly memoryMb: number;
   readonly cpuCores: number;
@@ -71,8 +69,6 @@ export interface VmSandboxOptions {
   readonly maxConcurrentOperations: number;
   readonly idleTimeoutMinutes: number;
   readonly guestRunnerPath: string;
-  readonly guestDocumentRunnerPath?: string;
-  readonly guestDocumentResourcesPath?: string;
 }
 
 export interface VmEnvironmentIdentity {

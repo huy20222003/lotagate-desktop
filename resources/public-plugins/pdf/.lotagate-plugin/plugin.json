@@ -2,7 +2,7 @@
   "name": "pdf",
   "displayName": "PDF",
   "version": "1.1.0",
-  "description": "Read, validate, render, and govern PDF workflows through LotaGate's platform-native document host.",
+  "description": "Create, inspect, transform, and verify PDF files with Python inside LotaGate's shared guest runtime.",
   "author": "LotaGate",
   "license": "MIT",
   "homepage": "https://lotagate.com/",

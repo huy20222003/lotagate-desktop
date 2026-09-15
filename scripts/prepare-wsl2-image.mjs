@@ -8,6 +8,14 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
+const WSL_IMAGE_OPERATION_TIMEOUT_MS = 60 * 60 * 1_000;
+const WSL_DISTRIBUTION_QUERY_TIMEOUT_MS = 15_000;
+const WSL_DISTRIBUTION_CLEANUP_TIMEOUT_MS = 10 * 60 * 1_000;
+const WSL_IMAGE_DOWNLOAD_TIMEOUT_MS = 15 * 60 * 1_000;
+const WSL_IMAGE_DOWNLOAD_MAX_ATTEMPTS = 3;
+const WSL_IMAGE_DOWNLOAD_RETRY_DELAY_MS = 1_000;
+const APT_RESOLUTION_TIMEOUT_MS = 30_000;
+const COMMAND_OUTPUT_BYTES = 8 * 1024 * 1024;
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const imageConfigPath = resolve(desktopRoot, 'resources', 'sandbox', 'wsl2-image-manifest.json');
 const dependencyManifestPath = resolve(desktopRoot, 'resources', 'native-dependencies', 'manifest.json');
@@ -48,13 +56,13 @@ await cleanupAbandonedBuildDistributions();
 process.once('SIGINT', () => void cleanupAndExit(130));
 process.once('SIGTERM', () => void cleanupAndExit(143));
 try {
-  await run('wsl.exe', ['--import', importedDistribution, installDirectory, sourcePath, '--version', '2'], 60 * 60 * 1_000);
-  await runGuest(importedDistribution, ['--exec', 'apt-get', 'update'], 60 * 60 * 1_000);
+  await run('wsl.exe', ['--import', importedDistribution, installDirectory, sourcePath, '--version', '2'], WSL_IMAGE_OPERATION_TIMEOUT_MS);
+  await runGuest(importedDistribution, ['--exec', 'apt-get', 'update'], WSL_IMAGE_OPERATION_TIMEOUT_MS);
   const aptPackages = await resolveAptPackages(importedDistribution, dependencies.apt);
-  await runGuest(importedDistribution, ['--exec', 'env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'install', '-y', '--no-install-recommends', ...aptPackages], 60 * 60 * 1_000);
-  for (const npm of dependencies.npm) await runGuest(importedDistribution, ['--exec', 'npm', 'install', '--prefix', npm.prefix, '--no-save', ...npm.packages], 60 * 60 * 1_000);
+  await runGuest(importedDistribution, ['--exec', 'env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'install', '-y', '--no-install-recommends', ...aptPackages], WSL_IMAGE_OPERATION_TIMEOUT_MS);
+  for (const npm of dependencies.npm) await runGuest(importedDistribution, ['--exec', 'npm', 'install', '--prefix', npm.prefix, '--no-save', ...npm.packages], WSL_IMAGE_OPERATION_TIMEOUT_MS);
   await rm(outputPath, { force: true });
-  await run('wsl.exe', ['--export', importedDistribution, outputPath], 60 * 60 * 1_000);
+  await run('wsl.exe', ['--export', importedDistribution, outputPath], WSL_IMAGE_OPERATION_TIMEOUT_MS);
   const checksum = await sha256(outputPath);
   await writeFile(`${outputPath}.sha256`, `${checksum}  ${image.outputFile}\n`, 'utf8');
   await writeFile(metadataPath, JSON.stringify({ schemaVersion: 2, architecture: options.arch, sourceSha256: image.sourceSha256, dependencyManifestSha256, aptPackages, imageSha256: checksum }, null, 2) + '\n', 'utf8');
@@ -87,7 +95,7 @@ async function cleanupAndExit(code) {
 
 async function listDistributions() {
   try {
-    const result = await run('wsl.exe', ['--list', '--quiet'], 15_000);
+    const result = await run('wsl.exe', ['--list', '--quiet'], WSL_DISTRIBUTION_QUERY_TIMEOUT_MS);
     return decodeWslOutput(result.stdout).split(/\r?\n/u).map(value => value.trim()).filter(Boolean);
   } catch (error) {
     fail(`Unable to query registered WSL2 distributions before image preparation: ${error instanceof Error ? error.message : String(error)}`);
@@ -95,7 +103,7 @@ async function listDistributions() {
 }
 
 async function unregisterDistribution(distribution) {
-  await run('wsl.exe', ['--unregister', distribution], 10 * 60 * 1_000).catch(error => {
+  await run('wsl.exe', ['--unregister', distribution], WSL_DISTRIBUTION_CLEANUP_TIMEOUT_MS).catch(error => {
     console.warn(`Unable to unregister WSL2 distribution ${distribution}: ${error instanceof Error ? error.message : String(error)}`);
   });
 }
@@ -126,30 +134,58 @@ async function readGuestDependencies() {
 
 async function resolveAptPackages(distribution, packages) {
   const resolved = [];
-  for (const packageName of packages) {
-    const result = await runGuest(distribution, ['--exec', 'apt-cache', 'policy', packageName], 30_000);
-    const candidate = /^\s*Candidate:\s*(\S+)\s*$/mu.exec(decodeWslOutput(result.stdout))?.[1];
-    if (!candidate || candidate === '(none)') fail(`No apt candidate version is available for '${packageName}'.`);
-    resolved.push(`${packageName}=${candidate}`);
+  for (const packageSpec of packages) {
+    const { name, version } = parseAptPackage(packageSpec);
+    const result = await runGuest(distribution, ['--exec', 'apt-cache', 'policy', name], APT_RESOLUTION_TIMEOUT_MS);
+    const policy = decodeWslOutput(result.stdout);
+    if (version !== undefined) {
+      if (!new RegExp(`^\\s*${escapeRegExp(version)}\\s`, 'mu').test(policy) && !new RegExp(`\\b${escapeRegExp(version)}\\b`, 'u').test(policy)) fail(`Pinned apt version '${packageSpec}' is not available in the WSL2 image sources.`);
+      resolved.push(packageSpec);
+      continue;
+    }
+    const candidate = /^\s*Candidate:\s*(\S+)\s*$/mu.exec(policy)?.[1];
+    if (!candidate || candidate === '(none)') fail(`No apt candidate version is available for '${packageSpec}'.`);
+    resolved.push(`${name}=${candidate}`);
   }
   return resolved;
 }
 
 async function downloadAndVerify(url, expectedSha256, target) {
   if (await pathExists(target) && await sha256(target) === expectedSha256) return;
-  const response = await fetch(url);
-  if (!response.ok || response.body === null) fail(`Unable to download the WSL2 rootfs: ${response.status} ${response.statusText}.`);
   const temporaryPath = `${target}.part`;
-  await rm(temporaryPath, { force: true });
-  await pipeline(response.body, createWriteStream(temporaryPath));
-  const actualSha256 = await sha256(temporaryPath);
-  if (actualSha256 !== expectedSha256) {
-    await rm(temporaryPath, { force: true });
-    fail(`WSL2 rootfs checksum mismatch. Expected ${expectedSha256}, received ${actualSha256}.`);
+  for (let attempt = 1; attempt <= WSL_IMAGE_DOWNLOAD_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(url);
+      if (!response.ok || response.body === null) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      await rm(temporaryPath, { force: true });
+      await pipeline(response.body, createWriteStream(temporaryPath));
+      const actualSha256 = await sha256(temporaryPath);
+      if (actualSha256 !== expectedSha256) throw new Error(`checksum mismatch (expected ${expectedSha256}, received ${actualSha256})`);
+      await rm(target, { force: true });
+      const fs = await import('node:fs/promises');
+      await fs.rename(temporaryPath, target);
+      return;
+    } catch (error) {
+      await rm(temporaryPath, { force: true });
+      const reason = error instanceof Error ? error.message : String(error);
+      if (attempt >= WSL_IMAGE_DOWNLOAD_MAX_ATTEMPTS) fail(`Unable to prepare the WSL2 rootfs after ${String(attempt)} attempts: ${reason}.`);
+      console.warn(`WSL2 rootfs download attempt ${String(attempt)} failed: ${reason}. Retrying.`);
+      await new Promise(resolve => setTimeout(resolve, WSL_IMAGE_DOWNLOAD_RETRY_DELAY_MS * attempt));
+    }
   }
-  await rm(target, { force: true });
-  const fs = await import('node:fs/promises');
-  await fs.rename(temporaryPath, target);
+}
+
+async function fetchWithTimeout(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WSL_IMAGE_DOWNLOAD_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(`download timed out after ${String(WSL_IMAGE_DOWNLOAD_TIMEOUT_MS)}ms`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function reusableImage(metadataPath, outputPath, image, dependencyManifestSha256) {
@@ -167,7 +203,7 @@ async function runGuest(distribution, args, timeoutMs) {
 }
 
 async function run(command, args, timeoutMs) {
-  return execFileAsync(command, args, { windowsHide: true, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, encoding: 'buffer' });
+  return execFileAsync(command, args, { windowsHide: true, timeout: timeoutMs, maxBuffer: COMMAND_OUTPUT_BYTES, encoding: 'buffer' });
 }
 
 async function sha256(path) {
@@ -186,7 +222,15 @@ function isImageDefinition(value) {
   return typeof value?.sourceUrl === 'string' && /^https:\/\//u.test(value.sourceUrl) && typeof value.sourceSha256 === 'string' && /^[a-f0-9]{64}$/u.test(value.sourceSha256) && typeof value.outputFile === 'string';
 }
 
-function isSafePackage(value) { return typeof value === 'string' && /^[A-Za-z0-9@+_.:/-]+$/u.test(value); }
+function isSafePackage(value) { return typeof value === 'string' && /^[A-Za-z0-9@+_.:=/-]+$/u.test(value); }
+
+function parseAptPackage(value) {
+  const match = /^([A-Za-z0-9][A-Za-z0-9+_.:@/-]*)(?:=(.+))?$/u.exec(value);
+  if (!match) fail(`The native dependency manifest contains an invalid apt package '${value}'.`);
+  return { name: match[1], version: match[2] };
+}
+
+function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'); }
 
 function parseOptions(args) {
   const parsed = { arch: process.arch === 'arm64' ? 'arm64' : 'x64', force: false, help: false };

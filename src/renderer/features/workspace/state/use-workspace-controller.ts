@@ -407,7 +407,7 @@ export function useWorkspaceController() {
   }, [publishActivities]);
   const { createTask, ensureDraftTask } = useDraftTask({ workspace, task, draftTaskRef, draftTaskPromiseRef, setTasks, setTask });
   const { updateDraft, flushDraft } = useDraftPersistence({ taskRef: draftTaskRef, onError: reportControllerError });
-  const { pickArtifact, attachImage, attachText, removeAttachment } = useWorkspaceAttachmentActions({ task, draftTaskRef, ensureDraftTask, setTask, setAttachments });
+  const { pickArtifact, attachImage, attachText, removeAttachment } = useWorkspaceAttachmentActions({ task, draftTaskRef, ensureDraftTask, attachments, setTask, setAttachments });
   const { selectModel, selectEffort } = useWorkspaceModelPreferences({ task, draftTaskRef, setSelectedModelValue, setSelectedEffortValue, setTask, setTasks });
   const startPrompt = useCallback(async (prompt: string, attachmentIdsOverride?: readonly string[], options?: PromptSendOptions): Promise<boolean> => {
     if (!prompt.trim() || workspace === undefined) return false;

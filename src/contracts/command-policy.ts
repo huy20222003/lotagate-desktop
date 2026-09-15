@@ -14,8 +14,6 @@ const READ_ONLY_TOOL_NAMES = new Set([
   'browser.extractTable', 'browser.listFrames',
   'browser.screenshot', 'browser.readField', 'browser.tabs', 'browser.back', 'browser.forward', 'browser.reload', 'browser.waitFor',
   'computer.listWindows', 'computer.inspect', 'computer.screenshot', 'computer.readText', 'computer.readSelection', 'computer.readGrid', 'computer.recognizeText', 'computer.listDisplays', 'computer.wait', 'computer.readClipboard', 'computer.waitForState',
-  'pdf.inspect', 'pdf.validate', 'pdf.readText', 'pdf.recognizeText', 'pdf.search', 'pdf.extractImages', 'pdf.extractLinks', 'pdf.extractAnnotations', 'pdf.extractTables', 'pdf.readForm',
-  'pptx.inspect', 'pptx.validate', 'pptx.readSlide', 'pptx.extractText', 'excel.inspect', 'excel.validate', 'excel.readRange', 'excel.find', 'excel.readFormulas', 'docs.inspect', 'docs.validate', 'docs.readContent', 'docs.inspectStructure',
   'skill.list', 'skill.load', 'agent.wait', 'work_plan.update',
 ]);
 

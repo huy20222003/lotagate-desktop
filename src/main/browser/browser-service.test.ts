@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
     };
     readonly setBounds = vi.fn();
     readonly setVisible = vi.fn();
+    readonly setBackgroundColor = vi.fn();
     constructor() { views.push(this); }
   }
   const views: Array<InstanceType<typeof MockWebContentsView>> = [];
@@ -61,7 +62,7 @@ describe('BrowserService layout lifecycle', () => {
     await service.close(snapshot.id);
   });
 
-  it('reapplies the configured viewport when the native page view receives real bounds', async () => {
+  it('uses the native drawer viewport while visible and restores the configured viewport when hidden', async () => {
     const settings: BrowserSettings = { viewportProfile: 'desktop', customViewport: { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 }, downloadDirectory: '', sessionRetention: 'persistent', sessionRetentionMinutes: 60, originAllowlist: [], clearDataOnClose: false, evidenceRetentionDays: 30 };
     const service = new BrowserService(undefined, async () => settings);
     service.attachWindow({ contentView: { addChildView: vi.fn(), removeChildView: vi.fn() }, on: vi.fn() } as never);
@@ -70,9 +71,11 @@ describe('BrowserService layout lifecycle', () => {
     view.webContents.getURL = vi.fn(() => 'https://example.test/');
     await service.navigate(snapshot.id, snapshot.activeTabId, 'https://example.test/', true);
 
-    service.setViewBounds(snapshot.id, snapshot.activeTabId, { x: 10, y: 20, width: 519, height: 664 }, true);
+    await service.setViewBounds(snapshot.id, snapshot.activeTabId, { x: 10, y: 20, width: 519, height: 664 }, true);
 
-    expect(view.webContents.debugger.sendCommand).toHaveBeenCalledTimes(2);
+    expect(view.webContents.debugger.sendCommand).toHaveBeenCalledTimes(3);
+    expect(view.webContents.debugger.sendCommand).toHaveBeenLastCalledWith('Emulation.clearDeviceMetricsOverride');
+    await service.hide(snapshot.id);
     expect(view.webContents.debugger.sendCommand).toHaveBeenLastCalledWith('Emulation.setDeviceMetricsOverride', { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 });
     await service.close(snapshot.id);
   });
@@ -123,7 +126,7 @@ describe('BrowserService layout lifecycle', () => {
 
     await service.close(snapshot.id);
 
-    expect(() => service.setViewBounds(snapshot.id, snapshot.activeTabId, { x: 0, y: 0, width: 100, height: 100 }, true)).not.toThrow();
+    await expect(service.setViewBounds(snapshot.id, snapshot.activeTabId, { x: 0, y: 0, width: 100, height: 100 }, true)).resolves.toBeUndefined();
   });
 
   it('hides every native tab view without closing the agent browser session', async () => {
@@ -131,7 +134,7 @@ describe('BrowserService layout lifecycle', () => {
     const snapshot = await service.create();
     const view = mocks.views.at(-1)!;
 
-    service.hide(snapshot.id);
+    await service.hide(snapshot.id);
 
     expect(view.setVisible).toHaveBeenLastCalledWith(false);
     expect(view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 0, height: 0 });

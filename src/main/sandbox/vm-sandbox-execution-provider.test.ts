@@ -6,7 +6,7 @@ import { VmSandboxExecutionProvider } from './vm-sandbox-execution-provider.js';
 import type { VmRuntimeAdapter, VmRuntimeEnvironment, VmRuntimeStartInput, VmSandboxOptions } from './vm-types.js';
 
 const options = (runner: string): VmSandboxOptions => ({
-  runtime: 'wsl2', distribution: 'Ubuntu', profile: 'general', networkPolicy: 'none', allowedDomains: [], workspaceAccess: 'read-write', memoryMb: 2_048, cpuCores: 2, pidsLimit: 128, diskMb: 8_192, maxConcurrentEnvironments: 2, maxConcurrentOperations: 2, idleTimeoutMinutes: 15, guestRunnerPath: runner,
+  runtime: 'wsl2', distribution: 'Ubuntu', profile: 'general', networkPolicy: 'none', workspaceAccess: 'read-write', memoryMb: 2_048, cpuCores: 2, pidsLimit: 128, diskMb: 8_192, maxConcurrentEnvironments: 2, maxConcurrentOperations: 2, idleTimeoutMinutes: 15, guestRunnerPath: runner,
 });
 
 describe('VmSandboxExecutionProvider', () => {

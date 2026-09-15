@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 import { CliAgentProcess, type CliAgentDiagnostic, type CliAgentEventHandler } from './cli-agent-process.js';
 import { resolveCliInvocation } from './cli-resolver.js';
 import type { DesktopAgentResult, DesktopEvent, DesktopExecutionPolicy, DesktopHostRequest, DesktopHostResponse, DesktopReasoningEffort, DesktopSkillSelection } from '../../contracts/agent-protocol/v1/desktop.js';
@@ -22,12 +23,13 @@ export interface AgentManagerHandler {
 
 export interface CliAttachmentInput { id: string; name: string; mimeType: string; sizeBytes: number; path: string; storageName?: string; }
 
-interface ProcessBinding { key: string; projectRoot: string; sessionId?: string; process: CliAgentProcess; }
+interface SessionExecutionWorkspaceBinding { id: string; projectRoot: string; executionCwd: string; }
+interface ProcessBinding { key: string; projectRoot: string; sessionId?: string; process: CliAgentProcess; executionWorkspace?: SessionExecutionWorkspaceBinding; }
 interface CommandEventBuffer { events: DesktopEvent[]; bytes: number; truncated: boolean; resolve: (events: DesktopEvent[]) => void; operation: Promise<DesktopEvent[]>; timer: ReturnType<typeof setTimeout> }
 
 interface CommandExecutionResult { content: string; structured?: Record<string, unknown>; truncated: boolean; }
 
-export interface AgentManagerOptions { idleTimeoutMs?: number; computerHost?: boolean; documentHost?: boolean; hostCapabilities?: DesktopHostCapabilities; }
+export interface AgentManagerOptions { idleTimeoutMs?: number; computerHost?: boolean; hostCapabilities?: DesktopHostCapabilities; }
 
 /** Owns one CLI process per Desktop session; project-level calls use a separate control process. */
 export class AgentManager {
@@ -64,7 +66,9 @@ export class AgentManager {
         const result = await binding.process.request('session.create', input);
         const sessionId = extractSessionId(result);
         if (sessionId === undefined) throw new Error('The CLI did not return a session id.');
-        binding.sessionId = sessionId; this.sessionBindings.set(sessionId, binding); this.touch(binding);
+        binding.sessionId = sessionId;
+        binding.executionWorkspace = extractExecutionWorkspace(result, projectRoot);
+        this.sessionBindings.set(sessionId, binding); this.touch(binding);
         return result;
       } catch (error) { this.removeBinding(binding); await binding.process.shutdown('session-create-failed'); throw error; }
     });
@@ -77,7 +81,13 @@ export class AgentManager {
   async sessionResume(cwd: string, sessionId: string): Promise<unknown> {
     const projectRoot = await requireDirectory(cwd);
     const existing = this.sessionBindings.get(sessionId);
-    if (existing !== undefined) { if (existing.projectRoot !== projectRoot) throw new Error('The session belongs to a different project.'); this.touch(existing); return existing.process.request('session.resume', { sessionId }); }
+    if (existing !== undefined) {
+      if (existing.projectRoot !== projectRoot) throw new Error('The session belongs to a different project.');
+      this.touch(existing);
+      const result = await existing.process.request('session.resume', { sessionId });
+      existing.executionWorkspace = extractExecutionWorkspace(result, projectRoot);
+      return result;
+    }
     const resumeKey = `${projectRoot}\u0000${sessionId}`;
     const pending = this.sessionResumes.get(resumeKey);
     if (pending !== undefined) return pending;
@@ -91,7 +101,12 @@ export class AgentManager {
       await this.ensureSessionCapacity();
       const binding = this.createProcess(projectRoot, `session:${sessionId}`);
       await binding.process.initialize();
-      try { const result = await binding.process.request('session.resume', { sessionId }); binding.sessionId = sessionId; this.sessionBindings.set(sessionId, binding); this.touch(binding); return result; }
+      try {
+        const result = await binding.process.request('session.resume', { sessionId });
+        binding.sessionId = sessionId;
+        binding.executionWorkspace = extractExecutionWorkspace(result, projectRoot);
+        this.sessionBindings.set(sessionId, binding); this.touch(binding); return result;
+      }
       catch (error) { this.removeBinding(binding); await binding.process.shutdown('session-resume-failed'); throw error; }
     });
   }
@@ -256,7 +271,13 @@ export class AgentManager {
         this.recordCommandEvent(event);
         this.handler.onEvent(projectRoot, event);
       },
-      onHostRequest: (request, signal) => this.handler.onHostRequest === undefined ? Promise.resolve({ version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'HOST_UNAVAILABLE', category: 'execution', message: 'The Desktop host is unavailable.', retryable: false } }) : this.handler.onHostRequest(projectRoot, request, signal),
+      onHostRequest: (request, signal) => {
+        const workspaceError = validateHostExecutionWorkspace(binding, request);
+        if (workspaceError !== undefined) return Promise.resolve(rejectedHostResponse(request, workspaceError));
+        return this.handler.onHostRequest === undefined
+          ? Promise.resolve(rejectedHostResponse(request, 'The Desktop host is unavailable.'))
+          : this.handler.onHostRequest(projectRoot, request, signal);
+      },
       onDiagnostic: diagnostic => this.handler.onDiagnostic?.(projectRoot, { ...diagnostic, ...(diagnostic.sessionId === undefined && binding.sessionId === undefined ? {} : { sessionId: diagnostic.sessionId ?? binding.sessionId }) }),
       onExit: error => {
         const approvalIds = [...this.approvalBindings.entries()].filter(([, candidate]) => candidate === binding).map(([approvalId]) => approvalId);
@@ -265,7 +286,7 @@ export class AgentManager {
         this.scheduleRecovery(binding);
       },
     };
-    binding = { key, projectRoot, process: new CliAgentProcess({ cwd: projectRoot, ...resolveCliInvocation(), computerHost: this.options.computerHost === true, documentHost: this.options.documentHost === true, ...(this.options.hostCapabilities === undefined ? {} : { hostCapabilities: this.options.hostCapabilities }) }, eventHandler) }; this.processes.set(key, binding); this.touch(binding); return binding;
+    binding = { key, projectRoot, process: new CliAgentProcess({ cwd: projectRoot, ...resolveCliInvocation(), computerHost: this.options.computerHost === true, ...(this.options.hostCapabilities === undefined ? {} : { hostCapabilities: this.options.hostCapabilities }) }, eventHandler) }; this.processes.set(key, binding); this.touch(binding); return binding;
   }
 
   private async sessionProcess(projectRoot: string, sessionId: string): Promise<ProcessBinding> {
@@ -340,6 +361,33 @@ export class AgentManager {
 }
 
 function extractSessionId(value: unknown): string | undefined { if (!isRecord(value) || !isRecord(value['session'])) return undefined; return typeof value['session']['id'] === 'string' ? value['session']['id'] : undefined; }
+function extractExecutionWorkspace(value: unknown, projectRoot: string): SessionExecutionWorkspaceBinding {
+  const workspace = isRecord(value) && isRecord(value['executionWorkspace']) ? value['executionWorkspace'] : undefined;
+  if (workspace === undefined || typeof workspace['id'] !== 'string' || typeof workspace['projectRoot'] !== 'string' || typeof workspace['executionCwd'] !== 'string' || !samePath(workspace['projectRoot'], projectRoot)) throw new Error('The CLI did not return a valid execution workspace for this project.');
+  return { id: workspace['id'], projectRoot: workspace['projectRoot'], executionCwd: workspace['executionCwd'] };
+}
+function validateHostExecutionWorkspace(binding: ProcessBinding, request: DesktopHostRequest): string | undefined {
+  if (request.tool !== 'filesystem' && request.tool !== 'shell' && request.tool !== 'git' && request.tool !== 'artifact') return undefined;
+  const workspace = binding.executionWorkspace;
+  if (workspace === undefined) return 'The Desktop host request has no registered execution workspace.';
+  if (request.sessionId !== binding.sessionId) return 'The Desktop host request session does not match the active CLI session.';
+  if (request.executionWorkspaceId !== workspace.id) return 'The Desktop host request does not match the active execution workspace.';
+  if (request.executionCwd === undefined || !samePath(request.executionCwd, workspace.executionCwd)) return 'The Desktop host request points outside the active execution workspace.';
+  if (request.projectRoot !== undefined && !samePath(request.projectRoot, workspace.projectRoot)) return 'The Desktop host request project does not match the active session.';
+  return undefined;
+}
+function rejectedHostResponse(request: DesktopHostRequest, message: string): DesktopHostResponse {
+  return { version: 1, type: 'host.response', requestId: request.requestId, tool: request.tool, ok: false, error: { code: 'INVALID_EXECUTION_WORKSPACE', category: 'security', message, retryable: false } };
+}
+function samePath(left: string, right: string): boolean {
+  try {
+    const normalizedLeft = resolve(left);
+    const normalizedRight = resolve(right);
+    return process.platform === 'win32' ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
+  } catch {
+    return false;
+  }
+}
 function extractTurnId(value: unknown): string | undefined { return isRecord(value) && typeof value['turnId'] === 'string' ? value['turnId'] : undefined; }
 function readCommandError(value: unknown): string | undefined { return isRecord(value) && typeof value['message'] === 'string' ? value['message'] : undefined; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }

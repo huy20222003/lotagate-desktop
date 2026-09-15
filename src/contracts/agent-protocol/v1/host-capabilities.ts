@@ -1,5 +1,3 @@
-export type DesktopDocumentFormat = 'pdf' | 'pptx' | 'excel' | 'docs';
-
 /** Native capability metadata sent to the CLI during the Desktop handshake. */
 export interface DesktopHostCapability {
   readonly available: boolean;
@@ -10,5 +8,4 @@ export interface DesktopHostCapability {
 
 export interface DesktopHostCapabilities {
   readonly computer?: DesktopHostCapability;
-  readonly documents?: Partial<Record<DesktopDocumentFormat, DesktopHostCapability>>;
 }

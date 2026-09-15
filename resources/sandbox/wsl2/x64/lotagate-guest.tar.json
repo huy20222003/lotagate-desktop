@@ -2,21 +2,13 @@
   "schemaVersion": 2,
   "architecture": "x64",
   "sourceSha256": "2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934",
-  "dependencyManifestSha256": "f3a97d3516bf457f8bc81dd5d6123e54f6f263a120f8c498ba322809b06fa610",
+  "dependencyManifestSha256": "456a5f353044745703ca6d5c7b138e5195f87e36a946b97593b5a960ef432935",
   "aptPackages": [
     "bubblewrap=0.9.0-1ubuntu0.1",
     "python3=3.12.3-0ubuntu2.1",
-    "nodejs=18.19.1+dfsg-6ubuntu5",
-    "libreoffice-core=4:24.2.7-0ubuntu0.24.04.6",
-    "libreoffice-writer=4:24.2.7-0ubuntu0.24.04.6",
-    "libreoffice-calc=4:24.2.7-0ubuntu0.24.04.6",
-    "libreoffice-impress=4:24.2.7-0ubuntu0.24.04.6",
-    "python3-uno=4:24.2.7-0ubuntu0.24.04.6",
-    "poppler-utils=24.02.0-1ubuntu9.9",
-    "pdftk-java=3.3.3-2",
-    "qpdf=11.9.0-1.1ubuntu0.1",
-    "ghostscript=10.02.1~dfsg1-0ubuntu7.8",
-    "tesseract-ocr=5.3.4-1build5"
+    "python3-pip=24.0+dfsg-1ubuntu1.3",
+    "python3-venv=3.12.3-0ubuntu2.1",
+    "nodejs=18.19.1+dfsg-6ubuntu5"
   ],
-  "imageSha256": "502d323eb97e86c20ef251a7137e40af10e495e35331247ca6d6c9ef336c4eed"
+  "imageSha256": "f9391a9cb0bbc246016cd7d034f7a67b43275e5e7b4f19bfb79a2aaa68494f32"
 }

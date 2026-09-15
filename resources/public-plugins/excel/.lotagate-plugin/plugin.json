@@ -2,7 +2,7 @@
   "name": "excel",
   "displayName": "Excel",
   "version": "1.1.0",
-  "description": "Read, update, calculate, and export workbooks through LotaGate's platform-native document host.",
+  "description": "Create, inspect, edit, and verify XLSX or CSV files with Python inside LotaGate's shared guest runtime.",
   "author": "LotaGate",
   "license": "MIT",
   "homepage": "https://lotagate.com/",

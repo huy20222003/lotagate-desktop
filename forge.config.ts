@@ -21,6 +21,7 @@ const runtimeConfigArtifact = generateRuntimeConfigArtifact(process.cwd());
 const removePackagedSourceMaps = (buildPath: string, _electronVersion: string, _platform: string, _arch: string, callback: (error?: Error | null) => void): void => {
   try {
     removeSourceMaps(join(buildPath, 'resources'));
+    assertNoLegacyDocumentResources(join(buildPath, 'resources'));
     callback();
   } catch (error) {
     callback(error instanceof Error ? error : new Error('Unable to remove packaged source maps.'));
@@ -44,7 +45,6 @@ const config: ForgeConfig = {
       'resources/icons/lotagate.ico',
       'resources/public-plugins',
       'resources/computer-use',
-      'resources/document-use',
       'resources/sandbox',
       'resources/native-dependencies',
       'resources/speech',
@@ -105,6 +105,31 @@ function removeSourceMaps(directory: string): void {
       removeSourceMaps(entryPath);
     } else if (entry.isFile() && entry.name.endsWith('.map')) {
       rmSync(entryPath, { force: true });
+    }
+  }
+}
+
+function assertNoLegacyDocumentResources(directory: string): void {
+  if (!existsSync(directory)) return;
+  let entries: Dirent<string>[];
+  try {
+    entries = readdirSync(directory, { withFileTypes: true });
+  } catch (error) {
+    if (isMissingPathError(error)) return;
+    throw error;
+  }
+  for (const entry of entries) {
+    const entryPath = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === 'document-use') throw new Error(`Legacy document runtime resource is still packaged: ${entryPath}`);
+      assertNoLegacyDocumentResources(entryPath);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    if (['windows-document.ps1', 'portable-office-bridge.py', 'portable_office_extended.py', 'portable_office_presentation.py', 'portable_office_spreadsheet.py', 'portable_office_support.py'].includes(entry.name)) throw new Error(`Legacy document runtime resource is still packaged: ${entryPath}`);
+    if (entry.name === 'SKILL.md') {
+      const content = readFileSync(entryPath, 'utf8');
+      if (['pdf_addText', 'document handle is invalid', 'pptx.close', 'excel_open', 'docs_create'].some(marker => content.includes(marker))) throw new Error(`Legacy document tool contract is still packaged: ${entryPath}`);
     }
   }
 }

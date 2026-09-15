@@ -1,7 +1,7 @@
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DesktopHostExecutionBroker } from './desktop-host-execution-broker.js';
 import type { DesktopHostRequest } from '../../contracts/agent-protocol/v1/desktop.js';
 import type { SandboxExecutionProvider } from '../sandbox/vm-sandbox-execution-provider.js';
@@ -73,6 +73,20 @@ describe('DesktopHostExecutionBroker', () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it('publishes a workspace-relative file through the host artifact service', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-host-artifact-'));
+    try {
+      await writeFile(join(root, 'report.pdf'), 'pdf bytes', 'utf8');
+      const published = { id: 'artifact-1', name: 'report.pdf', kind: 'pdf', sizeBytes: 9 };
+      const expectedSourcePath = await realpath(join(root, 'report.pdf'));
+      const publisher = { publishFile: async (taskId: string, sourcePath: string) => { expect(taskId).toBe('task-1'); expect(sourcePath).toBe(expectedSourcePath); return published; } };
+      const broker = new DesktopHostExecutionBroker({ artifactPublisher: publisher });
+      const result = await broker.handle(root, { ...request('artifact', 'artifact.publish', { path: 'report.pdf' }), taskId: 'task-1' });
+
+      expect(result).toMatchObject({ ok: true, executionBoundary: 'host', result: { published: true, artifact: published }, artifacts: [published] });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it('runs structured host commands without shell interpolation', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lotagate-host-broker-'));
     try {
@@ -91,6 +105,16 @@ describe('DesktopHostExecutionBroker', () => {
       const unavailable = new DesktopHostExecutionBroker({ sandbox: { execute: async () => { throw new SandboxUnavailableError('Sandbox runtime unavailable.'); } } });
       await expect(unavailable.handle(root, request('shell', 'shell.exec', { command: 'node' }, 'sandbox', 'ask'))).resolves.toMatchObject({ ok: false, executionBoundary: 'sandbox', error: { code: 'SANDBOX_FALLBACK_REQUIRED', retryable: true } });
       await expect(unavailable.handle(root, request('shell', 'shell.exec', { command: 'node' }, 'sandbox', 'deny'))).resolves.toMatchObject({ ok: false, error: { code: 'SANDBOX_UNAVAILABLE', retryable: false } });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('forwards the tool timeout to the sandbox boundary', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lotagate-host-broker-timeout-'));
+    try {
+      const execute = vi.fn(async () => ({ result: 'sandbox-ok' }));
+      const broker = new DesktopHostExecutionBroker({ sandbox: { execute } });
+      await broker.handle(root, request('shell', 'shell.exec', { command: 'node', timeoutMs: 90_000 }, 'sandbox'));
+      expect(execute).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 90_000 }));
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

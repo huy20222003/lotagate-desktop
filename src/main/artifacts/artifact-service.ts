@@ -6,6 +6,18 @@ import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 import { artifactMimeType } from './artifact-mime.js';
+import { artifactKind } from './artifact-kind.js';
+
+export interface PublishedArtifactDescriptor {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: Artifact['kind'];
+  readonly sizeBytes: number;
+}
+
+export function publishedArtifactDescriptor(artifact: Artifact): PublishedArtifactDescriptor {
+  return { id: artifact.id, name: artifact.name, kind: artifact.kind, sizeBytes: artifact.size };
+}
 
 export class ArtifactService {
   private readonly store = new JsonFileStore<Artifact[]>(desktopDataPath('artifacts.json'), [], value => artifactSchema.array().parse(value));
@@ -76,6 +88,11 @@ export class ArtifactService {
       await unlink(destination).catch(() => undefined);
       throw error;
     }
+  }
+
+  /** Imports one workspace output into the task artifact store without exposing host paths. */
+  async publishFile(taskId: string, sourcePath: string): Promise<PublishedArtifactDescriptor> {
+    return publishedArtifactDescriptor(await this.importFile(taskId, sourcePath, artifactKind(sourcePath)));
   }
 
   async replaceFile(taskId: string, artifactId: string, sourcePath: string): Promise<Artifact> {

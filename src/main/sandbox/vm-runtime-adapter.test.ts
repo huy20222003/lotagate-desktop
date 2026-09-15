@@ -13,51 +13,57 @@ const input: VmRuntimeStartInput = {
   pidsLimit: 128,
   diskMb: 8_192,
   guestRunnerPath: 'C:\\guest-runner.py',
-  guestDocumentRunnerPath: 'C:\\document-runner.mjs',
-  guestDocumentResourcesPath: 'C:\\document-use',
   idleTimeoutMinutes: 15,
 };
 
 describe('createWslArguments', () => {
-  it('binds host workspace and resources before hiding WSL interop paths', () => {
-    const args = createWslArguments(input, '/mnt/c/workspace', '/mnt/c/guest-runner.py', 'token', '/mnt/c/document-runner.mjs', '/mnt/c/document-use');
+  it('binds the host workspace and runner before hiding WSL interop paths', () => {
+    const args = createWslArguments(input, '/mnt/c/workspace', '/mnt/c/guest-runner.py', 'token');
     const bwrap = args.indexOf('bwrap');
     const command = args.slice(bwrap + 1);
     const hideMnt = command.indexOf('/mnt');
     const workspace = command.indexOf('/workspace');
     const runner = command.indexOf('/opt/lotagate/sandbox/guest-runner.py');
-    const documentResources = command.indexOf('/opt/lotagate/document-use');
 
     expect(hideMnt).toBeGreaterThan(workspace);
     expect(hideMnt).toBeGreaterThan(runner);
-    expect(hideMnt).toBeGreaterThan(documentResources);
     expect(command).toContain('--unshare-net');
   });
 
-  it('rejects an allowlist until a guest proxy is configured', () => {
-    expect(() => createWslArguments({ ...input, networkPolicy: 'allowlist' }, '/mnt/c/workspace', '/mnt/c/guest-runner.py', 'token', undefined, undefined)).toThrow('guest proxy');
+  it('uses the single shared WSL2 guest root and isolates its temporary paths', () => {
+    const args = createWslArguments(input, '/mnt/c/workspace', '/mnt/c/guest-runner.py', 'token');
+    expect(args).toContain('--ro-bind');
+    expect(args).toContain('--clearenv');
+    expect(args).toContain('--tmpfs');
   });
 });
 
 describe('createBwrapArguments', () => {
   it('keeps the Linux backend on the shared guest runner policy', () => {
-    const args = createBwrapArguments(input, '/workspace', '/app/guest-runner.py', 'token', undefined, undefined);
+    const args = createBwrapArguments(input, '/workspace', '/app/guest-runner.py', 'token');
     expect(args[0]).toBe('bwrap');
     expect(args).toContain('--unshare-net');
+    expect(args).toContain('--ro-bind-try');
     expect(args.slice(-6)).toEqual(['--', 'python3', '/opt/lotagate/sandbox/guest-runner.py', '--server', '--auth-token', 'token']);
   });
 });
 
 describe('createSeatbeltProfile', () => {
   it('allows only the workspace and temporary directories to be written', () => {
-    const profile = createSeatbeltProfile(input, '/Users/test/workspace', '/var/folders/test');
+    const profile = createSeatbeltProfile(input, '/Users/test/workspace', '/var/folders/test', '/Applications/LotaGate.app/Contents/Resources/sandbox/guest-runner.py', '/Applications/LotaGate.app/Contents/MacOS/Electron');
     expect(profile).toContain('(deny default)');
     expect(profile).toContain('(subpath "/Users/test/workspace")');
     expect(profile).toContain('(subpath "/var/folders/test")');
+    expect(profile).toContain('(subpath "/tmp")');
+    expect(profile).toContain('(subpath "/private/tmp")');
+    expect(profile).toContain('(subpath "/Applications/LotaGate.app/Contents/Resources/sandbox/guest-runner.py")');
+    expect(profile).toContain('(subpath "/Applications/LotaGate.app/Contents")');
     expect(profile).toContain('(deny network*)');
   });
 
-  it('fails closed for allowlisted networking until a proxy boundary exists', () => {
-    expect(() => createSeatbeltProfile({ ...input, networkPolicy: 'allowlist' }, '/Users/test/workspace', '/tmp')).toThrow('guest proxy');
+  it('does not grant broad host file reads', () => {
+    const profile = createSeatbeltProfile(input, '/Users/test/workspace', '/var/folders/test');
+    expect(profile).toContain('(allow file-read*');
+    expect(profile).not.toContain('(allow file-read*)');
   });
 });

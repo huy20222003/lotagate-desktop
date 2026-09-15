@@ -247,7 +247,7 @@ const USAGE_COUNTER_KEYS = new Set(['promptTokens', 'completionTokens', 'totalTo
 function toolActivityDisplayName(data: Record<string, unknown>): string { return formatToolDisplayName(data['toolName'], data['command'] ?? data['displayName']); }
 function hasDetailedToolActivity(data: Record<string, unknown>): boolean {
   const toolName = data['toolName'];
-  return toolName === 'shell.exec' || toolName === 'filesystem.read' || toolName === 'filesystem.write' || toolName === 'filesystem.exists';
+  return toolName === 'shell.exec' || toolName === 'filesystem.read' || toolName === 'filesystem.write' || toolName === 'filesystem.exists' || toolName === 'artifact.publish';
 }
 
 function readArtifactIds(value: unknown): string[] {

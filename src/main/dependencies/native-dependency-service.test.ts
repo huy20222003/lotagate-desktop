@@ -17,14 +17,14 @@ afterEach(async () => {
 });
 
 describe('NativeDependencyService', () => {
-  it('does not install host document dependencies during automatic startup bootstrap', async () => {
+  it('does not install optional host dependencies during automatic startup bootstrap', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'lotagate-native-dependencies-'));
     temporaryDirectories.push(directory);
     const manifestPath = join(directory, 'manifest.json');
     await writeFile(manifestPath, JSON.stringify({
       schemaVersion: 1,
       dependencies: [
-        { id: 'documents.office', label: 'Office', automaticInstall: false, platforms: ['win32'], probe: { type: 'command', command: 'soffice' }, install: { win32: { manager: 'winget', packageId: 'Office.Package' } } },
+        { id: 'optional.integration', label: 'Optional integration', automaticInstall: false, platforms: ['win32'], probe: { type: 'command', command: 'optional-helper' }, install: { win32: { manager: 'winget', packageId: 'Optional.Package' } } },
         { id: 'computer.helper', label: 'Computer helper', platforms: ['win32'], probe: { type: 'command', command: 'computer-helper' }, install: { win32: { manager: 'winget', packageId: 'Computer.Package' } } },
       ],
     }), 'utf8');
@@ -47,8 +47,8 @@ describe('NativeDependencyService', () => {
     const completeReport = await service.inspectCurrent();
 
     expect(startupReport.statuses.map(status => status.id)).toEqual(['computer.helper']);
-    expect(completeReport.missing).toContain('documents.office');
-    expect(mocks.execFile.mock.calls.some(call => call[0] === 'winget.exe' && call[1].includes('Office.Package'))).toBe(false);
+    expect(completeReport.missing).toContain('optional.integration');
+    expect(mocks.execFile.mock.calls.some(call => call[0] === 'winget.exe' && call[1].includes('Optional.Package'))).toBe(false);
     expect(mocks.execFile.mock.calls.some(call => call[0] === 'winget.exe' && call[1].includes('Computer.Package'))).toBe(true);
   });
 });

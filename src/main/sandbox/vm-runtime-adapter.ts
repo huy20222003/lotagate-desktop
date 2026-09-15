@@ -2,19 +2,16 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, normalize, resolve } from 'node:path';
+import { dirname, isAbsolute, join, normalize, resolve } from 'node:path';
 import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 import { runBoundedCommand } from '../process/bounded-command.js';
 import { commandWorks } from '../process/command-availability.js';
 import { VmGuestBridge } from './vm-guest-bridge.js';
 import type { VmRuntimeAdapter, VmRuntimeEnvironment, VmRuntimeExecuteInput, VmRuntimeExecutionResult, VmRuntimeStartInput, VmRuntimeStatus } from './vm-types.js';
 import { VmGuestProcessError } from './vm-guest-bridge.js';
-import { vmProfile } from './vm-image-catalog.js';
 import { WindowsWsl2PrerequisiteService } from './windows-wsl2-prerequisite-service.js';
 
 export type { VmRuntimeAdapter, VmRuntimeEnvironment, VmRuntimeExecuteInput, VmRuntimeExecutionResult, VmRuntimeStartInput, VmRuntimeStatus } from './vm-types.js';
-
-export const SANDBOX_ALLOWLIST_UNAVAILABLE_MESSAGE = 'The sandbox network allowlist requires a configured guest proxy.';
 
 /**
  * WSL2 is the Windows VM backend. The guest process is started once for an
@@ -26,33 +23,38 @@ export class Wsl2RuntimeAdapter implements VmRuntimeAdapter {
 
   async inspect(distribution: string): Promise<VmRuntimeStatus> {
     const prerequisites = await this.prerequisites.inspect();
-    if (!prerequisites.available) return { runtime: 'wsl2', available: false, distribution, ...prerequisiteFields(prerequisites) };
+    if (!prerequisites.available) return { runtime: 'wsl2', available: false, distribution, isolation: 'vm', ...prerequisiteFields(prerequisites) };
+    if (distribution.trim().length === 0) return { runtime: 'wsl2', available: false, distribution, isolation: 'vm', reason: 'No WSL2 distribution is configured.' };
     try {
-      await runBoundedCommand('wsl.exe', ['--distribution', distribution, '--user', 'root', '--exec', 'bash', '-lc', 'command -v -- python3 >/dev/null && command -v -- bwrap >/dev/null && printf lotagate-vm-ready'], { maxOutputBytes: 16 * 1024, timeoutMs: 10_000 });
-      return { runtime: 'wsl2', available: true, distribution, resourceQuota: 'process' };
+      await runBoundedCommand('wsl.exe', ['--distribution', distribution, '--user', 'root', '--exec', 'bash', '-lc', 'command -v -- python3 >/dev/null && command -v -- bwrap >/dev/null && printf lotagate-vm-ready'], { maxOutputBytes: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeHealthOutputBytes, timeoutMs: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeHealthTimeoutMs });
+      return { runtime: 'wsl2', available: true, distribution, isolation: 'vm', resourceQuota: 'process' };
     } catch (error) {
-      return { runtime: 'wsl2', available: false, distribution, reason: redact(error instanceof Error ? error.message : 'WSL2 is unavailable.') };
+      return { runtime: 'wsl2', available: false, distribution, isolation: 'vm', reason: redact(error instanceof Error ? error.message : 'WSL2 is unavailable.') };
     }
   }
 
-  async repair(): Promise<VmRuntimeStatus> {
+  async repair(distribution = ''): Promise<VmRuntimeStatus> {
+    if (distribution.trim().length > 0) {
+      const current = await this.inspect(distribution);
+      if (current.available) return current;
+    }
     const prerequisites = await this.prerequisites.repair();
-    if (!prerequisites.available) return { runtime: 'wsl2', available: false, distribution: '', ...prerequisiteFields(prerequisites) };
+    if (!prerequisites.available || prerequisites.restartRequired) return { runtime: 'wsl2', available: false, distribution: '', isolation: 'vm', ...prerequisiteFields(prerequisites) };
     try {
       // A failed guest probe can leave the WSL utility VM stuck while the
       // Windows features themselves remain healthy. Reset that host runtime
       // before the health service probes the configured distribution again.
-      await runBoundedCommand('wsl.exe', ['--shutdown'], { maxOutputBytes: 64 * 1024, timeoutMs: 15_000 });
-      return { runtime: 'wsl2', available: true, distribution: '', ...prerequisiteFields(prerequisites) };
+      await runBoundedCommand('wsl.exe', ['--shutdown'], { maxOutputBytes: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeStatusOutputBytes, timeoutMs: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeRepairTimeoutMs });
+      return { runtime: 'wsl2', available: true, distribution: '', isolation: 'vm', ...prerequisiteFields(prerequisites) };
     } catch (error) {
-      return { runtime: 'wsl2', available: false, distribution: '', reason: redact(error instanceof Error ? error.message : 'WSL2 could not be restarted.'), ...prerequisiteFields(prerequisites) };
+      return { runtime: 'wsl2', available: false, distribution: '', isolation: 'vm', reason: redact(error instanceof Error ? error.message : 'WSL2 could not be restarted.'), ...prerequisiteFields(prerequisites) };
     }
   }
 
-  async ensureAvailable(automatic: boolean): Promise<VmRuntimeStatus> {
-    const current = await this.inspect('');
+  async ensureAvailable(distribution: string, automatic: boolean): Promise<VmRuntimeStatus> {
+    const current = await this.inspect(distribution);
     if (!automatic || current.available) return current;
-    return this.repair();
+    return this.repair(distribution);
   }
 
   async start(input: VmRuntimeStartInput): Promise<VmRuntimeEnvironment> {
@@ -60,14 +62,12 @@ export class Wsl2RuntimeAdapter implements VmRuntimeAdapter {
     const rootInfo = await stat(root);
     if (!rootInfo.isDirectory()) throw new SandboxUnavailableError('The VM workspace root is not a directory.');
     const runner = await realpath(input.guestRunnerPath);
-    const documentRunner = input.guestDocumentRunnerPath === undefined ? undefined : await realpath(input.guestDocumentRunnerPath);
-    const documentResources = input.guestDocumentResourcesPath === undefined ? undefined : await realpath(input.guestDocumentResourcesPath);
     const authToken = randomUUID();
-    const args = createWslArguments(input, toWslPath(root), toWslPath(runner), authToken, documentRunner === undefined ? undefined : toWslPath(documentRunner), documentResources === undefined ? undefined : toWslPath(documentResources));
+    const args = createWslArguments(input, toWslPath(root), toWslPath(runner), authToken);
     const child = spawn('wsl.exe', args, { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     const bridge = new VmGuestBridge(child, authToken);
     try {
-      await bridge.execute({ action: 'health', params: {}, timeoutMs: 10_000, ...(input.signal === undefined ? {} : { signal: input.signal }) });
+      await bridge.execute({ action: 'health', params: {}, timeoutMs: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeHealthTimeoutMs, ...(input.signal === undefined ? {} : { signal: input.signal }) });
     } catch (error) {
       await bridge.close();
       if (input.signal?.aborted === true) throw new Error('VM sandbox execution was cancelled.');
@@ -81,10 +81,10 @@ export class Wsl2RuntimeAdapter implements VmRuntimeAdapter {
 export class LinuxBubblewrapRuntimeAdapter implements VmRuntimeAdapter {
   async inspect(distribution: string): Promise<VmRuntimeStatus> {
     try {
-      await runBoundedCommand('bwrap', bwrapHealthArguments(), { maxOutputBytes: 16 * 1024, timeoutMs: 10_000 });
-      return { runtime: 'bubblewrap', available: true, distribution, resourceQuota: await linuxResourceQuota() };
+      await runBoundedCommand('bwrap', bwrapHealthArguments(), { maxOutputBytes: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeHealthOutputBytes, timeoutMs: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeHealthTimeoutMs });
+      return { runtime: 'bubblewrap', available: true, distribution, isolation: 'host-sandbox', resourceQuota: await linuxResourceQuota() };
     } catch (error) {
-      return { runtime: 'bubblewrap', available: false, distribution, reason: redact(error instanceof Error ? error.message : 'Bubblewrap is unavailable.') };
+      return { runtime: 'bubblewrap', available: false, distribution, isolation: 'host-sandbox', reason: redact(error instanceof Error ? error.message : 'Bubblewrap is unavailable.') };
     }
   }
 
@@ -93,15 +93,13 @@ export class LinuxBubblewrapRuntimeAdapter implements VmRuntimeAdapter {
     const rootInfo = await stat(root);
     if (!rootInfo.isDirectory()) throw new SandboxUnavailableError('The sandbox workspace root is not a directory.');
     const runner = await realpath(input.guestRunnerPath);
-    const documentRunner = input.guestDocumentRunnerPath === undefined ? undefined : await realpath(input.guestDocumentRunnerPath);
-    const documentResources = input.guestDocumentResourcesPath === undefined ? undefined : await realpath(input.guestDocumentResourcesPath);
     const authToken = randomUUID();
-    const args = createBwrapArguments(input, root, runner, authToken, documentRunner, documentResources);
+    const args = createBwrapArguments(input, root, runner, authToken, false);
     const launch = await linuxLaunch(input, args);
     const child = spawn(launch.command, launch.args, { shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
     const bridge = new VmGuestBridge(child, authToken);
     try {
-      await bridge.execute({ action: 'health', params: {}, timeoutMs: 10_000, ...(input.signal === undefined ? {} : { signal: input.signal }) });
+      await bridge.execute({ action: 'health', params: {}, timeoutMs: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeHealthTimeoutMs, ...(input.signal === undefined ? {} : { signal: input.signal }) });
     } catch (error) {
       await bridge.close();
       if (input.signal?.aborted === true) throw new Error('Sandbox execution was cancelled.');
@@ -115,10 +113,10 @@ export class LinuxBubblewrapRuntimeAdapter implements VmRuntimeAdapter {
 export class MacSeatbeltRuntimeAdapter implements VmRuntimeAdapter {
   async inspect(distribution: string): Promise<VmRuntimeStatus> {
     try {
-      await runBoundedCommand('sandbox-exec', ['-p', '(version 1) (allow default)', '/usr/bin/true'], { maxOutputBytes: 16 * 1024, timeoutMs: 10_000 });
-      return { runtime: 'seatbelt', available: true, distribution, resourceQuota: 'process' };
+      await runBoundedCommand('sandbox-exec', ['-p', '(version 1) (allow default)', '/usr/bin/true'], { maxOutputBytes: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeHealthOutputBytes, timeoutMs: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeHealthTimeoutMs });
+      return { runtime: 'seatbelt', available: true, distribution, isolation: 'host-sandbox', resourceQuota: 'process' };
     } catch (error) {
-      return { runtime: 'seatbelt', available: false, distribution, reason: redact(error instanceof Error ? error.message : 'macOS Seatbelt is unavailable.') };
+      return { runtime: 'seatbelt', available: false, distribution, isolation: 'host-sandbox', reason: redact(error instanceof Error ? error.message : 'macOS Seatbelt is unavailable.') };
     }
   }
 
@@ -127,17 +125,15 @@ export class MacSeatbeltRuntimeAdapter implements VmRuntimeAdapter {
     const rootInfo = await stat(root);
     if (!rootInfo.isDirectory()) throw new SandboxUnavailableError('The sandbox workspace root is not a directory.');
     const runner = await realpath(input.guestRunnerPath);
-    const documentRunner = input.guestDocumentRunnerPath === undefined ? undefined : await realpath(input.guestDocumentRunnerPath);
-    const documentResources = input.guestDocumentResourcesPath === undefined ? undefined : await realpath(input.guestDocumentResourcesPath);
     const profileDirectory = await mkdtemp(join(tmpdir(), 'lotagate-seatbelt-'));
     const profilePath = join(profileDirectory, 'profile.sb');
-    await writeFile(profilePath, createSeatbeltProfile(input, root, tmpdir()), { encoding: 'utf8', mode: 0o600 });
+    await writeFile(profilePath, createSeatbeltProfile(input, root, tmpdir(), runner, process.execPath), { encoding: 'utf8', mode: 0o600 });
     const authToken = randomUUID();
     const args = ['-f', profilePath, 'python3', runner, '--server', '--auth-token', authToken];
     const child = spawn('sandbox-exec', args, { shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
     const bridge = new VmGuestBridge(child, authToken);
     try {
-      await bridge.execute({ action: 'health', params: {}, timeoutMs: 10_000, ...(input.signal === undefined ? {} : { signal: input.signal }) });
+      await bridge.execute({ action: 'health', params: {}, timeoutMs: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeHealthTimeoutMs, ...(input.signal === undefined ? {} : { signal: input.signal }) });
     } catch (error) {
       await bridge.close();
       await rm(profileDirectory, { recursive: true, force: true });
@@ -148,8 +144,6 @@ export class MacSeatbeltRuntimeAdapter implements VmRuntimeAdapter {
       ...input,
       root,
       guestRunnerPath: runner,
-      ...(documentRunner === undefined ? {} : { guestDocumentRunnerPath: documentRunner }),
-      ...(documentResources === undefined ? {} : { guestDocumentResourcesPath: documentResources }),
     };
     return new LocalRuntimeEnvironment(bridge, runtimeInput, root, () => rm(profileDirectory, { recursive: true, force: true }));
   }
@@ -161,8 +155,6 @@ class LocalRuntimeEnvironment implements VmRuntimeEnvironment {
   constructor(private readonly bridge: VmGuestBridge, private readonly input: VmRuntimeStartInput, private readonly guestRoot: string, private readonly cleanup?: () => Promise<void>) {}
 
   execute(input: VmRuntimeExecuteInput): Promise<VmRuntimeExecutionResult> {
-    const profile = vmProfile(this.input.profile);
-    const hasDocumentTools = profile.guestCapabilities.includes('document');
     const params = {
       ...input.params,
       __lotagateRuntime: {
@@ -173,9 +165,11 @@ class LocalRuntimeEnvironment implements VmRuntimeEnvironment {
         pidsLimit: this.input.pidsLimit,
         diskMb: this.input.diskMb,
         maxOutputBytes: DESKTOP_RUNTIME_LIMITS.cliJsonlLineBytes,
-        ...(hasDocumentTools && this.input.guestDocumentRunnerPath !== undefined ? { documentRunner: this.guestRoot === '/workspace' ? '/opt/lotagate/sandbox/document-runner.mjs' : this.input.guestDocumentRunnerPath } : {}),
-        ...(hasDocumentTools && this.input.guestDocumentResourcesPath !== undefined ? { documentResources: this.guestRoot === '/workspace' ? '/opt/lotagate/document-use' : this.input.guestDocumentResourcesPath } : {}),
-        ...(this.guestRoot === '/workspace' ? {} : { nodeExecutable: process.execPath, ...(process.versions.electron === undefined ? {} : { nodeEnvironment: { ELECTRON_RUN_AS_NODE: '1' } }) }),
+        ...(this.guestRoot === '/workspace' ? {} : {
+          guestRunnerPath: this.input.guestRunnerPath,
+          nodeExecutable: process.execPath,
+          ...(process.versions.electron === undefined ? {} : { nodeEnvironment: { ELECTRON_RUN_AS_NODE: '1' } }),
+        }),
       },
     };
     return this.bridge.execute({ ...input, timeoutMs: boundedSandboxTimeout(input.timeoutMs), params }).then(result => ({ ...result, environmentId: this.id }));
@@ -187,16 +181,24 @@ class LocalRuntimeEnvironment implements VmRuntimeEnvironment {
   }
 }
 
-export function createWslArguments(input: VmRuntimeStartInput, root: string, runner: string, authToken: string, documentRunner: string | undefined, documentResources: string | undefined): string[] {
-  return ['--distribution', input.distribution, '--user', 'root', '--exec', ...createBwrapArguments(input, root, runner, authToken, documentRunner, documentResources)];
+export function createWslArguments(input: VmRuntimeStartInput, root: string, runner: string, authToken: string): string[] {
+  return ['--distribution', input.distribution, '--user', 'root', '--exec', ...createBwrapArguments(input, root, runner, authToken, true)];
 }
 
-export function createBwrapArguments(input: VmRuntimeStartInput, root: string, runner: string, authToken: string, documentRunner: string | undefined, documentResources: string | undefined): string[] {
-  if (input.networkPolicy === 'allowlist') throw new SandboxUnavailableError(SANDBOX_ALLOWLIST_UNAVAILABLE_MESSAGE);
-  const profile = vmProfile(input.profile);
-  const hasDocumentTools = profile.guestCapabilities.includes('document');
+export function createBwrapArguments(input: VmRuntimeStartInput, root: string, runner: string, authToken: string, mountHostRoot = false): string[] {
   const command: string[] = [
-    '--ro-bind', '/', '/',
+    ...(mountHostRoot ? ['--ro-bind', '/', '/'] : [
+      '--ro-bind-try', '/usr', '/usr',
+      '--ro-bind-try', '/bin', '/bin',
+      '--ro-bind-try', '/sbin', '/sbin',
+      '--ro-bind-try', '/lib', '/lib',
+      '--ro-bind-try', '/lib64', '/lib64',
+      '--ro-bind-try', '/etc', '/etc',
+    ]),
+    '--clearenv',
+    '--setenv', 'PATH', '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+    '--setenv', 'HOME', '/tmp/lotagate-home',
+    '--setenv', 'LANG', 'C.UTF-8',
     '--dir', '/workspace',
     input.workspaceAccess === 'read-only' ? '--ro-bind' : '--bind', root, '/workspace',
     '--dir', '/opt/lotagate',
@@ -210,9 +212,7 @@ export function createBwrapArguments(input: VmRuntimeStartInput, root: string, r
     '--unshare-pid',
     '--cap-drop', 'ALL',
   ];
-  if (hasDocumentTools && documentRunner !== undefined) command.push('--ro-bind', documentRunner, '/opt/lotagate/sandbox/document-runner.mjs');
-  if (hasDocumentTools && documentResources !== undefined) command.push('--dir', '/opt/lotagate/document-use', '--ro-bind', documentResources, '/opt/lotagate/document-use');
-  command.push('--tmpfs', '/home', '--tmpfs', '/root', '--tmpfs', '/mnt', '--tmpfs', '/tmp');
+  command.push('--tmpfs', '/home', '--tmpfs', '/root', '--tmpfs', '/mnt', '--tmpfs', '/tmp', '--tmpfs', '/var', '--tmpfs', '/run');
   if (input.networkPolicy === 'none') command.push('--unshare-net');
   command.push('--', 'python3', '/opt/lotagate/sandbox/guest-runner.py', '--server', '--auth-token', authToken);
   return ['bwrap', ...command];
@@ -249,7 +249,7 @@ export function createVmRuntimeAdapter(): VmRuntimeAdapter {
 }
 
 function bwrapHealthArguments(): string[] {
-  return ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--die-with-parent', '--new-session', '--unshare-pid', '--cap-drop', 'ALL', '--', 'python3', '-c', "import shutil; raise SystemExit(0 if shutil.which('python3') else 1)"];
+  return ['--ro-bind-try', '/usr', '/usr', '--ro-bind-try', '/bin', '/bin', '--ro-bind-try', '/sbin', '/sbin', '--ro-bind-try', '/lib', '/lib', '--ro-bind-try', '/lib64', '/lib64', '--ro-bind-try', '/etc', '/etc', '--clearenv', '--setenv', 'PATH', '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', '--setenv', 'HOME', '/tmp', '--dev', '/dev', '--proc', '/proc', '--die-with-parent', '--new-session', '--unshare-pid', '--cap-drop', 'ALL', '--', 'python3', '-c', "import shutil; raise SystemExit(0 if shutil.which('python3') else 1)"];
 }
 
 async function linuxResourceQuota(): Promise<'cgroup' | 'process'> {
@@ -264,15 +264,17 @@ async function linuxLaunch(input: VmRuntimeStartInput, bwrapArguments: readonly 
   };
 }
 
-export function createSeatbeltProfile(input: Pick<VmRuntimeStartInput, 'networkPolicy' | 'workspaceAccess'>, workspace: string, temporaryDirectory: string): string {
-  if (input.networkPolicy === 'allowlist') throw new SandboxUnavailableError(SANDBOX_ALLOWLIST_UNAVAILABLE_MESSAGE);
+export function createSeatbeltProfile(input: Pick<VmRuntimeStartInput, 'networkPolicy' | 'workspaceAccess'>, workspace: string, temporaryDirectory: string, guestRunnerPath = '', nodeExecutablePath = ''): string {
   const writablePaths = [
     '/tmp',
     temporaryDirectory,
     ...(input.workspaceAccess === 'read-write' ? [workspace] : []),
   ];
+  const nodePaths = nodeExecutablePath.length === 0 ? [] : [nodeExecutablePath, dirname(dirname(nodeExecutablePath))];
+  const readablePaths = ['/usr', '/System', '/Library', '/private/etc', '/private/var/db', '/tmp', '/private/tmp', '/opt/homebrew', '/usr/local', workspace, temporaryDirectory, ...(guestRunnerPath.length === 0 ? [] : [guestRunnerPath]), ...nodePaths];
+  const readable = `(allow file-read* ${readablePaths.map(path => `(subpath ${seatbeltPath(path)})`).join(' ')})`;
   const network = input.networkPolicy === 'full' ? '(allow network*)' : '(deny network*)';
-  return ['(version 1)', '(deny default)', '(import "system.sb")', '(allow file-read*)', '(allow process*)', `(allow file-write* ${writablePaths.map(path => `(subpath ${seatbeltPath(path)})`).join(' ')})`, network].join('\n');
+  return ['(version 1)', '(deny default)', '(import "system.sb")', readable, '(allow process*)', `(allow file-write* ${writablePaths.map(path => `(subpath ${seatbeltPath(path)})`).join(' ')})`, network].join('\n');
 }
 
 function seatbeltPath(value: string): string {

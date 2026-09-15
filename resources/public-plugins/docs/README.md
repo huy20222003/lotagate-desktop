@@ -1,11 +1,12 @@
 # Docs
 
-The Docs public plugin exposes the `docs.*` tools through the governed Desktop
-document host. Document handles are session-scoped. Desktop selects a Windows
-Office provider or a portable LibreOffice provider according to the current
-platform and installed capabilities.
+The Docs plugin provides a focused Python workflow inside the shared LotaGate
+guest runtime. The skill uses `python-docx` for DOCX content and structure,
+preflights and version-checks packages in a guest-local virtual environment,
+writes atomically, validates the result, and publishes completed files through
+the generic artifact flow.
 
-In addition to content editing, the plugin supports document tables and images,
-content-control template filling, field updates, document structure inspection,
-bookmarks, hyperlinks, lists, and footnotes when the negotiated provider
-exposes them.
+The workflow has no document handles, Office/COM automation, LibreOffice
+requirement, or native document backend. Legacy formats and high-fidelity
+rendering are reported as explicit limitations when no approved Python path is
+available.

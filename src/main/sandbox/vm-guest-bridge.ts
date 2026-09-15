@@ -19,6 +19,7 @@ interface PendingRequest {
 export class VmGuestBridge {
   private readonly pending = new Map<string, PendingRequest>();
   private buffer = '';
+  private stderr = '';
   private closed = false;
   private closing: Promise<void> | undefined;
 
@@ -30,7 +31,7 @@ export class VmGuestBridge {
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => this.consume(chunk));
-    child.stderr.on('data', () => undefined);
+    child.stderr.on('data', (chunk: string) => this.captureStderr(chunk));
     child.once('error', error => this.fail(error instanceof VmGuestProcessError
       ? error
       : new VmGuestProcessError(error instanceof Error ? `The VM guest channel failed: ${error.message}` : 'The VM guest channel failed.')));
@@ -50,7 +51,7 @@ export class VmGuestBridge {
         timer: setTimeout(() => {
           pending.cleanup?.();
           this.pending.delete(requestId);
-          reject(new Error(`VM guest execution timed out after ${String(timeoutMs)}ms.`));
+          reject(this.withDiagnostics(new Error(`VM guest execution timed out after ${String(timeoutMs)}ms.`)));
           void this.close();
         }, timeoutMs),
       };
@@ -77,7 +78,7 @@ export class VmGuestBridge {
         clearTimeout(pending.timer);
         pending.cleanup?.();
         this.pending.delete(requestId);
-        reject(error instanceof Error ? error : new VmGuestProcessError('The VM guest request could not be written.'));
+        reject(this.withDiagnostics(error instanceof Error ? error : new VmGuestProcessError('The VM guest request could not be written.')));
         void this.close();
         return;
       }
@@ -134,7 +135,7 @@ export class VmGuestBridge {
     clearTimeout(request.timer);
     request.cleanup?.();
     if (parsed['ok'] !== true) {
-      request.reject(new Error(typeof parsed['error'] === 'string' ? parsed['error'] : 'The VM guest rejected the request.'));
+      request.reject(new Error(`[guest request ${parsed['requestId']}] ${typeof parsed['error'] === 'string' ? parsed['error'] : 'The VM guest rejected the request.'}`));
       return;
     }
     const fileChange = parsed['fileChange'];
@@ -148,8 +149,25 @@ export class VmGuestBridge {
   private fail(error: Error): void {
     if (this.closed && this.pending.size === 0) return;
     this.closed = true;
-    for (const request of this.pending.values()) { clearTimeout(request.timer); request.cleanup?.(); request.reject(error); }
+    const diagnostic = this.withDiagnostics(error);
+    for (const request of this.pending.values()) { clearTimeout(request.timer); request.cleanup?.(); request.reject(diagnostic); }
     this.pending.clear();
+  }
+
+  private captureStderr(chunk: string): void {
+    const combined = `${this.stderr}${chunk}`;
+    if (Buffer.byteLength(combined, 'utf8') <= DESKTOP_RUNTIME_LIMITS.sandboxGuestStderrBytes) {
+      this.stderr = combined;
+      return;
+    }
+    this.stderr = `${Buffer.from(combined, 'utf8').subarray(0, DESKTOP_RUNTIME_LIMITS.sandboxGuestStderrBytes).toString('utf8')}\n[guest stderr truncated]`;
+  }
+
+  private withDiagnostics(error: Error): Error {
+    const details = redact(this.stderr.trim());
+    if (details.length === 0 || error.message.includes('Guest stderr:')) return error;
+    const message = `${error.message} Guest stderr: ${details}`;
+    return error instanceof VmGuestProcessError ? new VmGuestProcessError(message) : new Error(message);
   }
 }
 
@@ -159,4 +177,8 @@ export class VmGuestProcessError extends Error {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function redact(value: string): string {
+  return value.replace(/Bearer\s+[^\s]+/giu, 'Bearer [REDACTED]').replace(/sk-[A-Za-z0-9_-]{8,}/gu, '[REDACTED]');
 }

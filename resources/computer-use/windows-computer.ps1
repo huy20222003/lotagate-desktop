@@ -58,7 +58,7 @@ public static class LotaGateComputerNative {
 
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
-. (Join-Path $PSScriptRoot '..\\document-use\\windows-ocr.ps1')
+. (Join-Path $PSScriptRoot 'windows-ocr.ps1')
 Add-Type -AssemblyName System.Windows.Forms
 
 $request = [Console]::In.ReadToEnd() | ConvertFrom-Json

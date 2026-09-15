@@ -116,33 +116,45 @@ version deliberately.
 
 Desktop protocol v1 sends filesystem and shell actions through the Desktop
 execution broker. Interactive turns and automations request a shared warm
-isolated environment by default: WSL2 + bubblewrap on Windows, bubblewrap on
-Linux, and macOS Seatbelt on macOS. Bubblewrap mounts the selected workspace at
-`/workspace`, keeps the runtime root read-only, applies cgroup v2 quotas on
-Linux when the user systemd scope is available and otherwise uses the existing
-guest process guards, disables networking by default, and runs an authenticated
-JSONL guest bridge without Desktop credentials. The same
-manifest-driven dependency service provisions the Windows guest image; Linux
-and macOS use the host-installed document utilities inside the OS sandbox.
+isolated environment by default. Windows uses WSL2 plus bubblewrap and one
+architecture-specific shared guest image/distro; Linux uses bubblewrap directly
+and macOS uses the Seatbelt host sandbox, with no second document image. The
+selected workspace is mounted at `/workspace`, the runtime root stays
+read-only, Linux applies cgroup v2 quotas when the user systemd scope is
+available and otherwise uses the existing guest process guards, networking is
+disabled by default, and an authenticated JSONL guest bridge runs without
+Desktop credentials. The shared base runtime contains no format-specific
+document packages; document skills provision their Python dependencies inside
+the active isolated guest at execution time.
 
 Browser execution uses the existing Electron browser host and its
 `WebContentsView` tabs. Playwright is a development-only E2E dependency and
-Chromium is not installed into the VM. Computer Use and the Terminal drawer are
-intentionally host-native and do not enter the VM. If the selected VM is
+Chromium is not installed into the shared guest. Computer Use and the Terminal
+drawer are intentionally host-native and do not enter the sandbox. If the
+selected sandbox is
 unavailable, `ask` policies reuse the existing approval card before retrying
 the exact action on the host, `allow` policies perform that approved fallback
-automatically, and `deny` policies fail closed. The network `allowlist` mode
-remains explicitly unavailable until a guest proxy and transparent enforcement
-boundary are implemented; it fails closed rather than allowing direct guest
-egress. `none` and `full` are supported by all three local runtime boundaries.
+automatically, and `deny` policies fail closed. Guest networking supports only
+`none` and `full`; the former is the default and the latter is explicit in
+Settings. The previously exposed guest `allowlist` value is migrated to `none`
+because this build does not ship a transparent guest proxy boundary. Browser
+origin allowlisting remains a separate host-browser control.
 Standalone CLI execution remains local because it does not receive the Desktop
 host bridge.
 
-VM runtime, distribution, profile, network, workspace access, resource,
-concurrency, idle-timeout, and fallback settings are persisted through the
-Desktop Settings page. Local development can opt into dependency installation
+Sandbox runtime, distribution, network, workspace access, resource, concurrency,
+idle-timeout, and fallback settings are persisted through the Desktop Settings
+page. The guest profile is one internal shared profile and is not a user-facing
+choice. Local development can opt into dependency installation
 with `LOTAGATE_AUTO_INSTALL_NATIVE_DEPENDENCIES=1`; otherwise missing host or
 guest prerequisites are reported without blocking startup.
+
+The same manifest also covers host sandbox prerequisites on Linux and macOS.
+Linux repair uses the first available `apt`, `dnf`, or `pacman` source for
+bubblewrap and Python; macOS repair uses Homebrew for Python while Seatbelt
+remains an operating-system capability. If the required package manager is
+unavailable, Settings reports the dependency as manual instead of running an
+untracked installer.
 
 ## Portable native providers
 
@@ -155,36 +167,39 @@ supported screen-capture utility. Linux accessibility-tree operations additional
 use Python AT-SPI (`pyatspi`) when it is available; macOS uses System Events and
 requires the application to be granted Accessibility permission.
 
-Portable document operations for agent execution use the isolated runtime
-selected by the VM profile. On Windows, the WSL2 document profile owns
-LibreOffice, Poppler, PDFtk, qpdf, Ghostscript, and Tesseract inside the selected
-distribution. Windows release installers include an architecture-specific,
-checksum-verified WSL2 guest image built from the same dependency manifest; on
-first use, Desktop imports that image into the configured distribution when it is
-not already present. On Linux and macOS, the same document runner is started
-inside bubblewrap or Seatbelt and uses the corresponding host OS utilities;
-missing utilities are reported by Sandbox health and do not silently fall back
-to an unsandboxed document process.
+Document plugins are skill-driven Python workflows, not Desktop document APIs.
+The `pdf`, `pptx`, `excel`, and `docs` skills use the generic filesystem,
+shell, and artifact-publish tools inside the same isolated runtime. Each skill
+checks `python3`, pip, the guest-local virtual environment, every required
+Python import, and its installed package version before running a script. A
+missing Python package is installed into that environment only after the
+preflight identifies it; the skill then repeats the version check and validates
+the output before publishing it. No LibreOffice, Poppler, PDFtk, qpdf,
+Ghostscript, Tesseract, Microsoft Office, host COM automation, or document
+handle/session backend is part of the document workflow.
 
-The host document dependency entries remain available for an explicitly selected
-host-native fallback and for diagnostics. They are not part of the packaged
-startup auto-install set. `npm run native:check` and `npm run native:install`
-(or `npm run native:install:windows`) continue to inspect or install that host
-fallback set deliberately. Microsoft Office and macOS Accessibility permission
-remain user-managed because they are proprietary or protected by the operating
-system. Missing host fallback prerequisites never prevent Desktop from starting.
+Windows release installers include the same architecture-specific,
+checksum-verified WSL2 base image used by the sandbox. Linux uses bubblewrap
+and macOS uses Seatbelt around the host Python runtime; neither platform gets a
+second document image or a format-specific native dependency set. If Python,
+pip, network access, or a requested package is unavailable, the skill reports
+the exact preflight failure and does not silently fall back to the host or to a
+different document engine. Computer Use, the Terminal drawer, and the
+user-visible browser remain host-native by design.
 The runtime status reports the concrete backend (`wsl2`, `bubblewrap`, or
 `seatbelt`) so unsupported hosts fail closed instead of silently running agent
 shell or filesystem actions on the host.
 
 All native providers use one Desktop host path. `src/main/host/native-host-provider-factory.ts`
-selects the platform adapters, `src/main/host/host-capability-registry.ts` creates
-the single capability snapshot, and the Computer/Document brokers own the shared
-request lifecycle, session cleanup, validation, cancellation, and error boundary.
-Platform adapters only implement native operations behind their provider ports;
-they do not define a second public tool catalog or a second JSONL protocol. This
-keeps Windows, macOS, and Linux capability differences explicit without creating
-parallel host workflows.
+selects the platform adapters and `src/main/host/host-capability-registry.ts`
+creates the single capability snapshot. The Computer broker owns the native
+request lifecycle, session cleanup, validation, cancellation, and error
+boundary; artifact publishing is the only host-side document-adjacent operation
+and registers an already validated workspace file. Platform adapters only
+implement native operations behind their provider ports; they do not define a
+second public tool catalog or a second JSONL protocol. This keeps Windows,
+macOS, and Linux capability differences explicit without creating parallel
+document workflows.
 
 The same v3 contract also requires CLI capabilities for the Intent runtime,
 host-attested evidence, conversational progress, and local-memory commands.

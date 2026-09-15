@@ -28,7 +28,7 @@ export function runBoundedCommand(command: string, args: readonly string[], opti
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const stdout: Buffer[] = [];
-    let stderr = '';
+    const stderr: Buffer[] = [];
     let outputBytes = 0;
     let settled = false;
     let stopping = false;
@@ -54,7 +54,7 @@ export function runBoundedCommand(command: string, args: readonly string[], opti
       if (settled || stopping) return;
       outputBytes += chunk.byteLength;
       if (outputBytes > options.maxOutputBytes) { stop(new Error('Native command output exceeded the configured limit.')); return; }
-      if (target === 'stdout') stdout.push(chunk); else stderr += chunk.toString('utf8');
+      if (target === 'stdout') stdout.push(chunk); else stderr.push(chunk);
     };
 
     timer = setTimeout(() => stop(new Error(`Native command timed out after ${String(options.timeoutMs)}ms.`)), options.timeoutMs);
@@ -64,11 +64,29 @@ export function runBoundedCommand(command: string, args: readonly string[], opti
     child.once('close', code => {
       if (settled || stopping) return;
       const exitCode = code ?? -1;
-      if (exitCode !== 0) { finish(new Error(stderr.trim() || `Native command exited with code ${String(exitCode)}.`)); return; }
-      finish(undefined, { stdout: Buffer.concat(stdout), stderr, exitCode });
+      const stdoutBuffer = Buffer.concat(stdout);
+      const stderrText = decodeCommandOutput(Buffer.concat(stderr));
+      const stdoutText = decodeCommandOutput(stdoutBuffer);
+      if (exitCode !== 0) {
+        const details = [stderrText.trim(), stdoutText.trim()].filter(value => value.length > 0).join('\n');
+        finish(new Error(details || `Native command exited with code ${String(exitCode)}.`));
+        return;
+      }
+      finish(undefined, { stdout: stdoutBuffer, stderr: stderrText, exitCode });
     });
     if (options.signal?.aborted === true) { abort(); return; }
     options.signal?.addEventListener('abort', abort, { once: true });
     if (options.input === undefined) child.stdin.end(); else child.stdin.end(options.input);
   });
+}
+
+/** Windows native helpers can emit UTF-16 diagnostics even when stdout/stderr are pipes. */
+function decodeCommandOutput(value: Buffer): string {
+  if (value.byteLength >= 2 && value[0] === 0xff && value[1] === 0xfe) return value.subarray(2).toString('utf16le');
+  if (value.byteLength >= 4) {
+    let nulBytes = 0;
+    for (const byte of value.subarray(0, Math.min(value.byteLength, 256))) if (byte === 0) nulBytes += 1;
+    if (nulBytes > 0) return value.toString('utf16le');
+  }
+  return value.toString('utf8').replace(/^\uFEFF/u, '');
 }

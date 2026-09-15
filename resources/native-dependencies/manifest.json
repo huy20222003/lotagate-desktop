@@ -2,128 +2,55 @@
   "schemaVersion": 1,
   "dependencies": [
     {
+      "id": "sandbox.linux.base",
+      "label": "Linux bubblewrap and Python runtime",
+      "platforms": ["linux"],
+      "probe": {
+        "type": "commandsWithArgsAll",
+        "checks": [
+          { "command": "bwrap", "args": ["--version"] },
+          { "command": "python3", "args": ["--version"] },
+          { "command": "python3", "args": ["-m", "pip", "--version"] },
+          { "command": "python3", "args": ["-m", "venv", "--help"] }
+        ]
+      },
+      "install": {
+        "linux": [
+          { "manager": "apt", "packageId": "bubblewrap python3 python3-pip python3-venv" },
+          { "manager": "dnf", "packageId": "bubblewrap python3 python3-pip python3-venv" },
+          { "manager": "pacman", "packageId": "bubblewrap python python-pip" }
+        ]
+      }
+    },
+    {
+      "id": "sandbox.macos.base",
+      "label": "macOS Seatbelt and Python runtime",
+      "platforms": ["darwin"],
+      "probe": {
+        "type": "commandsWithArgsAll",
+        "checks": [
+          { "command": "sandbox-exec", "args": ["-p", "(version 1) (allow default)", "/usr/bin/true"] },
+          { "command": "python3", "args": ["--version"] },
+          { "command": "python3", "args": ["-m", "pip", "--version"] },
+          { "command": "python3", "args": ["-m", "venv", "--help"] }
+        ]
+      },
+      "install": {
+        "darwin": { "manager": "brew", "packageId": "python" }
+      },
+      "note": "Seatbelt is provided by macOS; Homebrew is required for automatic Python repair."
+    },
+    {
       "id": "sandbox.wsl2.base",
       "label": "LotaGate VM base runtime",
       "target": "guest",
       "platforms": ["win32"],
-      "probe": { "type": "guestCommandsAll", "commands": ["bwrap", "python3", "node"] },
+      "probe": { "type": "guestCommandsAll", "commands": ["bwrap", "python3", "pip3", "node"] },
       "guest": {
         "runtime": "wsl2",
         "profiles": ["general"],
-        "packages": { "apt": ["bubblewrap", "python3", "nodejs"] }
+        "packages": { "apt": ["bubblewrap=0.9.0-1ubuntu0.1", "python3=3.12.3-0ubuntu2.1", "python3-pip=24.0+dfsg-1ubuntu1.3", "python3-venv=3.12.3-0ubuntu2.1", "nodejs=18.19.1+dfsg-6ubuntu5"] }
       }
-    },
-    {
-      "id": "sandbox.wsl2.documents",
-      "label": "LotaGate VM document runtime",
-      "target": "guest",
-      "platforms": ["win32"],
-      "probe": { "type": "guestCommandsAll", "commands": ["soffice", "pdfinfo", "pdftotext", "pdftoppm", "pdfunite", "pdfimages", "pdftohtml", "pdfdetach", "pdftk", "qpdf", "gs", "tesseract"] },
-      "guest": {
-        "runtime": "wsl2",
-        "profiles": ["general"],
-        "packages": { "apt": ["libreoffice-core", "libreoffice-writer", "libreoffice-calc", "libreoffice-impress", "python3-uno", "poppler-utils", "pdftk-java", "qpdf", "ghostscript", "tesseract-ocr"] }
-      }
-    },
-    {
-      "id": "documents.libreoffice",
-      "label": "LibreOffice",
-      "automaticInstall": true,
-      "platforms": ["win32", "darwin", "linux"],
-      "probe": { "type": "commandAny", "commands": ["soffice", "libreoffice"] },
-      "install": {
-        "win32": { "manager": "winget", "packageId": "TheDocumentFoundation.LibreOffice" },
-        "darwin": { "manager": "brew", "packageId": "libreoffice", "cask": true },
-        "linux": [
-          { "manager": "apt", "packageId": "libreoffice" },
-          { "manager": "dnf", "packageId": "libreoffice" },
-          { "manager": "pacman", "packageId": "libreoffice-fresh" }
-        ]
-      }
-    },
-    {
-      "id": "documents.poppler",
-      "label": "Poppler PDF utilities",
-      "automaticInstall": true,
-      "platforms": ["win32", "darwin", "linux"],
-      "probe": {
-        "type": "commandsAll",
-        "commands": ["pdfinfo", "pdftotext", "pdftoppm", "pdfunite", "pdfimages", "pdftohtml", "pdfdetach"]
-      },
-      "install": {
-        "win32": { "manager": "winget", "packageId": "oschwartz10612.Poppler" },
-        "darwin": { "manager": "brew", "packageId": "poppler" },
-        "linux": [
-          { "manager": "apt", "packageId": "poppler-utils" },
-          { "manager": "dnf", "packageId": "poppler-utils" },
-          { "manager": "pacman", "packageId": "poppler" }
-        ]
-      }
-    },
-    {
-      "id": "documents.pdftk",
-      "label": "PDFtk",
-      "automaticInstall": true,
-      "platforms": ["win32", "darwin", "linux"],
-      "probe": { "type": "command", "command": "pdftk" },
-      "install": {
-        "darwin": { "manager": "brew", "packageId": "pdftk-java" },
-        "linux": [
-          { "manager": "apt", "packageId": "pdftk" },
-          { "manager": "dnf", "packageId": "pdftk-java" },
-          { "manager": "pacman", "packageId": "pdftk" }
-        ]
-      },
-      "manual": "No current official Windows package source was verified for PDFtk. Install a trusted PDFtk Server build and ensure pdftk.exe is on PATH."
-    },
-    {
-      "id": "documents.qpdf",
-      "label": "qpdf",
-      "automaticInstall": true,
-      "platforms": ["win32", "darwin", "linux"],
-      "probe": { "type": "command", "command": "qpdf" },
-      "install": {
-        "win32": { "manager": "winget", "packageId": "QPDF.QPDF" },
-        "darwin": { "manager": "brew", "packageId": "qpdf" },
-        "linux": [
-          { "manager": "apt", "packageId": "qpdf" },
-          { "manager": "dnf", "packageId": "qpdf" },
-          { "manager": "pacman", "packageId": "qpdf" }
-        ]
-      }
-    },
-    {
-      "id": "documents.ghostscript",
-      "label": "Ghostscript",
-      "automaticInstall": true,
-      "platforms": ["win32", "darwin", "linux"],
-      "probe": { "type": "commandAny", "commands": ["gs", "gswin64c"] },
-      "install": {
-        "darwin": { "manager": "brew", "packageId": "ghostscript" },
-        "linux": [
-          { "manager": "apt", "packageId": "ghostscript" },
-          { "manager": "dnf", "packageId": "ghostscript" },
-          { "manager": "pacman", "packageId": "ghostscript" }
-        ]
-      },
-      "manual": "Install the current Windows Ghostscript release from the official Ghostscript website and ensure gswin64c.exe is on PATH."
-    },
-    {
-      "id": "documents.tesseract",
-      "label": "Tesseract OCR",
-      "automaticInstall": true,
-      "platforms": ["win32", "darwin", "linux"],
-      "probe": { "type": "command", "command": "tesseract" },
-      "install": {
-        "win32": { "manager": "winget", "packageId": "tesseract-ocr.tesseract" },
-        "darwin": { "manager": "brew", "packageId": "tesseract" },
-        "linux": [
-          { "manager": "apt", "packageId": "tesseract-ocr" },
-          { "manager": "dnf", "packageId": "tesseract" },
-          { "manager": "pacman", "packageId": "tesseract" }
-        ]
-      },
-      "note": "Windows builds are provided by the package manager publisher; the Tesseract project does not publish a current Windows installer."
     },
     {
       "id": "computer.linux.window-control",
@@ -173,17 +100,6 @@
           { "manager": "pacman", "packageId": "python-atspi" }
         ]
       }
-    },
-    {
-      "id": "documents.windows.office",
-      "label": "Microsoft Office desktop applications",
-      "automaticInstall": true,
-      "platforms": ["win32"],
-      "probe": {
-        "type": "commandsAll",
-        "commands": ["WINWORD.EXE", "EXCEL.EXE", "POWERPNT.EXE"]
-      },
-      "manual": "Microsoft Office is proprietary and is not redistributed by LotaGate. Install Word, Excel, and PowerPoint through Microsoft 365 or your organization's software portal."
     },
     {
       "id": "computer.macos.accessibility",

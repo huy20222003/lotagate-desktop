@@ -1,11 +1,11 @@
 # PPTX
 
-The PPTX public plugin exposes the `pptx.*` tools through the governed Desktop
-document host. A document handle is scoped to the agent session and workspace.
-Presentation operations use the provider negotiated by Desktop. The Windows
-provider uses Office automation; macOS and Linux expose supported portable
-operations when LibreOffice is installed.
+The PPTX plugin provides a focused Python workflow inside the shared LotaGate
+guest runtime. The skill uses `python-pptx` for Open XML structure and
+optionally installs and version-checks image or rendering packages only when
+the requested operation needs them.
 
-The public surface also supports slide duplication and import, targeted element
-arrangement, bounded text extraction and replacement, media, hyperlinks,
-transitions, and layout management when the selected provider exposes them.
+The workflow has no document handles, Office/COM automation, LibreOffice
+requirement, or format-specific host backend. It validates the output package,
+reports visual-rendering limitations honestly, and publishes completed files
+through the generic artifact flow.

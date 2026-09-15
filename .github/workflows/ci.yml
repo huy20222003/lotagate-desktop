@@ -61,6 +61,6 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: npm run sandbox:image -- --arch x64
 
-      - name: Run real WSL2 image and document smoke test
+      - name: Run real WSL2 image and Python document-runtime smoke test
         if: matrix.os == 'windows-latest'
         run: npm run test:e2e:sandbox

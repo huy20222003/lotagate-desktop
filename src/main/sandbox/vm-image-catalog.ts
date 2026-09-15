@@ -8,7 +8,7 @@ export interface VmProfileDescriptor {
 
 /** Describes the supported guest profiles without exposing image internals to the CLI. */
 export const VM_PROFILE_CATALOG: readonly VmProfileDescriptor[] = [
-  { id: 'general', label: 'Workspace runtime', guestCapabilities: ['filesystem', 'shell', 'git', 'document'] },
+  { id: 'general', label: 'Workspace runtime', guestCapabilities: ['filesystem', 'shell', 'git', 'python'] },
 ];
 
 export function vmProfile(profile: VmEnvironmentProfile): VmProfileDescriptor {

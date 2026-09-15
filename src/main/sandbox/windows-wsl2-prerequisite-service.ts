@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 import { runBoundedCommand } from '../process/bounded-command.js';
 
 const execFileAsync = promisify(execFile);
@@ -16,17 +17,21 @@ export class WindowsWsl2PrerequisiteService {
   async inspect(): Promise<WindowsWsl2PrerequisiteStatus> {
     if (process.platform !== 'win32') return { available: false, restartRequired: false, adminRequired: false, reason: 'WSL2 is supported only on Windows hosts.' };
     try {
-      // `wsl --status` can remain attached to a broken WSL session when its
-      // stdout is piped from Electron. Version is sufficient to confirm that
-      // the host WSL runtime is installed and responds.
-      await runBoundedCommand('wsl.exe', ['--version'], { maxOutputBytes: 64 * 1024, timeoutMs: 10_000 });
+      // `wsl --version` is only available in newer Store WSL builds. The
+      // distribution listing is supported by the inbox WSL CLI as well and
+      // is the read-only host probe needed before importing the shared image.
+      await runBoundedCommand('wsl.exe', ['--list', '--quiet'], { maxOutputBytes: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeStatusOutputBytes, timeoutMs: DESKTOP_RUNTIME_LIMITS.sandboxRuntimeHealthTimeoutMs });
       return { available: true, restartRequired: false, adminRequired: false };
     } catch (error) {
+      const reason = error instanceof Error ? error.message : 'WSL2 host inspection failed.';
+      // A healthy WSL host is allowed to have no user distributions yet; the
+      // dependency service imports LotaGate-VM after this probe succeeds.
+      if (isNoDistributionMessage(reason)) return { available: true, restartRequired: false, adminRequired: false };
       return {
         available: false,
         restartRequired: isRestartRequired(error),
         adminRequired: true,
-        reason: 'WSL2 and the Windows virtualization platform are not ready. Repair requires administrator approval and may require a restart.',
+        reason: `WSL2 host inspection failed: ${redact(reason)} Repair requires administrator approval and may require a restart.`,
       };
     }
   }
@@ -38,10 +43,10 @@ export class WindowsWsl2PrerequisiteService {
     try {
       const result = await runElevatedFeatureRepair();
       const after = await this.inspect();
-      if (result.restartRequired || after.restartRequired) return { ...after, restartRequired: true, adminRequired: false, reason: 'Windows enabled the WSL2 features. Restart Windows, then open Desktop again to finish setup.' };
+      if (result.restartRequired || after.restartRequired) return { ...after, available: false, restartRequired: true, adminRequired: false, reason: 'Windows enabled the WSL2 features. Restart Windows, then open Desktop again to finish setup.' };
       return after;
     } catch (error) {
-      return { ...current, reason: redact(error instanceof Error ? error.message : 'Administrator approval was not granted for WSL2 setup.') };
+      return { ...current, available: false, adminRequired: true, reason: redact(error instanceof Error ? error.message : 'Administrator approval was not granted for WSL2 setup.') };
     }
   }
 }
@@ -54,30 +59,48 @@ async function runElevatedFeatureRepair(): Promise<{ readonly restartRequired: b
     '  $result = Enable-WindowsOptionalFeature -Online -FeatureName $feature -All -NoRestart',
     '  if ($result.RestartNeeded) { $restartRequired = $true }',
     '}',
-    'wsl.exe --install --no-distribution --no-launch | Out-Null',
-    'wsl.exe --set-default-version 2 | Out-Null',
+    'if ($restartRequired) { [pscustomobject]@{ restartRequired = $true } | ConvertTo-Json -Compress; exit 0 }',
+    '$wslHelp = (& wsl.exe --help 2>&1 | Out-String)',
+    'try { & wsl.exe --set-default-version 2 | Out-Null; if ($LASTEXITCODE -ne 0) { throw "wsl --set-default-version failed with exit code $LASTEXITCODE" } } catch {',
+    '  if ($wslHelp -match "--update") { & wsl.exe --update | Out-Null; if ($LASTEXITCODE -ne 0) { throw "wsl --update failed with exit code $LASTEXITCODE" } }',
+    '  elseif ($wslHelp -match "--no-distribution" -and $wslHelp -match "--no-launch") { & wsl.exe --install --no-distribution --no-launch | Out-Null; if ($LASTEXITCODE -ne 0) { throw "wsl --install failed with exit code $LASTEXITCODE" } }',
+    '  else { throw }',
+    '  & wsl.exe --set-default-version 2 | Out-Null; if ($LASTEXITCODE -ne 0) { throw "wsl --set-default-version failed after update with exit code $LASTEXITCODE" }',
+    '}',
     '[pscustomobject]@{ restartRequired = $restartRequired } | ConvertTo-Json -Compress',
   ].join('\n');
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
   const wrapper = [
+    "$ErrorActionPreference = 'Stop'",
     `$encoded = '${encoded}'`,
-    "$process = Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -PassThru -ArgumentList @('-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded)",
+    "$stdoutPath = [IO.Path]::GetTempFileName()",
+    "$stderrPath = [IO.Path]::GetTempFileName()",
+    'try {',
+    "$process = Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -PassThru -ArgumentList @('-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded) -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath",
     'if ($null -eq $process) { exit 1 }',
-    'exit $process.ExitCode',
+    'if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw }',
+    'if ($process.ExitCode -ne 0) { if (Test-Path -LiteralPath $stderrPath) { [Console]::Error.Write((Get-Content -LiteralPath $stderrPath -Raw)) }; exit $process.ExitCode }',
+    '} finally { Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue }',
   ].join('; ');
-  const result = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', wrapper], { windowsHide: true, timeout: 10 * 60 * 1_000, maxBuffer: 128 * 1024 });
-  const output = result.stdout.trim();
-  if (output.length === 0) return { restartRequired: false };
-  try {
-    const parsed: unknown = JSON.parse(output);
-    return { restartRequired: typeof parsed === 'object' && parsed !== null && (parsed as { restartRequired?: unknown }).restartRequired === true };
-  } catch {
-    return { restartRequired: false };
+  const result = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', wrapper], { windowsHide: true, timeout: DESKTOP_RUNTIME_LIMITS.sandboxHostRepairTimeoutMs, maxBuffer: DESKTOP_RUNTIME_LIMITS.sandboxHostRepairOutputBytes });
+  const candidates = result.stdout.trim().split(/\r?\n/u).reverse();
+  for (const candidate of candidates) {
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      if (typeof parsed === 'object' && parsed !== null) return { restartRequired: (parsed as { restartRequired?: unknown }).restartRequired === true };
+    } catch {
+      // PowerShell can add informational lines around the JSON payload.
+    }
   }
+  return { restartRequired: false };
 }
 
 function isRestartRequired(error: unknown): boolean {
   return /restart|reboot|requires a restart/iu.test(error instanceof Error ? error.message : '');
+}
+
+function isNoDistributionMessage(value: string): boolean {
+  return /no (?:installed )?distributions|there are no distributions|no distributions are installed/iu.test(value);
 }
 
 function redact(value: string): string {

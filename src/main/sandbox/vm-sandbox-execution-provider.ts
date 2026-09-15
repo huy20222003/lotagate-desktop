@@ -2,7 +2,7 @@ import { realpath } from 'node:fs/promises';
 import type { FileChangeDiff } from '../../contracts/ipc/v1/workspace.js';
 import { VmEnvironmentManager } from './vm-environment-manager.js';
 import { VmScheduler } from './vm-scheduler.js';
-import { createVmRuntimeAdapter, SANDBOX_ALLOWLIST_UNAVAILABLE_MESSAGE, SandboxUnavailableError, type VmRuntimeAdapter } from './vm-runtime-adapter.js';
+import { createVmRuntimeAdapter, SandboxUnavailableError, type VmRuntimeAdapter } from './vm-runtime-adapter.js';
 import type { VmSandboxOptions, VmRuntimeStartInput, VmEnvironmentIdentity } from './vm-types.js';
 
 export interface SandboxExecutionInput {
@@ -43,7 +43,6 @@ export class VmSandboxExecutionProvider implements SandboxExecutionProvider {
   async execute(input: SandboxExecutionInput): Promise<SandboxExecutionResult> {
     const options = await this.getOptions();
     if (options.runtime === 'disabled') throw new SandboxUnavailableError('The Desktop VM sandbox is disabled in Settings.');
-    if (options.networkPolicy === 'allowlist') throw new SandboxUnavailableError(SANDBOX_ALLOWLIST_UNAVAILABLE_MESSAGE);
     await this.prepare?.(options);
     const root = await realpath(input.root);
     const identity = createIdentity(root, options);
@@ -103,8 +102,6 @@ function createStartInput(root: string, options: VmSandboxOptions): VmRuntimeSta
     pidsLimit: options.pidsLimit,
     diskMb: options.diskMb,
     guestRunnerPath: options.guestRunnerPath,
-    ...(options.guestDocumentRunnerPath === undefined ? {} : { guestDocumentRunnerPath: options.guestDocumentRunnerPath }),
-    ...(options.guestDocumentResourcesPath === undefined ? {} : { guestDocumentResourcesPath: options.guestDocumentResourcesPath }),
     idleTimeoutMinutes: options.idleTimeoutMinutes,
   };
 }

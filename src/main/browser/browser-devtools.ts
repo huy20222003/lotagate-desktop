@@ -4,6 +4,8 @@ export interface BrowserViewport { width: number; height: number; mobile: boolea
 export interface BrowserAccessibilityNode { role?: string; name?: string; description?: string; focused?: boolean; disabled?: boolean; checked?: boolean | string; expanded?: boolean; }
 export interface BrowserDialog { type: 'alert' | 'confirm' | 'prompt' | 'beforeunload'; message: string; defaultPrompt?: string; url: string; }
 
+const debuggerQueues = new WeakMap<WebContents, Promise<unknown>>();
+
 export async function setViewport(contents: WebContents, viewport: BrowserViewport): Promise<void> {
   await withDebugger(contents, async debuggerInstance => {
     await debuggerInstance.sendCommand('Emulation.setDeviceMetricsOverride', {
@@ -16,7 +18,15 @@ export async function setViewport(contents: WebContents, viewport: BrowserViewpo
 }
 
 export async function resetViewport(contents: WebContents): Promise<void> {
-  await withDebugger(contents, debuggerInstance => debuggerInstance.sendCommand('Emulation.clearDeviceMetricsOverride'));
+  await withDebugger(contents, async debuggerInstance => {
+    await debuggerInstance.sendCommand('Emulation.setDeviceMetricsOverride', {
+      width: 0,
+      height: 0,
+      mobile: false,
+      deviceScaleFactor: 0,
+    });
+    await debuggerInstance.sendCommand('Emulation.clearDeviceMetricsOverride');
+  });
 }
 
 export async function accessibilityTree(contents: WebContents): Promise<BrowserAccessibilityNode[]> {
@@ -59,10 +69,22 @@ export async function enableDialogEvents(contents: WebContents, onDialog: (dialo
 }
 
 async function withDebugger<T>(contents: WebContents, action: (debuggerInstance: WebContents['debugger']) => Promise<T>): Promise<T> {
-  const wasAttached = contents.debugger.isAttached();
-  if (!wasAttached) contents.debugger.attach('1.3');
-  try { return await action(contents.debugger); }
-  finally { if (!wasAttached && contents.debugger.isAttached()) contents.debugger.detach(); }
+  const previous = debuggerQueues.get(contents) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(async () => {
+    let attachedHere = false;
+    try {
+      if (!contents.debugger.isAttached()) {
+        contents.debugger.attach('1.3');
+        attachedHere = true;
+      }
+      return await action(contents.debugger);
+    } finally {
+      if (attachedHere && contents.debugger.isAttached()) contents.debugger.detach();
+    }
+  });
+  debuggerQueues.set(contents, current);
+  try { return await current; }
+  finally { if (debuggerQueues.get(contents) === current) debuggerQueues.delete(contents); }
 }
 
 function simplifyAccessibilityNode(value: unknown): BrowserAccessibilityNode | undefined {

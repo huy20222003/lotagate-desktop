@@ -1,15 +1,12 @@
 # PDF
 
-The PDF public plugin exposes the `pdf.*` tools through the governed Desktop
-document host. It is declarative: file access remains bounded by the active
-workspace and tool permissions. PDF inspection, text extraction, validation,
-and rendering use the configured platform document backend; unsupported edit
-operations are omitted from the negotiated tool catalog and return a structured
-host error if requested directly.
+The PDF plugin provides a focused Python workflow inside the shared LotaGate
+guest runtime. The skill instructs the agent to preflight Python, create or
+reuse a guest-local virtual environment, install and version-check only the
+packages required for the requested operation, validate the output, and
+publish completed files as artifacts.
 
-The public surface also supports bounded text search, rendering, and document
-inspection when the required host utilities are installed. Provider-specific
-operations are advertised explicitly rather than assumed.
-
-Missing prerequisites return an explicit capability or backend error; Desktop
-never silently falls back to an unrelated shell command or viewer.
+The plugin has no format-specific host backend, document handles, Office
+dependency, or bundled PDF utility. Workspace paths remain bounded by the
+generic filesystem/shell policy, and unsupported capabilities are reported
+explicitly.

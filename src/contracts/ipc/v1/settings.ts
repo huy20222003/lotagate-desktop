@@ -33,7 +33,7 @@ export interface ComputerSettings {
 }
 
 export type SandboxRuntime = 'auto' | 'wsl2' | 'disabled';
-export type SandboxNetworkPolicy = 'none' | 'allowlist' | 'full';
+export type SandboxNetworkPolicy = 'none' | 'full';
 export type SandboxWorkspaceAccess = 'read-only' | 'read-write';
 export type SandboxHostFallback = 'ask' | 'allow' | 'deny';
 
@@ -42,7 +42,6 @@ export const SANDBOX_DEFAULTS = {
   distribution: 'LotaGate-VM',
   profile: 'general',
   networkPolicy: 'none',
-  allowedDomains: [],
   workspaceAccess: 'read-write',
   memoryMb: 2_048,
   cpuCores: 2,
@@ -71,7 +70,6 @@ export interface SandboxSettings {
   distribution: string;
   profile: 'general';
   networkPolicy: SandboxNetworkPolicy;
-  allowedDomains: string[];
   workspaceAccess: SandboxWorkspaceAccess;
   memoryMb: number;
   cpuCores: number;
@@ -92,6 +90,8 @@ export interface SandboxRuntimeHealth {
   distribution: string;
   restartRequired?: boolean;
   adminRequired?: boolean;
+  /** Describes the isolation boundary, not merely the process launcher. */
+  isolation?: 'vm' | 'host-sandbox';
   resourceQuota?: 'cgroup' | 'process';
   reason?: string;
 }

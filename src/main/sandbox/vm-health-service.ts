@@ -1,7 +1,6 @@
 import type { SandboxHealthSnapshot, SandboxSettings } from '../../contracts/ipc/v1/settings.js';
 import type { GuestDependencyReport, GuestDependencyQuery } from '../dependencies/native-dependency-service.js';
 import type { VmRuntimeStatus } from './vm-types.js';
-import { SANDBOX_ALLOWLIST_UNAVAILABLE_MESSAGE } from './vm-runtime-adapter.js';
 
 export interface VmHealthServiceDependencies {
   getSettings: () => Promise<SandboxSettings>;
@@ -11,31 +10,51 @@ export interface VmHealthServiceDependencies {
   repairRuntime?: () => Promise<VmRuntimeStatus>;
 }
 
-/** Combines runtime and manifest health for the VM settings and diagnostics UI. */
+/** Combines runtime and manifest health for the sandbox settings and diagnostics UI. */
 export class VmHealthService {
+  private repairOperation: Promise<SandboxHealthSnapshot> | undefined;
+
   constructor(private readonly dependencies: VmHealthServiceDependencies) {}
 
   async health(): Promise<SandboxHealthSnapshot> {
     const settings = await this.dependencies.getSettings();
-    const inspectedRuntime = await this.dependencies.inspectRuntime(settings.distribution);
-    const runtime = settings.networkPolicy === 'allowlist'
-      ? { ...inspectedRuntime, available: false, reason: SANDBOX_ALLOWLIST_UNAVAILABLE_MESSAGE }
-      : inspectedRuntime;
-    const dependencies = inspectedRuntime.available
+    const runtime = await this.dependencies.inspectRuntime(settings.distribution);
+    const dependencies = runtime.available
       ? await this.dependencies.inspectDependencies(queryFor(settings))
       : unavailableDependencies(settings);
     return snapshot(settings, runtime, dependencies);
   }
 
-  async repair(): Promise<SandboxHealthSnapshot> {
+  repair(): Promise<SandboxHealthSnapshot> {
+    if (this.repairOperation !== undefined) return this.repairOperation;
+    const operation = this.repairExclusive();
+    this.repairOperation = operation;
+    void operation.then(() => {
+      if (this.repairOperation === operation) this.repairOperation = undefined;
+    }, () => {
+      if (this.repairOperation === operation) this.repairOperation = undefined;
+    });
+    return operation;
+  }
+
+  private async repairExclusive(): Promise<SandboxHealthSnapshot> {
     const settings = await this.dependencies.getSettings();
-    const repairedRuntime = this.dependencies.repairRuntime === undefined ? await this.dependencies.inspectRuntime(settings.distribution) : await this.dependencies.repairRuntime();
-    const runtime = settings.networkPolicy === 'allowlist'
-      ? { ...repairedRuntime, available: false, reason: SANDBOX_ALLOWLIST_UNAVAILABLE_MESSAGE }
-      : repairedRuntime;
-    const dependencies = repairedRuntime.available
+    if (settings.runtime === 'disabled') {
+      return snapshot(settings, await this.dependencies.inspectRuntime(settings.distribution), unavailableDependencies(settings));
+    }
+    const runtimeHasRepair = this.dependencies.repairRuntime !== undefined;
+    const repairedRuntime = runtimeHasRepair ? await this.dependencies.repairRuntime!() : await this.dependencies.inspectRuntime(settings.distribution);
+    // Host-native backends (bubblewrap and Seatbelt) have no separate runtime
+    // repair command. Their package repair owner must still get a chance to
+    // install the missing manifest entries before the final health probe.
+    const dependencies = (!runtimeHasRepair || repairedRuntime.available)
       ? await this.dependencies.repairDependencies(queryFor(settings))
       : unavailableDependencies(settings);
+    // Runtime repair may only make the WSL host usable; importing the shared
+    // guest image is owned by the dependency service. Probe the configured
+    // runtime again after that import/install step so the UI does not report
+    // the transient post-repair status.
+    const runtime = await this.dependencies.inspectRuntime(settings.distribution);
     return snapshot(settings, runtime, dependencies);
   }
 }

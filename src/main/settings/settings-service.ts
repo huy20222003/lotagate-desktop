@@ -18,12 +18,22 @@ const browserSettingsSchema = z.object({
 
 const sandboxProfileSchema = z.preprocess(value => value === 'documents' ? 'general' : value, z.literal('general'));
 
-const sandboxSettingsSchema = z.object({
+const sandboxSettingsSchema = z.preprocess(value => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  return {
+    ...record,
+    runtime: record['runtime'] === 'wsl2' && process.platform !== 'win32' ? 'auto' : record['runtime'],
+    // `allowlist` was exposed before the guest proxy existed. Normalize old
+    // settings to the only enforceable policies and let the object schema
+    // strip the obsolete allowedDomains field.
+    networkPolicy: record['networkPolicy'] === 'allowlist' ? 'none' : record['networkPolicy'],
+  };
+}, z.object({
   runtime: z.enum(['auto', 'wsl2', 'disabled']).default(SANDBOX_DEFAULTS.runtime),
   distribution: z.string().trim().min(1).max(256).default(SANDBOX_DEFAULTS.distribution),
   profile: sandboxProfileSchema.default(SANDBOX_DEFAULTS.profile),
-  networkPolicy: z.enum(['none', 'allowlist', 'full']).default(SANDBOX_DEFAULTS.networkPolicy),
-  allowedDomains: z.array(z.string().trim().min(1).max(2_048)).max(256).default([...SANDBOX_DEFAULTS.allowedDomains]),
+  networkPolicy: z.enum(['none', 'full']).default(SANDBOX_DEFAULTS.networkPolicy),
   workspaceAccess: z.enum(['read-only', 'read-write']).default(SANDBOX_DEFAULTS.workspaceAccess),
   memoryMb: z.number().int().min(SANDBOX_LIMITS.memoryMb.min).max(SANDBOX_LIMITS.memoryMb.max).default(SANDBOX_DEFAULTS.memoryMb),
   cpuCores: z.number().min(SANDBOX_LIMITS.cpuCores.min).max(SANDBOX_LIMITS.cpuCores.max).default(SANDBOX_DEFAULTS.cpuCores),
@@ -34,7 +44,7 @@ const sandboxSettingsSchema = z.object({
   idleTimeoutMinutes: z.number().int().min(SANDBOX_LIMITS.idleTimeoutMinutes.min).max(SANDBOX_LIMITS.idleTimeoutMinutes.max).default(SANDBOX_DEFAULTS.idleTimeoutMinutes),
   hostFallback: z.enum(['ask', 'allow', 'deny']).default(SANDBOX_DEFAULTS.hostFallback),
   diagnosticsRetentionDays: z.number().int().min(SANDBOX_LIMITS.diagnosticsRetentionDays.min).max(SANDBOX_LIMITS.diagnosticsRetentionDays.max).default(SANDBOX_DEFAULTS.diagnosticsRetentionDays),
-});
+}));
 
 const computerApplicationPlatform: ComputerApplicationPlatform = process.platform === 'darwin' ? 'darwin' : process.platform === 'linux' ? 'linux' : 'win32';
 const defaultComputerApplications = defaultComputerApplicationAllowlist(computerApplicationPlatform);

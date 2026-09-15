@@ -90,10 +90,16 @@ describe('TaskEventProjector turn lifecycle', () => {
     expect(tasks.appendEvent).not.toHaveBeenCalledWith('task-1', 'assistant', expect.anything(), expect.anything());
   });
 
-  it('associates document artifacts with the final assistant segment', async () => {
+  it('associates published artifacts with the final assistant segment', async () => {
     const { projector, tasks } = createProjector(createTask());
     await projector.apply('C:\\workspace', { version: 1, type: 'event', scope: 'session', event: 'assistant.segment.completed', data: { sessionId: 'session-1', turnId: 'turn-1', segmentId: 'run-1:1', phase: 'final', artifactIds: ['artifact-1', 'artifact-1', 42] } });
     expect(tasks.completeAssistantSegment).toHaveBeenCalledWith('task-1', 'run-1:1', 'final', { artifactIds: ['artifact-1'] });
+  });
+
+  it('does not duplicate generic lifecycle entries for artifact publishing activity', async () => {
+    const { projector, tasks } = createProjector(createTask());
+    await projector.apply('C:\\workspace', { version: 1, type: 'event', scope: 'session', event: 'tool.completed', data: { sessionId: 'session-1', actionId: 'run-1:artifact.publish', toolName: 'artifact.publish', displayName: 'artifact.publish', isError: false } });
+    expect(tasks.appendEvent).not.toHaveBeenCalled();
   });
 
   it('does not persist command output in the conversation transcript', async () => {

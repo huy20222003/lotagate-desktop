@@ -4,7 +4,7 @@ import type { BrowserSessionSnapshot, BrowserTabSnapshot } from '../../../../con
 import { Icon, IconButton } from '../../../components/ui.js';
 import { Scrollbar } from '../../../components/Scrollbar.js';
 import { createComposerApprovalInput } from './approval-request.js';
-import { FILE_PANEL_DEFAULT_WIDTH, useResizableSidePanel } from '../state/use-resizable-panel.js';
+import { FILE_PANEL_DEFAULT_WIDTH, FILE_PANEL_MAX_WIDTH, useResizableSidePanel } from '../state/use-resizable-panel.js';
 
 export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: string; sessionId?: string; cwd?: string; onClose: () => void }) {
   const [browserSession, setBrowserSession] = useState<BrowserSessionSnapshot>();
@@ -16,6 +16,8 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
   const { panelWidth, setPanelWidth, resizing, startResize, handleResizeKeyDown } = useResizableSidePanel({
     initialWidth: FILE_PANEL_DEFAULT_WIDTH,
     minWidth: 360,
+    maxWidth: FILE_PANEL_MAX_WIDTH,
+    maxViewportRatio: 0.55,
   });
   const activeTab = browserSession?.tabs.find(tab => tab.id === browserSession.activeTabId);
 
@@ -24,11 +26,18 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
     void window.lotagate.settings?.get?.().then(settings => {
       if (!active) return;
       const profile = settings.browser.viewportProfile;
-      const maxPanelWidth = Math.floor(window.innerWidth * 0.55);
-      if (profile === 'mobile') {
-        setPanelWidth(Math.max(360, Math.min(390, maxPanelWidth)));
-      } else if (profile === 'custom' && typeof settings.browser.customViewport?.width === 'number') {
-        setPanelWidth(Math.max(360, Math.min(settings.browser.customViewport.width, maxPanelWidth)));
+      const maxPanelWidth = Math.max(360, Math.floor(window.innerWidth * 0.55));
+      const profileWidths: Record<string, number> = {
+        desktop: 1280,
+        laptop: 1440,
+        tablet: 1024,
+        mobile: 390,
+      };
+      const targetWidth = profile === 'custom' && typeof settings.browser.customViewport?.width === 'number'
+        ? settings.browser.customViewport.width
+        : profileWidths[profile];
+      if (typeof targetWidth === 'number') {
+        setPanelWidth(Math.max(360, Math.min(targetWidth, maxPanelWidth)));
       }
     }).catch(() => undefined);
     return () => { active = false; };
@@ -69,13 +78,23 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
 
   const syncViewBounds = useCallback(() => {
     const host = hostRef.current;
+    const panel = panelRef.current;
     const session = browserSession;
     if (!host || !session || !activeTab) return;
     const rect = host.getBoundingClientRect();
-    const width = Math.round(rect.width > 0 ? rect.width : panelWidth);
-    const bounds = { x: Math.round(rect.left), y: Math.round(rect.top), width, height: Math.round(rect.height) };
+    const toolbar = panel?.querySelector<HTMLElement>('.browser-toolbar');
+    const toolbarRect = toolbar?.getBoundingClientRect();
+    const panelRect = panel?.getBoundingClientRect();
+
+    const hostTop = Math.round(rect.top);
+    const top = error ? hostTop : (toolbarRect ? Math.round(toolbarRect.bottom) : hostTop);
+    const bottom = panelRect ? Math.round(panelRect.bottom) : Math.round(rect.bottom);
+    const left = Math.round(rect.left);
+    const width = Math.max(1, panelRect ? Math.round(panelRect.right - rect.left) : Math.round(rect.width > 0 ? rect.width : panelWidth));
+    const height = Math.max(1, bottom - top);
+    const bounds = { x: left, y: top, width, height };
     void window.lotagate.browser.setViewBounds(session.id, activeTab.id, bounds, true).catch(() => undefined);
-  }, [activeTab, browserSession, panelWidth]);
+  }, [activeTab, browserSession, error, panelWidth]);
 
   useLayoutEffect(() => {
     syncViewBounds();
@@ -84,7 +103,11 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
     if (!host) return;
     const observer = new ResizeObserver(syncViewBounds);
     observer.observe(host);
-    if (panel) observer.observe(panel);
+    if (panel) {
+      observer.observe(panel);
+      const toolbar = panel.querySelector('.browser-toolbar');
+      if (toolbar) observer.observe(toolbar);
+    }
     window.addEventListener('resize', syncViewBounds);
     panel?.addEventListener('animationend', syncViewBounds);
     panel?.addEventListener('transitionend', syncViewBounds);

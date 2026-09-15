@@ -64,6 +64,7 @@ async function probe(definition) {
   if (definition.type === 'command') return commandAvailable(definition.command);
   if (definition.type === 'commandAny') return (await Promise.all(definition.commands.map(commandAvailable))).some(Boolean);
   if (definition.type === 'commandsAll') return (await Promise.all(definition.commands.map(commandAvailable))).every(Boolean);
+  if (definition.type === 'commandsWithArgsAll') return (await Promise.all(definition.checks.map(check => commandWorks(check.command, check.args)))).every(Boolean);
   if (definition.type === 'commandGroups') return (await Promise.all(definition.groups.map(async group => (await Promise.all(group.map(commandAvailable))).some(Boolean)))).every(Boolean);
   if (definition.type === 'pythonImport') {
     for (const command of process.platform === 'win32' ? ['py', 'python', 'python3'] : ['python3', 'python']) {

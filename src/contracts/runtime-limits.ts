@@ -1,3 +1,6 @@
+/** Decimal unit used for public file/request limits. */
+const MEGABYTE = 1_000_000;
+
 /** Runtime limits shared by the Desktop host boundary and its CLI bridge. */
 export const DESKTOP_RUNTIME_LIMITS = {
   agentIdleTimeoutMs: 5 * 60 * 1_000,
@@ -6,7 +9,7 @@ export const DESKTOP_RUNTIME_LIMITS = {
   commandEventBufferBytes: 256 * 1024,
   cliJsonlLineBytes: 4 * 1024 * 1024,
   cliAttachmentChunkBytes: 512 * 1024,
-  attachmentBytes: 10 * 1024 * 1024,
+  attachmentBytes: 10 * MEGABYTE,
   artifactFileBytes: 512 * 1024 * 1024,
   hostOutputBytes: 2 * 1024 * 1024,
   hostFileBytes: 10 * 1024 * 1024,
@@ -19,8 +22,26 @@ export const DESKTOP_RUNTIME_LIMITS = {
   commandEventBufferTtlMs: 30_000,
   sandboxDefaultOutputBytes: 2 * 1024 * 1024,
   sandboxMaxExecutionTimeoutMs: 10 * 60 * 1_000,
+  sandboxGuestStderrBytes: 64 * 1024,
   sandboxMaxDirectoryEntries: 2_000,
   sandboxMaxShellTimeoutMs: 120_000,
+  sandboxGuestHealthTimeoutMs: 10_000,
+  sandboxGuestProbeTimeoutMs: 5_000,
+  sandboxGuestAptResolutionTimeoutMs: 30_000,
+  sandboxGuestStatusOutputBytes: 64 * 1024,
+  sandboxDependencyOutputBytes: 4 * 1024 * 1024,
+  sandboxRuntimeHealthTimeoutMs: 10_000,
+  sandboxRuntimeRepairTimeoutMs: 15_000,
+  sandboxRuntimeHealthOutputBytes: 16 * 1024,
+  sandboxRuntimeStatusOutputBytes: 64 * 1024,
+  sandboxHostRepairTimeoutMs: 10 * 60 * 1_000,
+  sandboxHostRepairOutputBytes: 128 * 1024,
+  dependencyOperationTimeoutMs: 60 * 60 * 1_000,
+  dependencyPackageOperationTimeoutMs: 15 * 60 * 1_000,
+  dependencyHostInstallTimeoutMs: 30 * 60 * 1_000,
+  dependencyRetryMaxAttempts: 3,
+  dependencyRetryInitialDelayMs: 500,
+  dependencyRetryMaxDelayMs: 5_000,
   hostMaxShellArgs: 256,
   maxPathCharacters: 4_096,
   maxFileDiffLines: 512,
