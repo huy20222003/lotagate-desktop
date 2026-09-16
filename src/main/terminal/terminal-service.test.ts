@@ -13,7 +13,8 @@ const workspaceRegistry = { require: vi.fn(async () => ({ id: 'workspace-1', roo
 
 function createEvidenceStore() {
   let values: TerminalEvidence[] = [];
-  return { read: async () => values, write: async (next: TerminalEvidence[]) => { values = next; } };
+  let updateChain = Promise.resolve();
+  return { read: async () => values, write: async (next: TerminalEvidence[]) => { values = next; }, update: async (mutator: (current: TerminalEvidence[]) => TerminalEvidence[] | Promise<TerminalEvidence[]>) => { let result!: TerminalEvidence[]; const operation = updateChain.then(async () => { result = await mutator(values); values = result; }); updateChain = operation.catch(() => undefined); await operation; return result; } };
 }
 
 describe('TerminalService', () => {
@@ -41,6 +42,15 @@ describe('TerminalService', () => {
     const result = await service.execute({ cwd: process.cwd(), command: process.execPath, args: ['-e', 'process.stdout.write("ok")'], taskId: 'task-1', approved: true });
     expect(result.stdout).toBe('ok');
     expect(result.taskId).toBe('task-1');
+  });
+
+  it('retains evidence from concurrent terminal executions', async () => {
+    const service = new TerminalService(workspaceRegistry, taskStore, createEvidenceStore());
+    await Promise.all([
+      service.execute({ cwd: process.cwd(), command: process.execPath, args: ['-e', 'process.stdout.write("first")'], taskId: 'task-1', approved: true }),
+      service.execute({ cwd: process.cwd(), command: process.execPath, args: ['-e', 'process.stdout.write("second")'], taskId: 'task-1', approved: true }),
+    ]);
+    await expect(service.list()).resolves.toHaveLength(2);
   });
 
   it('terminates descendants when a command exceeds its timeout', async () => {

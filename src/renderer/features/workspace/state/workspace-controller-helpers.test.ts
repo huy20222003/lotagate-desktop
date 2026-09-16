@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Activity } from '../../../../contracts/ipc/v1/workspace.js';
-import { activeTurnForTask, discardQueuedAttachments, mergeActivities } from './workspace-controller-helpers.js';
+import { activeTurnForTask, discardQueuedAttachments, mergeActivities, toQueuedMessage } from './workspace-controller-helpers.js';
 import type { QueuedMessage } from './message-queue-service.js';
 
 const activity = (id: string, text: string, turnId = 'turn-1'): Activity => ({ id, taskId: 'task-1', kind: 'assistant', text, metadata: { turnId }, createdAt: '2026-08-29T00:00:00.000Z' });
@@ -59,6 +59,20 @@ describe('workspace controller queued attachment cleanup', () => {
 
       expect(deleteArtifact).toHaveBeenCalledOnce();
       expect(deleteArtifact).toHaveBeenCalledWith('task-1', 'orphan-attachment', true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('workspace controller queued prompt restoration', () => {
+  it('restores the model captured in a persisted queued prompt', async () => {
+    vi.stubGlobal('window', { lotagate: { tasks: { artifacts: vi.fn().mockResolvedValue([]) } } });
+
+    try {
+      const message = await toQueuedMessage('task-1', { id: 'queued-1', prompt: 'queued', model: 'model-1', skills: [], attachmentIds: [], createdAt: '2026-01-01T00:00:00.000Z' });
+
+      expect(message.options).toEqual({ model: 'model-1' });
     } finally {
       vi.unstubAllGlobals();
     }

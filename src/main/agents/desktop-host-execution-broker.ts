@@ -8,6 +8,7 @@ import type { FileChangeDiff, FileDiffLine } from '../../contracts/ipc/v1/worksp
 import { requireWorkspaceWritePath } from '../security/path-policy.js';
 import { terminateDesktopProcess } from '../process/process-termination.js';
 import { createChildProcessEnvironment } from '../process/process-environment.js';
+import { BoundedOutputCollector } from '../process/bounded-output.js';
 import { DESKTOP_RUNTIME_LIMITS } from '../../contracts/runtime-limits.js';
 
 export interface DesktopHostExecutionBrokerOptions {
@@ -186,7 +187,8 @@ function createPowerShellScriptArguments(script: string): string[] {
 function runProcess(command: string, args: string[], cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return new Promise(resolveResult => {
     const child = spawn(command, args, { cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: createChildProcessEnvironment() });
-    let stdout = ''; let stderr = ''; let bytes = 0; let truncated = false; let timedOut = false; let settled = false;
+    const output = new BoundedOutputCollector(DESKTOP_RUNTIME_LIMITS.hostOutputBytes);
+    let timedOut = false; let settled = false;
     let stopping = false;
     let stopResult: Record<string, unknown> | undefined;
     const finish = (value: Record<string, unknown>) => { if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', abort); resolveResult(value); };
@@ -197,21 +199,16 @@ function runProcess(command: string, args: string[], cwd: string, timeoutMs: num
       void terminateDesktopProcess(child).then(() => finish(stopResult ?? value), error => finish({ ...value, terminationConfirmed: false, terminationError: redact(error instanceof Error ? error.message : 'Process termination could not be confirmed.') }));
     };
     const append = (chunk: Buffer, target: 'stdout' | 'stderr') => {
-      if (truncated) return;
-      const text = chunk.toString('utf8');
-      const remaining = DESKTOP_RUNTIME_LIMITS.hostOutputBytes - bytes;
-      if (remaining <= 0) { truncated = true; stop({ stdout: redact(stdout), stderr: redact(stderr), exitCode: null, truncated: true }); return; }
-      const accepted = Buffer.byteLength(text, 'utf8') <= remaining ? text : text.slice(0, remaining);
-      bytes += Buffer.byteLength(accepted, 'utf8');
-      if (target === 'stdout') stdout += accepted; else stderr += accepted;
-      if (accepted.length !== text.length) { truncated = true; stop({ stdout: redact(stdout), stderr: redact(stderr), exitCode: null, truncated: true }); }
+      output.append(target, chunk);
+      const captured = output.value();
+      if (captured.truncated) stop({ stdout: redact(captured.stdout), stderr: redact(captured.stderr), exitCode: null, truncated: true });
     };
-    const abort = () => stop({ stdout: redact(stdout), stderr: redact(stderr), exitCode: null, cancelled: true });
-    const timer = setTimeout(() => { timedOut = true; stop({ stdout: redact(stdout), stderr: redact(stderr), exitCode: null, timedOut: true }); }, timeoutMs);
+    const abort = () => { output.finish(); const captured = output.value(); stop({ stdout: redact(captured.stdout), stderr: redact(captured.stderr), exitCode: null, cancelled: true }); };
+    const timer = setTimeout(() => { timedOut = true; output.finish(); const captured = output.value(); stop({ stdout: redact(captured.stdout), stderr: redact(captured.stderr), exitCode: null, timedOut: true }); }, timeoutMs);
     child.stdout.on('data', chunk => append(chunk, 'stdout'));
     child.stderr.on('data', chunk => append(chunk, 'stderr'));
-    child.once('error', error => { if (stopping) return; finish({ stdout, stderr: redact(error.message), exitCode: null, error: true }); });
-    child.once('close', code => { if (!stopping) finish({ stdout: redact(stdout), stderr: redact(stderr), exitCode: code, timedOut, truncated }); });
+    child.once('error', error => { if (stopping) return; output.finish(); const captured = output.value(); finish({ stdout: captured.stdout, stderr: redact(error.message), exitCode: null, error: true }); });
+    child.once('close', code => { if (!stopping) { output.finish(); const captured = output.value(); finish({ stdout: redact(captured.stdout), stderr: redact(captured.stderr), exitCode: code, timedOut, truncated: captured.truncated }); } });
     if (signal?.aborted) abort(); else signal?.addEventListener('abort', abort, { once: true });
   });
 }

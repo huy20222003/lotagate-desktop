@@ -295,7 +295,9 @@ app.whenReady().then(async () => {
       if (sessionId !== undefined) {
         void browserHost.closeForSession(projectRoot, sessionId).catch(error => logger.debug('agent.browser.close.failed', { projectRoot, sessionId, message: error instanceof Error ? error.message : 'Unable to close browser session.' }));
         if (computerBroker !== undefined) computerBroker.cancelForSession(projectRoot, sessionId);
-        void tasks.interruptActiveBySession(sessionId, error.message).catch(() => undefined);
+        void tasks.interruptActiveBySession(sessionId, error.message).then(updated => {
+          if (updated !== undefined) broadcastToActiveWindows('task.updated', updated);
+        }).catch(interruptError => logger.warn('task.interrupt-after-agent-exit.failed', { sessionId, message: interruptError instanceof Error ? interruptError.message : String(interruptError) }));
         taskTurns.releaseSession(sessionId);
       }
       logger.error('agent.process.exit', { projectRoot, sessionId, approvalCount: approvalIds.length, error: error.message });

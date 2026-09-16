@@ -29,6 +29,25 @@ describe('BrowserPanel', () => {
     expect(document.querySelector('.browser-view-host')).toBeInTheDocument();
   });
 
+  it('anchors the native browser view to the drawer content slot', async () => {
+    const onState = vi.fn(() => vi.fn());
+    const setViewBounds = vi.fn().mockResolvedValue(undefined);
+    const getBoundingClientRect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('browser-panel')) return { x: 500, y: 40, top: 40, left: 500, right: 900, bottom: 800, width: 400, height: 760, toJSON: () => ({}) };
+      if (this.classList.contains('browser-toolbar')) return { x: 450, y: 40, top: 40, left: 450, right: 900, bottom: 100, width: 450, height: 60, toJSON: () => ({}) };
+      if (this.classList.contains('browser-panel-content')) return { x: 560, y: 100, top: 100, left: 560, right: 700, bottom: 800, width: 140, height: 700, toJSON: () => ({}) };
+      if (this.classList.contains('browser-view-host')) return { x: 560, y: 100, top: 100, left: 560, right: 700, bottom: 700, width: 140, height: 600, toJSON: () => ({}) };
+      return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) };
+    });
+    Object.defineProperty(window, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { approvals: { request: vi.fn().mockResolvedValue({ approvalId: 'approval-1', approved: true }) }, browser: { create: vi.fn().mockResolvedValue(session), close: vi.fn().mockResolvedValue(undefined), hide: vi.fn().mockResolvedValue(undefined), onState, setViewBounds, navigate: vi.fn(), createTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() } } });
+
+    render(<BrowserPanel onClose={vi.fn()} />);
+    await screen.findByRole('tab', { name: /New tab/u });
+    await waitFor(() => expect(setViewBounds).toHaveBeenCalledWith('browser-1', 'tab-1', { x: 450, y: 100, width: 450, height: 700 }, true));
+    getBoundingClientRect.mockRestore();
+  });
+
   it('hides the native browser view when the panel is closed', async () => {
     const onState = vi.fn(() => vi.fn());
     const hide = vi.fn().mockResolvedValue(undefined);

@@ -62,6 +62,22 @@ describe('AutomationService', () => {
     expect(attempts).toBe(2);
   });
 
+  it('preserves a newer schedule when an active run completes', async () => {
+    const store = createStore();
+    const service = new AutomationService(store, createRunStore());
+    const automation = await service.create({ name: 'Rescheduled automation', workspaceId: 'workspace-1', prompt: 'Reschedule', schedule: { kind: 'interval', everyMinutes: 1, timezone: 'UTC' } });
+    let release!: () => void;
+    const waiting = new Promise<void>(resolve => { release = resolve; });
+    const runPromise = service.runNow(automation.id, async () => { await waiting; return { summary: 'Completed' }; });
+    let run = (await service.runs(automation.id))[0];
+    for (let attempt = 0; run?.status !== 'running' && attempt < 20; attempt += 1) { await new Promise(resolve => setTimeout(resolve, 0)); run = (await service.runs(automation.id))[0]; }
+    if (!run) throw new Error('Run was not created.');
+    const updated = await service.update(automation.id, { schedule: { kind: 'interval', everyMinutes: 10, timezone: 'UTC' } });
+    release();
+    await runPromise;
+    await expect(service.get(automation.id)).resolves.toEqual(expect.objectContaining({ schedule: updated.schedule, nextRunAt: updated.nextRunAt, enabled: updated.enabled }));
+  });
+
   it('waits for due runs when invoked by a headless scheduler', async () => {
     const store = createStore();
     const service = new AutomationService(store, createRunStore());

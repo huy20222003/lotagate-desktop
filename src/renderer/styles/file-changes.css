@@ -35,6 +35,10 @@
 .file-changes-tab-strip .tab > .file-icon { flex: 0 0 auto; width: 14px; height: 14px; }
 .file-changes-tab-strip .tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-changes-tab-strip .tab-close { width: 18px; height: 18px; flex: 0 0 18px; }
+.file-tab-context-menu { position: fixed; z-index: 300; display: grid; min-width: 230px; overflow: hidden; border: 1px solid var(--color-border); border-radius: 8px; padding: 5px; background: var(--color-surface-popover); box-shadow: 0 16px 38px var(--shadow-popover); }
+.file-tab-context-menu-item { display: flex; min-height: 32px; align-items: center; width: 100%; border: 0; border-radius: 5px; padding: 0 9px; background: transparent; color: var(--color-text-secondary); font: inherit; font-size: 12px; text-align: left; white-space: nowrap; }
+.file-tab-context-menu-item:hover:not(:disabled), .file-tab-context-menu-item:focus-visible:not(:disabled) { background: var(--color-surface-hover); color: var(--color-text); outline: none; }
+.file-tab-context-menu-item:disabled { cursor: not-allowed; opacity: .45; }
 .file-changes-header-actions { display: flex !important; flex: 0 0 auto; align-items: center; gap: 2px; }
 .file-changes-summary { display: flex; align-items: center; gap: 9px; min-height: 42px; border-bottom: 1px solid var(--color-border-subtle); padding: 0 16px; color: var(--color-text); font-size: 12px; }
 .file-changes-summary strong { margin-right: auto; font-weight: 550; }

@@ -73,8 +73,8 @@ describe('BrowserService layout lifecycle', () => {
 
     await service.setViewBounds(snapshot.id, snapshot.activeTabId, { x: 10, y: 20, width: 519, height: 664 }, true);
 
-    expect(view.webContents.debugger.sendCommand).toHaveBeenCalledTimes(3);
-    expect(view.webContents.debugger.sendCommand).toHaveBeenLastCalledWith('Emulation.clearDeviceMetricsOverride');
+    expect(view.webContents.debugger.sendCommand).toHaveBeenCalledTimes(2);
+    expect(view.webContents.debugger.sendCommand).toHaveBeenLastCalledWith('Emulation.setDeviceMetricsOverride', { width: 519, height: 664, mobile: false, deviceScaleFactor: 1 });
     await service.hide(snapshot.id);
     expect(view.webContents.debugger.sendCommand).toHaveBeenLastCalledWith('Emulation.setDeviceMetricsOverride', { width: 1_280, height: 800, mobile: false, deviceScaleFactor: 1 });
     await service.close(snapshot.id);
@@ -92,7 +92,7 @@ describe('BrowserService layout lifecycle', () => {
     await service.setResponsiveViewport(snapshot.id, snapshot.activeTabId, { width: 1_024, height: 768, mobile: true, deviceScaleFactor: 2 });
     await service.setViewBounds(snapshot.id, snapshot.activeTabId, { x: 10, y: 20, width: 519, height: 664 }, true);
 
-    expect(view.webContents.debugger.sendCommand).toHaveBeenLastCalledWith('Emulation.clearDeviceMetricsOverride');
+    expect(view.webContents.debugger.sendCommand).toHaveBeenLastCalledWith('Emulation.setDeviceMetricsOverride', { width: 519, height: 664, mobile: false, deviceScaleFactor: 1 });
     await service.close(snapshot.id);
   });
 

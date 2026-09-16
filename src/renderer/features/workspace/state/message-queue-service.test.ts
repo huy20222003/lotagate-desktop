@@ -39,4 +39,12 @@ describe('MessageQueueService', () => {
 
     expect(message.options).toEqual({ skills: ['review'], agentPrompt: 'Use the selected skill "review" for this request.' });
   });
+
+  it('keeps the selected model with the queued prompt', () => {
+    const service = new MessageQueueService();
+
+    const message = service.enqueue('use model one', [], { model: 'model-1' });
+
+    expect(message.options).toEqual({ model: 'model-1' });
+  });
 });

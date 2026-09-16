@@ -7,7 +7,7 @@ import { activitiesForUserTurn, isAssistantProgressActivity, mergeChatActivities
 import { TrustCard } from '../shell/WorkspaceOverlays.js';
 import { ChatMessage } from './ChatMessage.js';
 import { ElapsedTime, type TurnTiming } from './ElapsedTime.js';
-import { findActiveTurnTiming, activityTurnId, messageTiming } from './conversation-timing.js';
+import { findActiveTurnTiming, activityTurnId, messageTiming, normalizeTurnTimingsForTask } from './conversation-timing.js';
 import { TypingIndicator } from './TypingIndicator.js';
 import { hasRunningWorkedTool } from './WorkedForDetails.js';
 import type { OpenFileChangesHandler, OpenFileTargetHandler } from '../review/file-change-view.js';
@@ -43,9 +43,10 @@ export function TaskConversation({ task, projectRoot, activities, activityAttach
     return grouped;
   }, [activities]);
   if (!task) return <EmptyState title="Create your first agent task" detail="Choose a workspace, then enter a prompt below." />;
-  const activeTiming = findActiveTurnTiming(turnTimings);
+  const displayTurnTimings = normalizeTurnTimingsForTask(turnTimings, task);
+  const activeTiming = findActiveTurnTiming(displayTurnTimings);
   const workingTiming = activeTiming ?? (thinkingStartedAt === undefined ? undefined : { startedAt: thinkingStartedAt });
-  const activeTurnId = Object.entries(turnTimings)
+  const activeTurnId = Object.entries(displayTurnTimings)
     .filter(([, timing]) => timing.endedAt === undefined)
     .sort(([, left], [, right]) => right.startedAt - left.startedAt)[0]?.[0];
   const liveTurnDetails = activeTurnId === undefined ? undefined : activityDetailsByTurn.get(activeTurnId);
@@ -55,7 +56,7 @@ export function TaskConversation({ task, projectRoot, activities, activityAttach
   const hasRunningTool = hasRunningWorkedTool(liveToolActivities);
   const hasActiveAssistant = transcript.some(activity => {
     if (activity.kind !== 'assistant') return false;
-    const timing = messageTiming(activity, turnTimings).timing;
+    const timing = messageTiming(activity, displayTurnTimings).timing;
     return timing !== undefined && timing.endedAt === undefined;
   });
   const messageWorkspaceRoot = projectRoot ?? task.cwd;
@@ -67,8 +68,8 @@ export function TaskConversation({ task, projectRoot, activities, activityAttach
     const turnDetails = messageTurnId === undefined ? undefined : activityDetailsByTurn.get(messageTurnId);
     const turnActivities = turnDetails?.all ?? EMPTY_ACTIVITIES;
     const messageTimingValue = activity.kind === 'user'
-      ? userTurnId === undefined ? undefined : turnTimings[userTurnId]
-      : messageTiming(activity, turnTimings).timing;
+      ? userTurnId === undefined ? undefined : displayTurnTimings[userTurnId]
+      : messageTiming(activity, displayTurnTimings).timing;
     const hasResponse = userTurnDetails?.some(item => item.kind === 'error' || (item.kind === 'assistant' && !isAssistantProgressActivity(item))) === true;
     const userWorkedForActivities = activity.kind === 'user'
       && !thinking

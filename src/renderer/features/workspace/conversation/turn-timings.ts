@@ -1,7 +1,7 @@
 import type { Activity, DesktopTurnTimingMarker } from '../../../../contracts/ipc/v1/workspace.js';
 import { DESKTOP_TURN_TIMING_METADATA_KEY } from '../../../../contracts/ipc/v1/workspace.js';
 
-export interface TurnTiming { startedAt: number; endedAt?: number }
+export interface TurnTiming { startedAt: number; endedAt?: number | undefined }
 
 /**
  * Activity hydration can race the live terminal event. Preserve a terminal

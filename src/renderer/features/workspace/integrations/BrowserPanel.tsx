@@ -12,6 +12,7 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const hostRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const { panelWidth, setPanelWidth, resizing, startResize, handleResizeKeyDown } = useResizableSidePanel({
     initialWidth: FILE_PANEL_DEFAULT_WIDTH,
@@ -78,20 +79,20 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
 
   const syncViewBounds = useCallback(() => {
     const host = hostRef.current;
+    const content = contentRef.current;
     const panel = panelRef.current;
     const session = browserSession;
-    if (!host || !session || !activeTab) return;
-    const rect = host.getBoundingClientRect();
-    const toolbar = panel?.querySelector<HTMLElement>('.browser-toolbar');
-    const toolbarRect = toolbar?.getBoundingClientRect();
-    const panelRect = panel?.getBoundingClientRect();
-
-    const hostTop = Math.round(rect.top);
-    const top = error ? hostTop : (toolbarRect ? Math.round(toolbarRect.bottom) : hostTop);
-    const bottom = panelRect ? Math.round(panelRect.bottom) : Math.round(rect.bottom);
-    const left = Math.round(rect.left);
-    const width = Math.max(1, panelRect ? Math.round(panelRect.right - rect.left) : Math.round(rect.width > 0 ? rect.width : panelWidth));
-    const height = Math.max(1, bottom - top);
+    if (!host || !content || !panel || !session || !activeTab) return;
+    const panelRect = panel.getBoundingClientRect();
+    const contentRect = content.getBoundingClientRect();
+    const toolbarRect = panel.querySelector<HTMLElement>('.browser-toolbar')?.getBoundingClientRect();
+    // WebContentsView is a native sibling of the renderer WebContents, not a
+    // DOM child. Anchor it to the visible browser chrome rather than the inner
+    // flex content slot, which can have a different horizontal box.
+    const left = Math.round(toolbarRect?.left ?? panelRect.left);
+    const top = error ? Math.round(host.getBoundingClientRect().top) : Math.round(toolbarRect?.bottom ?? contentRect.top);
+    const width = Math.max(1, Math.round(panelRect.right - left) || Math.round(panelWidth));
+    const height = Math.max(1, Math.round(panelRect.bottom - top));
     const bounds = { x: left, y: top, width, height };
     void window.lotagate.browser.setViewBounds(session.id, activeTab.id, bounds, true).catch(() => undefined);
   }, [activeTab, browserSession, error, panelWidth]);
@@ -171,7 +172,7 @@ export function BrowserPanel({ taskId, sessionId, cwd, onClose }: { taskId?: str
       <div className="browser-panel-actions"><IconButton icon={Camera} iconSize={15} label="Capture screenshot" disabled={!activeTab || activeTab.url === 'about:blank' || busy} onClick={captureScreenshot} /><IconButton icon={Bug} iconSize={15} label="Open webpage DevTools" disabled={!activeTab || activeTab.url === 'about:blank' || busy} onClick={openDevTools} /><IconButton icon={Plus} iconSize={15} label="New browser tab" onClick={createTab} /><IconButton icon={X} iconSize={16} label="Close browser" onClick={closePanel} /></div>
     </header>
     <form className="browser-toolbar" onSubmit={navigate}><div className="browser-nav-actions"><IconButton icon={ArrowLeft} iconSize={15} label="Go back" disabled={!activeTab?.canGoBack || busy} onClick={() => history('back')} /><IconButton icon={ArrowRight} iconSize={15} label="Go forward" disabled={!activeTab?.canGoForward || busy} onClick={() => history('forward')} /><IconButton icon={RefreshCw} iconSize={14} label="Reload page" disabled={!activeTab || busy} onClick={reload} /></div><input className="browser-address" value={address} onChange={event => setAddress(event.target.value)} placeholder="Enter an HTTP(S) address" aria-label="Browser address" disabled={!activeTab || busy} /></form>
-    <div className="browser-panel-content">{error ? <p className="browser-error" role="alert">{error}</p> : null}<div ref={hostRef} className="browser-view-host" aria-label={activeTab?.title ?? 'Browser page'}>{!activeTab || activeTab.url === 'about:blank' ? <div className="browser-empty"><Icon icon={Globe2} size={28} /><strong>Open a page</strong><span>Enter an HTTP(S) address above.</span></div> : null}</div></div>
+    <div ref={contentRef} className="browser-panel-content">{error ? <p className="browser-error" role="alert">{error}</p> : null}<div ref={hostRef} className="browser-view-host" aria-label={activeTab?.title ?? 'Browser page'}>{!activeTab || activeTab.url === 'about:blank' ? <div className="browser-empty"><Icon icon={Globe2} size={28} /><strong>Open a page</strong><span>Enter an HTTP(S) address above.</span></div> : null}</div></div>
   </aside>;
 }
 

@@ -60,6 +60,7 @@ export class ActivityLogStore {
   private readonly compactionOperations: number;
   private writeChain: Promise<void> = Promise.resolve();
   private loaded = false;
+  private activitiesCache: Activity[] | undefined;
   private sequence = 0;
   private bytesSinceSnapshot = 0;
   private operationsSinceSnapshot = 0;
@@ -242,10 +243,12 @@ export class ActivityLogStore {
 
   private async readAll(): Promise<Activity[]> {
     await this.ensureLoaded();
+    if (this.activitiesCache !== undefined) return this.activitiesCache;
     let raw: string;
     try { raw = await readFile(this.filePath, 'utf8'); }
-    catch (error) { if (isMissingFile(error)) return []; throw error; }
-    return this.replay(raw);
+    catch (error) { if (isMissingFile(error)) { this.activitiesCache = []; return this.activitiesCache; } throw error; }
+    this.activitiesCache = await this.replay(raw);
+    return this.activitiesCache;
   }
 
   private async importLegacyIfPresent(): Promise<void> {
@@ -358,6 +361,7 @@ export class ActivityLogStore {
     } finally {
       await handle.close();
     }
+    this.activitiesCache = undefined;
   }
 
   private recordOperation(record: ActivityLogRecord): void {
@@ -384,6 +388,7 @@ export class ActivityLogStore {
     const temporary = `${this.filePath}.${process.pid}.snapshot.tmp`;
     await writeFile(temporary, raw, 'utf8');
     await renameWithRetry(temporary, this.filePath);
+    this.activitiesCache = [...snapshot];
     this.recordOperation(record);
   }
 }

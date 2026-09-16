@@ -650,6 +650,7 @@ button.lightbox-navigation { width: 44px; height: 44px; border-color: var(--colo
 .badge-warning { background: var(--color-warning-bg); color: var(--color-warning); }
 .badge-danger { background: var(--color-danger-bg); color: var(--color-danger); }
 .activity-list { display: grid; gap: 22px; }
+.activity-list > * { content-visibility: auto; contain-intrinsic-size: auto 180px; }
 .conversation-time-separator { display: flex; min-height: 20px; align-items: center; justify-content: center; margin: -8px 0; color: var(--color-text-tertiary); font-size: 11px; font-weight: 600; line-height: 1; }
 .message-body > div:not(.tool-row) { margin: 6px 0 0; color: var(--color-text-secondary); font-size: 13px; line-height: 1.65; }
 .agent-message .message-body > div:not(.tool-row), .agent-message .message-body p { font-size: 13.5px; }

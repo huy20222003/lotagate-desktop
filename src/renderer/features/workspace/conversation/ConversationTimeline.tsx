@@ -52,14 +52,12 @@ export function ConversationTimeline({ activities, onSelect, viewportRef }: { ac
   const updateActiveMessage = useCallback(() => {
     const viewport = viewportRef.current;
     if (!viewport || userMessages.length === 0) return;
-    const top = viewport.getBoundingClientRect().top;
-    const closest = userMessages.reduce<{ id: string; distance: number } | undefined>((current, activity) => {
-      const element = document.getElementById(`chat-message-${activity.id}`);
-      if (!element) return current;
-      const distance = Math.abs(element.getBoundingClientRect().top - top);
-      return current === undefined || distance < current.distance ? { id: activity.id, distance } : current;
-    }, undefined);
-    if (closest) setActiveActivityId(closest.id);
+    if (typeof document.elementFromPoint !== 'function') return;
+    const bounds = viewport.getBoundingClientRect();
+    const probe = document.elementFromPoint(bounds.left + Math.min(48, Math.max(1, bounds.width - 1)), bounds.top + 8);
+    const message = probe?.closest<HTMLElement>('[id^="chat-message-"]');
+    const messageId = message?.id.startsWith('chat-message-') ? message.id.slice('chat-message-'.length) : undefined;
+    if (messageId !== undefined && userMessages.some(activity => activity.id === messageId)) setActiveActivityId(messageId);
   }, [userMessages, viewportRef]);
 
   const updateScrollState = useCallback(() => {

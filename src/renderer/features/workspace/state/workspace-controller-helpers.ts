@@ -29,7 +29,7 @@ export async function loadAttachmentPreviews(taskId: string, attachmentIds: read
 }
 
 export async function toQueuedMessage(taskId: string, prompt: QueuedPrompt): Promise<QueuedMessage> {
-  return { id: prompt.id, taskId, prompt: prompt.prompt, ...(prompt.agentPrompt === undefined && prompt.skills.length === 0 ? {} : { options: { ...(prompt.agentPrompt === undefined ? {} : { agentPrompt: prompt.agentPrompt }), ...(prompt.skills.length === 0 ? {} : { skills: prompt.skills }) } }), attachments: await loadAttachmentPreviews(taskId, prompt.attachmentIds), createdAt: Date.parse(prompt.createdAt) };
+  return { id: prompt.id, taskId, prompt: prompt.prompt, ...(prompt.agentPrompt === undefined && prompt.model === undefined && prompt.skills.length === 0 ? {} : { options: { ...(prompt.agentPrompt === undefined ? {} : { agentPrompt: prompt.agentPrompt }), ...(prompt.model === undefined ? {} : { model: prompt.model }), ...(prompt.skills.length === 0 ? {} : { skills: prompt.skills }) } }), attachments: await loadAttachmentPreviews(taskId, prompt.attachmentIds), createdAt: Date.parse(prompt.createdAt) };
 }
 
 export function readAgentError(value: unknown): string | undefined {

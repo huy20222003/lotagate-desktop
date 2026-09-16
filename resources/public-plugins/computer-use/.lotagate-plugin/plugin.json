@@ -1,7 +1,7 @@
 {
   "name": "computer-use",
   "displayName": "Computer Use",
-  "version": "1.2.0",
+  "version": "0.1.0",
   "description": "Control approved desktop applications through LotaGate's platform-native Computer Use host.",
   "author": "LotaGate",
   "license": "MIT",

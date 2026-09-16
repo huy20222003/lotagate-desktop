@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { Columns2, List, Maximize2, Minimize2, X } from 'lucide-react';
 import type { FileChangeSummary } from '../../../../contracts/ipc/v1/workspace.js';
 import { IconButton, Tabs } from '../../../components/ui.js';
@@ -18,6 +19,9 @@ export function FileChangesDrawer({ cwd, summary, initialExpandedPath, initialFi
   const [openFiles, setOpenFiles] = useState<Record<string, OpenFileState>>({});
   const [viewMode, setViewMode] = useState<DiffViewMode>('unified');
   const [expanded, setExpanded] = useState(false);
+  const [tabContextMenu, setTabContextMenu] = useState<{ value: string; x: number; y: number }>();
+  const tabContextMenuRef = useRef<HTMLDivElement>(null);
+  const firstTabContextMenuItemRef = useRef<HTMLButtonElement>(null);
   const initialFileKey = initialFile === undefined ? undefined : `${initialFile.path}:${initialFile.artifact?.taskId ?? ''}:${initialFile.artifact?.artifactId ?? ''}`;
   const openedInitialFileRef = useRef<{ key: string; target: OpenFileTarget }>();
   const pendingTabRef = useRef<string>();
@@ -27,6 +31,21 @@ export function FileChangesDrawer({ cwd, summary, initialExpandedPath, initialFi
   const ExpandIcon = expanded ? Minimize2 : Maximize2;
   const expandLabel = expanded ? 'Collapse changed files' : 'Expand changed files';
   const tabItems = useMemo(() => [{ value: REVIEW_TAB, label: 'Review', icon: fileIconFor({ name: 'review.diff', kind: 'patch' }) }, ...Object.keys(openFiles).map(path => ({ value: fileTabValue(path), label: fileName(path), icon: fileIconFor({ name: path }) }))], [openFiles]);
+  const closeTabValues = useCallback((values: readonly string[]) => {
+    setTabContextMenu(undefined);
+    const paths = new Set(values.map(filePathFromTab).filter((path): path is string => path !== undefined));
+    if (paths.size === 0) return;
+    setOpenFiles(current => {
+      const next = { ...current };
+      for (const path of paths) delete next[path];
+      return next;
+    });
+    setActiveTab(current => {
+      const path = filePathFromTab(current);
+      return path !== undefined && paths.has(path) ? REVIEW_TAB : current;
+    });
+    setTabContextMenu(undefined);
+  }, []);
   useEffect(() => { setActiveTab(current => { const path = filePathFromTab(current); return current === REVIEW_TAB || (path !== undefined && openFiles[path] !== undefined) ? current : REVIEW_TAB; }); }, [openFiles]);
   const openFile = useCallback(async (target: OpenFileTarget) => {
     const tab = fileTabValue(target.path);
@@ -60,11 +79,33 @@ export function FileChangesDrawer({ cwd, summary, initialExpandedPath, initialFi
     openedInitialFileRef.current = { key: initialFileKey, target: initialFile };
     void openFile(initialFile);
   }, [initialFile, initialFileKey, openFile]);
-  const closeFile = useCallback((value: string) => { const path = filePathFromTab(value); if (path === undefined) return; setOpenFiles(current => { const next = { ...current }; delete next[path]; return next; }); setActiveTab(current => current === value ? REVIEW_TAB : current); }, []);
+  const closeFile = useCallback((value: string) => closeTabValues([value]), [closeTabValues]);
+  const handleTabContextMenu = useCallback((value: string, event: MouseEvent<HTMLSpanElement>) => {
+    if (value === REVIEW_TAB) return;
+    event.preventDefault();
+    const menuWidth = 230;
+    const menuHeight = 122;
+    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    setTabContextMenu({ value, x: Math.max(8, Math.min(event.clientX, viewportWidth - menuWidth - 8)), y: Math.max(8, Math.min(event.clientY, viewportHeight - menuHeight - 8)) });
+  }, []);
+  useEffect(() => {
+    if (tabContextMenu === undefined) return;
+    const close = (event: PointerEvent) => { if (!tabContextMenuRef.current?.contains(event.target as Node)) setTabContextMenu(undefined); };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setTabContextMenu(undefined); };
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('keydown', closeOnEscape);
+    window.requestAnimationFrame(() => firstTabContextMenuItemRef.current?.focus());
+    return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', closeOnEscape); };
+  }, [tabContextMenu]);
   const activePath = filePathFromTab(activeTab);
   const activeFile = activePath === undefined ? undefined : openFiles[activePath];
   const selectedPathExists = initialExpandedPath !== undefined && summary.files.some(change => change.path === initialExpandedPath);
-  return <aside className={`file-changes-panel${resizing ? ' is-resizing' : ''}${expanded ? ' is-expanded' : ''}`} {...(expanded ? {} : { style: { width: `${panelWidth}px` } })} aria-label="Changed files"><div className="file-changes-resize-handle" role="separator" aria-label="Resize changed files panel" aria-orientation="vertical" tabIndex={0} onPointerDown={startResize} onKeyDown={handleResizeKeyDown} /><header className="file-changes-panel-header"><div className="file-changes-tab-strip"><Tabs value={activeTab} items={tabItems} onChange={setActiveTab} onClose={closeFile} closeActiveOnly ariaLabel="Changed file views" /></div><div className="file-changes-header-actions"><IconButton icon={NextViewIcon} iconSize={16} label={nextViewLabel} onClick={() => setViewMode(nextViewMode)} /><IconButton icon={ExpandIcon} iconSize={16} label={expandLabel} onClick={() => setExpanded(current => !current)} /><IconButton icon={X} iconSize={16} label="Close changed files" onClick={onClose} /></div></header><div className="file-changes-summary"><strong>Last Turn</strong><span className="change-additions">+{summary.additions}</span><span className="change-deletions">-{summary.deletions}</span></div>{activeTab === REVIEW_TAB ? <Scrollbar className="file-changes-list"><div className="file-review-list">{summary.files.length === 0 ? <p className="file-changes-empty">No changed files in this turn.</p> : summary.files.map(change => <FileChangeItem key={`${change.path}:${initialExpandedPath ?? 'all'}`} change={change} workspaceCwd={cwd} initiallyExpanded={initialExpandedPath === undefined || !selectedPathExists || change.path === initialExpandedPath} viewMode={viewMode} showActions onOpenFilePath={() => openFilePath(absoluteWorkspacePath(cwd, change.path))} onOpenFile={() => void openFile({ path: change.path })} />)}</div></Scrollbar> : <FileContentTab cwd={cwd} path={activePath ?? ''} {...(activeFile === undefined ? {} : { file: activeFile })} onOpenPath={path => void openFile({ path })} />}</aside>;
+  const contextMenuIndex = tabContextMenu === undefined ? -1 : tabItems.findIndex(item => item.value === tabContextMenu.value);
+  const contextMenuFileName = tabContextMenu === undefined ? '' : tabItems[contextMenuIndex]?.label ?? fileName(filePathFromTab(tabContextMenu.value) ?? 'file');
+  const contextMenuValues = tabItems.filter(item => item.value !== REVIEW_TAB).map(item => item.value);
+  const contextMenuRightValues = contextMenuIndex < 0 ? [] : tabItems.slice(contextMenuIndex + 1).map(item => item.value);
+  return <aside className={`file-changes-panel${resizing ? ' is-resizing' : ''}${expanded ? ' is-expanded' : ''}`} {...(expanded ? {} : { style: { width: `${panelWidth}px` } })} aria-label="Changed files"><div className="file-changes-resize-handle" role="separator" aria-label="Resize changed files panel" aria-orientation="vertical" tabIndex={0} onPointerDown={startResize} onKeyDown={handleResizeKeyDown} /><header className="file-changes-panel-header"><div className="file-changes-tab-strip"><Tabs value={activeTab} items={tabItems} onChange={setActiveTab} onClose={closeFile} onTabContextMenu={handleTabContextMenu} closeActiveOnly ariaLabel="Changed file views" /></div><div className="file-changes-header-actions"><IconButton icon={NextViewIcon} iconSize={16} label={nextViewLabel} onClick={() => setViewMode(nextViewMode)} /><IconButton icon={ExpandIcon} iconSize={16} label={expandLabel} onClick={() => setExpanded(current => !current)} /><IconButton icon={X} iconSize={16} label="Close changed files" onClick={onClose} /></div></header><div className="file-changes-summary"><strong>Last Turn</strong><span className="change-additions">+{summary.additions}</span><span className="change-deletions">-{summary.deletions}</span></div>{activeTab === REVIEW_TAB ? <Scrollbar className="file-changes-list"><div className="file-review-list">{summary.files.length === 0 ? <p className="file-changes-empty">No changed files in this turn.</p> : summary.files.map(change => <FileChangeItem key={`${change.path}:${initialExpandedPath ?? 'all'}`} change={change} workspaceCwd={cwd} initiallyExpanded={initialExpandedPath === undefined || !selectedPathExists || change.path === initialExpandedPath} viewMode={viewMode} showActions onOpenFilePath={() => openFilePath(absoluteWorkspacePath(cwd, change.path))} onOpenFile={() => void openFile({ path: change.path })} />)}</div></Scrollbar> : <FileContentTab cwd={cwd} path={activePath ?? ''} {...(activeFile === undefined ? {} : { file: activeFile })} onOpenPath={path => void openFile({ path })} />}{tabContextMenu === undefined ? null : createPortal(<div ref={tabContextMenuRef} className="file-tab-context-menu" style={{ left: tabContextMenu.x, top: tabContextMenu.y }} role="menu" aria-label={`Actions for ${contextMenuFileName}`} onContextMenu={event => event.preventDefault()}><button ref={firstTabContextMenuItemRef} type="button" className="file-tab-context-menu-item" role="menuitem" onClick={() => closeFile(tabContextMenu.value)}>Close</button><button type="button" className="file-tab-context-menu-item" role="menuitem" disabled={contextMenuValues.length <= 1} onClick={() => closeTabValues(contextMenuValues.filter(value => value !== tabContextMenu.value))}>Close other tabs</button><button type="button" className="file-tab-context-menu-item" role="menuitem" disabled={contextMenuRightValues.length === 0} onClick={() => closeTabValues(contextMenuRightValues)}>Close tabs to the right</button></div>, document.body)}</aside>;
 }
 
 async function previewArtifactFile(taskId: string, artifactId: string): Promise<OpenFileState> {

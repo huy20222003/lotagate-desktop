@@ -228,8 +228,24 @@ export class AutomationService {
 
   private async recordCompletion(automation: Automation, run: AutomationRun): Promise<void> {
     const completedAt = run.finishedAt ?? new Date().toISOString();
-    const next = automation.schedule.kind === 'once' ? null : nextRunAt(automation.schedule, new Date(completedAt));
-    await this.store.update(current => current.map(item => item.id === automation.id ? automationSchema.parse({ ...item, enabled: automation.schedule.kind === 'once' ? false : item.enabled, nextRunAt: next, lastRunAt: completedAt, lastError: run.status === 'succeeded' || run.status === 'awaiting_review' ? null : run.error ?? 'Automation run failed.', updatedAt: completedAt }) : item));
+    await this.store.update(current => current.map(item => {
+      if (item.id !== automation.id) return item;
+      const latest = automationSchema.parse(item);
+      const schedulingChanged = latest.updatedAt !== automation.updatedAt
+        || latest.enabled !== automation.enabled
+        || JSON.stringify(latest.schedule) !== JSON.stringify(automation.schedule);
+      const next = schedulingChanged || latest.schedule.kind === 'manual'
+        ? latest.nextRunAt
+        : latest.schedule.kind === 'once' ? null : nextRunAt(latest.schedule, new Date(completedAt));
+      return automationSchema.parse({
+        ...latest,
+        enabled: schedulingChanged ? latest.enabled : latest.schedule.kind === 'once' ? false : latest.enabled,
+        nextRunAt: next,
+        lastRunAt: completedAt,
+        lastError: run.status === 'succeeded' || run.status === 'awaiting_review' ? null : run.error ?? 'Automation run failed.',
+        updatedAt: completedAt,
+      });
+    }));
   }
 
   private async findRun(id: string): Promise<AutomationRun> { const run = (await this.runStore.read()).find(item => item.id === id); if (run === undefined) throw new Error('Automation run was not found.'); return automationRunSchema.parse(run); }

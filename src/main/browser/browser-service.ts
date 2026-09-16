@@ -15,7 +15,8 @@ export type { BrowserConsoleEntry, BrowserElementInspection, BrowserFrameSnapsho
 export interface BrowserConsoleSnapshot { tab: BrowserTabSnapshot; console: BrowserConsoleEntry[]; errors: string[]; }
 export interface BrowserNetworkEntry { tabId: string; method: string; url: string; resourceType: string; statusCode?: number; fromCache?: boolean; error?: string; timestamp: string; }
 export interface BrowserAccessibilitySnapshot { tab: BrowserTabSnapshot; nodes: BrowserAccessibilityNode[]; }
-type BrowserTabEntry = { view: WebContentsView; snapshot: BrowserTabSnapshot; viewport: BrowserViewport | undefined; viewportMode: 'configured' | 'native'; nativeBounds: BrowserViewBounds | undefined };
+type PendingBounds = { bounds: BrowserViewBounds; visible: boolean };
+type BrowserTabEntry = { view: WebContentsView; snapshot: BrowserTabSnapshot; viewport: BrowserViewport | undefined; viewportMode: 'configured' | 'native'; nativeBounds: BrowserViewBounds | undefined; pendingBounds: PendingBounds | undefined; boundsTask: Promise<void> | undefined };
 type BrowserDownloadListener = (event: Electron.Event, item: Electron.DownloadItem) => void;
 type BrowserSessionEntry = { id: string; browserSession: Session; settings: BrowserSettings; tabs: Map<string, BrowserTabEntry>; activeTabId: string; evidence: BrowserEvidence; network: BrowserNetworkEntry[]; dialogs: Map<string, BrowserDialog>; downloadState: BrowserDownloadState; createdAt: string; recordingTimer: ReturnType<typeof setInterval> | undefined; retentionTimer: ReturnType<typeof setTimeout> | undefined; recordingCaptureInFlight: boolean; downloadListener?: BrowserDownloadListener };
 type BrowserStateListener = (snapshot: BrowserSessionSnapshot) => void;
@@ -152,17 +153,9 @@ export class BrowserService {
     const entry = this.require(sessionId);
     assertOriginAllowed(parsed, entry.settings.originAllowlist);
     const tab = this.requireTab(entry, tabId);
-    if (this.hostWindow !== undefined && tab.viewportMode !== 'native') {
-      tab.viewportMode = 'native';
-      try { await resetViewport(tab.view.webContents); }
-      catch { tab.viewportMode = 'configured'; }
-    }
     tab.snapshot.loading = true;
     this.emit(entry);
     await tab.view.webContents.loadURL(parsed.toString());
-    if (typeof tab.view.webContents.insertCSS === 'function') {
-      void tab.view.webContents.insertCSS('html, body { margin: 0 !important; padding: 0 !important; }').catch(() => undefined);
-    }
     tab.snapshot.loading = false;
     tab.snapshot.url = tab.view.webContents.getURL() || parsed.toString();
     tab.snapshot.title = await tab.view.webContents.getTitle();
@@ -198,22 +191,23 @@ export class BrowserService {
   }
 
   async setViewBounds(sessionId: string, tabId: string, bounds: BrowserViewBounds, visible: boolean): Promise<void> {
-    // Layout updates are best-effort. A renderer resize callback can arrive
-    // after the browser drawer or its session has already been closed.
     const entry = this.sessions.get(sessionId);
     if (entry === undefined) return;
     const tab = entry.tabs.get(tabId);
     if (tab === undefined) return;
-    const isVisible = visible && entry.activeTabId === tabId && tab.snapshot.url !== 'about:blank' && bounds.width > 0 && bounds.height > 0 && this.hostWindow !== undefined;
-    if (isVisible && tab.viewportMode !== 'native') {
-      tab.viewportMode = 'native';
-      try { await resetViewport(tab.view.webContents); }
-      catch { tab.viewportMode = 'configured'; tab.nativeBounds = undefined; }
+    // ResizeObserver, transitions, and React state changes can issue several
+    // updates while the asynchronous DevTools viewport command is in flight.
+    // Keep only the newest request so an older drawer size cannot paint last.
+    tab.pendingBounds = { bounds, visible };
+    const runningTask = tab.boundsTask;
+    if (runningTask !== undefined) {
+      await runningTask;
+      return;
     }
-    tab.view.setVisible(isVisible);
-    const nextBounds = isVisible ? normalizeBounds(bounds) : EMPTY_BOUNDS;
-    tab.view.setBounds(nextBounds);
-    tab.nativeBounds = isVisible ? nextBounds : undefined;
+    const task = this.flushViewBounds(sessionId, tabId, entry, tab);
+    tab.boundsTask = task;
+    try { await task; }
+    finally { if (tab.boundsTask === task) tab.boundsTask = undefined; }
   }
 
   async screenshot(sessionId: string, tabId?: string): Promise<BrowserScreenshot> {
@@ -401,7 +395,7 @@ export class BrowserService {
     const view = new WebContentsView({ webPreferences: { session: entry.browserSession, nodeIntegration: false, contextIsolation: true, sandbox: true } });
     if (typeof view.setBackgroundColor === 'function') view.setBackgroundColor('#10151c');
     const snapshot: BrowserTabSnapshot = { id, title: 'New tab', url: 'about:blank', loading: false, canGoBack: false, canGoForward: false };
-    const tab: BrowserTabEntry = { view, snapshot, viewport: undefined, viewportMode: 'configured', nativeBounds: undefined };
+    const tab: BrowserTabEntry = { view, snapshot, viewport: undefined, viewportMode: 'configured', nativeBounds: undefined, pendingBounds: undefined, boundsTask: undefined };
     entry.tabs.set(id, tab);
     this.hostWindow?.contentView.addChildView(view);
     this.configureTab(entry, tab);
@@ -436,11 +430,6 @@ export class BrowserService {
     contents.on('page-title-updated', (_event, title) => { tab.snapshot.title = title || 'New tab'; this.emit(entry); });
     contents.on('did-fail-load', (_event, errorCode, errorDescription) => { tab.snapshot.loading = false; appendCapped(entry.evidence.errors, redact(`${errorCode}: ${errorDescription}`), MAX_ERROR_ENTRIES); this.emit(entry); });
     contents.on('render-process-gone', (_event, details) => { appendCapped(entry.evidence.errors, redact(`Render process ended: ${details.reason}`), MAX_ERROR_ENTRIES); this.emit(entry); });
-    contents.on('dom-ready', () => {
-      if (typeof contents.insertCSS === 'function') {
-        void contents.insertCSS('html, body { margin: 0 !important; padding: 0 !important; }').catch(() => undefined);
-      }
-    });
     if (entry.tabs.size === 1) {
       entry.browserSession.webRequest.onCompleted(details => {
         const owner = [...entry.tabs.values()].find(candidate => candidate.view.webContents.id === details.webContentsId);
@@ -497,6 +486,32 @@ export class BrowserService {
   private require(sessionId: string): BrowserSessionEntry { const entry = this.sessions.get(sessionId); if (entry === undefined) throw new Error('Browser session was not found.'); return entry; }
   private requireTab(entry: BrowserSessionEntry, tabId: string): BrowserTabEntry { const tab = entry.tabs.get(tabId); if (tab === undefined) throw new Error('Browser tab was not found.'); return tab; }
   private destroyTab(view: WebContentsView): void { this.hostWindow?.contentView.removeChildView(view); if (!view.webContents.isDestroyed()) view.webContents.close(); }
+  private async flushViewBounds(sessionId: string, tabId: string, entry: BrowserSessionEntry, tab: BrowserTabEntry): Promise<void> {
+    while (tab.pendingBounds !== undefined) {
+        const request = tab.pendingBounds;
+        tab.pendingBounds = undefined;
+        const isVisible = request.visible && entry.activeTabId === tabId && tab.snapshot.url !== 'about:blank' && request.bounds.width > 0 && request.bounds.height > 0 && this.hostWindow !== undefined;
+        const nextBounds = isVisible ? normalizeBounds(request.bounds) : EMPTY_BOUNDS;
+        if (this.sessions.get(sessionId) !== entry || entry.tabs.get(tabId) !== tab) return;
+        if (tab.pendingBounds !== undefined) continue;
+        // Establish the actual native viewport before changing Chromium's CSS
+        // viewport. Applying emulation while the view is hidden can leave an
+        // old configured viewport active and make the page appear clipped.
+        tab.view.setVisible(isVisible);
+        tab.view.setBounds(nextBounds);
+        if (isVisible && (tab.viewportMode !== 'native' || tab.nativeBounds?.width !== nextBounds.width || tab.nativeBounds?.height !== nextBounds.height)) {
+          try {
+            await setViewport(tab.view.webContents, { width: nextBounds.width, height: nextBounds.height, mobile: false, deviceScaleFactor: 1 });
+            tab.viewportMode = 'native';
+          } catch {
+            tab.viewportMode = 'configured';
+          }
+        }
+        if (this.sessions.get(sessionId) !== entry || entry.tabs.get(tabId) !== tab) return;
+        if (tab.pendingBounds !== undefined) continue;
+        tab.nativeBounds = isVisible ? nextBounds : undefined;
+    }
+  }
   private async captureRecordingFrame(entry: BrowserSessionEntry): Promise<void> {
     if (entry.evidence.recordings.length >= MAX_RECORDING_FRAMES) { if (entry.recordingTimer) clearInterval(entry.recordingTimer); entry.recordingTimer = undefined; return; }
     if (entry.recordingCaptureInFlight) return;

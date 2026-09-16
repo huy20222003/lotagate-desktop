@@ -1,9 +1,23 @@
-import { DESKTOP_COMMAND_TIMING_METADATA_KEY, type Activity } from '../../../../contracts/ipc/v1/workspace.js';
+import { DESKTOP_COMMAND_TIMING_METADATA_KEY, type Activity, type Task } from '../../../../contracts/ipc/v1/workspace.js';
 import { readString } from '../../../utils/data.js';
 import type { TurnTiming } from './ElapsedTime.js';
 
 export function findActiveTurnTiming(turnTimings: Record<string, TurnTiming>): TurnTiming | undefined {
   return Object.values(turnTimings).filter(timing => timing.endedAt === undefined).sort((left, right) => right.startedAt - left.startedAt)[0];
+}
+
+/** Close display timings left open when a process disappears before a terminal event. */
+export function normalizeTurnTimingsForTask(turnTimings: Record<string, TurnTiming>, task: Pick<Task, 'status' | 'updatedAt'> | undefined): Record<string, TurnTiming> {
+  if (task === undefined || task.status === 'active') return turnTimings;
+  const endedAt = Date.parse(task.updatedAt);
+  if (!Number.isFinite(endedAt)) return turnTimings;
+  let changed = false;
+  const normalized = Object.fromEntries(Object.entries(turnTimings).map(([turnId, timing]) => {
+    if (timing.endedAt !== undefined) return [turnId, timing];
+    changed = true;
+    return [turnId, { ...timing, endedAt: Math.max(timing.startedAt, endedAt) }];
+  }));
+  return changed ? normalized : turnTimings;
 }
 
 export function messageTiming(activity: Activity, turnTimings: Record<string, TurnTiming>): { timing?: TurnTiming | undefined } {

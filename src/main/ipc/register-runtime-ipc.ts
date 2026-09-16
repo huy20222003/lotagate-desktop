@@ -5,11 +5,14 @@ import { automationCreateInputSchema, automationUpdateInputSchema } from '../../
 import { desktopApprovalDecisionSchema, desktopApprovalInputSchema } from '../../contracts/ipc/v1/approval.js';
 import type { IpcRegistrationContext } from './ipc-registration-context.js';
 import { fileOpenDestinationSchema } from '../../contracts/ipc/v1/settings.js';
+import { settingsSchema, type DesktopSettings } from '../settings/settings-service.js';
+
+const settingsPatchSchema = settingsSchema.partial().strict();
 
 export function registerRuntimeIpcHandlers(context: IpcRegistrationContext): void {
-  const { handle, settings, sandboxHealth, browser, approvals, automations, operations, updates, runAutomation, retryAutomation, idSchema, browserBoundsSchema, objectSchema, logger, cwdSchema } = context;
+  const { handle, settings, sandboxHealth, browser, approvals, automations, operations, updates, runAutomation, retryAutomation, idSchema, browserBoundsSchema, logger, cwdSchema } = context;
 handle('settings.get', async event => { assertTrustedRenderer(event); return settings.get(); });
-handle('settings.update', async (event, patch: unknown) => { assertTrustedRenderer(event); const updated = await settings.update(objectSchema.parse(patch)); logger.setRetentionDays(updated.sandbox.diagnosticsRetentionDays); return updated; });
+handle('settings.update', async (event, patch: unknown) => { assertTrustedRenderer(event); const parsed = settingsPatchSchema.parse(patch); const value = Object.fromEntries(Object.entries(parsed).filter(([, item]) => item !== undefined)) as Partial<DesktopSettings>; const updated = await settings.update(value); logger.setRetentionDays(updated.sandbox.diagnosticsRetentionDays); return updated; });
 handle('sandbox.health', async event => { assertTrustedRenderer(event); return sandboxHealth.health(); });
 handle('sandbox.repair', async event => { assertTrustedRenderer(event); return sandboxHealth.repair(); });
 handle('browser.create', async event => { assertTrustedRenderer(event); return browser.create(); });

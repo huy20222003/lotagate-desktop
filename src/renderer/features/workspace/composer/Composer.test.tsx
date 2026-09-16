@@ -261,6 +261,71 @@ describe('Composer overlays', () => {
     expect(onSend).toHaveBeenCalledWith('Please review the attached pasted text.', undefined);
   });
 
+  it('sends the selected model snapshot with the prompt', () => {
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    render(<Composer
+      disabled={false}
+      thinking={false}
+      task={taskWithDraft('use model one')}
+      attachments={[]}
+      queuedMessages={[]}
+      models={[{ id: 'model-1', label: 'Model 1' }]}
+      selectedModel="model-1"
+      selectedEffort="medium"
+      onModel={vi.fn()}
+      onEffort={vi.fn()}
+      busy={false}
+      onSend={onSend}
+      onRunCommand={vi.fn().mockResolvedValue(false)}
+      onCancel={vi.fn().mockResolvedValue(undefined)}
+      onDraft={vi.fn().mockResolvedValue(undefined)}
+      onAttach={vi.fn().mockResolvedValue(undefined)}
+      onAttachImage={vi.fn().mockResolvedValue(undefined)}
+      onRemoveAttachment={vi.fn().mockResolvedValue(undefined)}
+      onSteerQueued={vi.fn().mockResolvedValue(undefined)}
+      onRemoveQueued={vi.fn().mockResolvedValue(undefined)}
+      onEditQueued={vi.fn().mockResolvedValue(undefined)}
+      approvalMode="auto"
+      onApprovalMode={vi.fn()}
+      onApproval={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(onSend).toHaveBeenCalledWith('use model one', { model: 'model-1' });
+  });
+
+  it('keeps model selection available while an agent turn is running', () => {
+    render(<Composer
+      disabled={false}
+      thinking={true}
+      task={taskWithDraft('')}
+      attachments={[]}
+      queuedMessages={[]}
+      models={[{ id: 'model-1', label: 'Model 1' }, { id: 'model-2', label: 'Model 2' }]}
+      selectedModel="model-1"
+      selectedEffort="medium"
+      onModel={vi.fn()}
+      onEffort={vi.fn()}
+      busy={false}
+      onSend={vi.fn().mockResolvedValue(undefined)}
+      onRunCommand={vi.fn().mockResolvedValue(false)}
+      onCancel={vi.fn().mockResolvedValue(undefined)}
+      onDraft={vi.fn().mockResolvedValue(undefined)}
+      onAttach={vi.fn().mockResolvedValue(undefined)}
+      onAttachImage={vi.fn().mockResolvedValue(undefined)}
+      onRemoveAttachment={vi.fn().mockResolvedValue(undefined)}
+      onSteerQueued={vi.fn().mockResolvedValue(undefined)}
+      onRemoveQueued={vi.fn().mockResolvedValue(undefined)}
+      onEditQueued={vi.fn().mockResolvedValue(undefined)}
+      approvalMode="auto"
+      onApprovalMode={vi.fn()}
+      onApproval={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    expect(screen.getByRole('button', { name: 'Select model and effort' })).toBeEnabled();
+  });
+
   it('opens reasoning effort card, controls effort via slider, and separates model selection popover', () => {
     const onModel = vi.fn();
     const onEffort = vi.fn();

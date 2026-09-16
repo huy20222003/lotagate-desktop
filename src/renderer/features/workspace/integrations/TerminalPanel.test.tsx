@@ -66,7 +66,7 @@ describe('TerminalPanel', () => {
     view.rerender(<TerminalPanel cwd="D:\\workspace" open placement="right" onClose={vi.fn()} />);
     const sideHandle = screen.getByRole('separator', { name: 'Resize terminal width' });
     fireEvent.keyDown(sideHandle, { key: 'ArrowLeft' });
-    expect(panel).toHaveStyle({ width: '536px' });
+    expect(panel).toHaveStyle({ width: `${Math.floor(window.innerWidth * 0.5)}px` });
   });
 });
 

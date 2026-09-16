@@ -193,6 +193,42 @@ describe('FileChangesDrawer', () => {
     expect(readFile).toHaveBeenCalledWith('/workspace', 'README.md');
   });
 
+  it('opens file tab actions from the context menu', async () => {
+    const readFile = vi.fn(async (_cwd: string, path: string) => `content for ${path}`);
+    Object.defineProperty(window, 'lotagate', { configurable: true, value: { git: { readFile }, workspaces: { fileSuggestions: vi.fn().mockResolvedValue([]) } } });
+    const summary = {
+      additions: 3,
+      deletions: 0,
+      files: [
+        { path: 'src/one.ts', additions: 1, deletions: 0, truncated: false, lines: [{ kind: 'addition' as const, text: 'one', newLine: 1 }] },
+        { path: 'src/two.ts', additions: 1, deletions: 0, truncated: false, lines: [{ kind: 'addition' as const, text: 'two', newLine: 1 }] },
+        { path: 'src/three.ts', additions: 1, deletions: 0, truncated: false, lines: [{ kind: 'addition' as const, text: 'three', newLine: 1 }] },
+      ],
+    };
+    render(<FileChangesDrawer cwd="/workspace" summary={summary} onClose={() => undefined} />);
+    for (const path of ['src/one.ts', 'src/two.ts', 'src/three.ts']) {
+      if (path !== 'src/one.ts') fireEvent.mouseDown(screen.getByRole('tab', { name: 'Review' }));
+      fireEvent.click(screen.getByRole('button', { name: `Open ${path} in a tab` }));
+      const fileName = path.slice(path.lastIndexOf('/') + 1);
+      expect(await screen.findByRole('tab', { name: fileName })).toBeVisible();
+    }
+
+    fireEvent.contextMenu(screen.getByRole('tab', { name: 'two.ts' }));
+    expect(await screen.findByRole('menu', { name: 'Actions for two.ts' })).toBeVisible();
+    expect(screen.getByRole('menuitem', { name: 'Close' })).toBeVisible();
+    expect(screen.getByRole('menuitem', { name: 'Close other tabs' })).toBeVisible();
+    expect(screen.getByRole('menuitem', { name: 'Close tabs to the right' })).toBeVisible();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Close tabs to the right' }));
+    expect(screen.getByRole('tab', { name: 'one.ts' })).toBeVisible();
+    expect(screen.getByRole('tab', { name: 'two.ts' })).toBeVisible();
+    expect(screen.queryByRole('tab', { name: 'three.ts' })).not.toBeInTheDocument();
+
+    fireEvent.contextMenu(screen.getByRole('tab', { name: 'two.ts' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Close other tabs' }));
+    expect(screen.getByRole('tab', { name: 'two.ts' })).toBeVisible();
+    expect(screen.queryByRole('tab', { name: 'one.ts' })).not.toBeInTheDocument();
+  });
+
   it('opens only the selected file when the drawer receives an initial file path', () => {
     const changes = {
       additions: 2,

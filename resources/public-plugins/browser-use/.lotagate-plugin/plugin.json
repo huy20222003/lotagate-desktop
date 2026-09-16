@@ -1,7 +1,7 @@
 {
   "name": "browser-use",
   "displayName": "Browser Use",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Browse, inspect, and interact with web pages through LotaGate's governed browser runtime.",
   "author": "LotaGate",
   "license": "MIT",

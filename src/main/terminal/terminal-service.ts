@@ -10,6 +10,7 @@ import { JsonFileStore } from '../persistence/json-file-store.js';
 import { desktopDataPath } from '../persistence/app-data-paths.js';
 import { terminateDesktopProcess } from '../process/process-termination.js';
 import { createChildProcessEnvironment } from '../process/process-environment.js';
+import { BoundedOutputCollector } from '../process/bounded-output.js';
 import { MAX_EVIDENCE_BYTES, MAX_EVIDENCE_RECORDS, MAX_OUTPUT_BYTES } from './terminal-constants.js';
 
 export interface TerminalResult { command: string; args: string[]; cwd: string; stdout: string; stderr: string; exitCode: number | null; truncated: boolean; durationMs: number; }
@@ -20,6 +21,7 @@ const terminalEvidenceSchemaArray = terminalEvidenceSchema.array();
 interface EvidenceStore {
   read(): Promise<TerminalEvidence[]>;
   write(value: TerminalEvidence[]): Promise<void>;
+  update(mutator: (current: TerminalEvidence[]) => TerminalEvidence[] | Promise<TerminalEvidence[]>): Promise<TerminalEvidence[]>;
 }
 
 export class TerminalService {
@@ -39,24 +41,18 @@ export class TerminalService {
     if (!value.approved && !isReadOnlyCommand(value.command, value.args)) throw new Error('This command requires explicit approval.');
     const started = Date.now();
     const child = spawn(value.command, value.args, { cwd, shell: false, detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: createChildProcessEnvironment() });
-    let stdout = ''; let stderr = ''; let truncated = false;
-    const collect = (chunk: Buffer, target: 'stdout' | 'stderr') => {
-      const available = MAX_OUTPUT_BYTES - Buffer.byteLength(stdout + stderr, 'utf8');
-      if (available <= 0) { truncated = true; return; }
-      const value = chunk.toString('utf8');
-      const text = Buffer.byteLength(value, 'utf8') <= available ? value : value.slice(0, available);
-      if (text.length !== value.length) truncated = true;
-      if (target === 'stdout') stdout += text; else stderr += text;
-    };
-    child.stdout.on('data', chunk => collect(chunk, 'stdout'));
-    child.stderr.on('data', chunk => collect(chunk, 'stderr'));
+    const output = new BoundedOutputCollector(MAX_OUTPUT_BYTES);
+    child.stdout.on('data', chunk => output.append('stdout', chunk));
+    child.stderr.on('data', chunk => output.append('stderr', chunk));
     let termination: Promise<void> | undefined;
     const timeout = value.timeoutMs === undefined ? undefined : setTimeout(() => { termination = terminateDesktopProcess(child); }, value.timeoutMs);
     const exitCode = await new Promise<number | null>((resolve, reject) => { child.on('error', reject); child.on('close', code => resolve(code)); });
     if (timeout !== undefined) clearTimeout(timeout);
     if (termination !== undefined) await termination;
-    const result: TerminalEvidence = { id: randomUUID(), taskId: value.taskId, command: value.command, args: [...value.args], cwd, stdout: redact(stdout), stderr: redact(stderr), exitCode, truncated, durationMs: Date.now() - started, createdAt: new Date().toISOString() };
-    await this.evidence.write(await retainEvidence([...(await this.evidence.read()), result], await this.getRetentionDays()));
+    output.finish();
+    const captured = output.value();
+    const result: TerminalEvidence = { id: randomUUID(), taskId: value.taskId, command: value.command, args: [...value.args], cwd, stdout: redact(captured.stdout), stderr: redact(captured.stderr), exitCode, truncated: captured.truncated, durationMs: Date.now() - started, createdAt: new Date().toISOString() };
+    await this.evidence.update(async current => retainEvidence([...current, result], await this.getRetentionDays()));
     return result;
   }
 
