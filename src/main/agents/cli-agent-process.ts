@@ -142,9 +142,17 @@ export class CliAgentProcess {
     const generation = this.generation;
     this.abortActiveHostRequests();
     this.handler.onDiagnostic?.({ kind: 'protocol', message: `CLI shutdown requested (reason=${reason}, pid=${child.pid ?? 'unknown'}).` });
+    const shutdownRequest = this.request('shutdown', {});
     try {
-      await Promise.race([this.request('shutdown', {}), delay(cliRequestTimeout('shutdown'))]);
-      this.handler.onDiagnostic?.({ kind: 'protocol', message: `CLI shutdown acknowledged (reason=${reason}).` });
+      const acknowledged = await Promise.race([
+        shutdownRequest.then(() => true, error => {
+          this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: `CLI shutdown request failed (reason=${reason}, message=${error instanceof Error ? error.message : String(error)}).` });
+          return false;
+        }),
+        delay(cliRequestTimeout('shutdown')).then(() => false),
+      ]);
+      if (acknowledged) this.handler.onDiagnostic?.({ kind: 'protocol', message: `CLI shutdown acknowledged (reason=${reason}).` });
+      else this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: `CLI shutdown acknowledgement timed out (reason=${reason}, timeoutMs=${cliRequestTimeout('shutdown')}).` });
     } catch (error) {
       this.handler.onDiagnostic?.({ kind: 'protocol', severity: 'error', message: `CLI shutdown request failed (reason=${reason}, message=${error instanceof Error ? error.message : String(error)}).` });
       // The process may already be exiting; close handling below remains authoritative.
