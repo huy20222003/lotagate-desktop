@@ -50,6 +50,7 @@
     "make": "electron-forge make",
     "make:installers": "node scripts/build-installers.mjs",
     "release:target": "node scripts/build-release-matrix.mjs",
+    "artifacts:download": "node scripts/download-release-artifacts.mjs",
     "package:smoke": "npm run build && npm run check:file-size && npm run package"
   },
   "dependencies": {

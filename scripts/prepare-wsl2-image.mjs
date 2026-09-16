@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -22,10 +22,11 @@ const dependencyManifestPath = resolve(desktopRoot, 'resources', 'native-depende
 const options = parseOptions(process.argv.slice(2));
 
 if (options.help) {
-  console.log('Usage: node scripts/prepare-wsl2-image.mjs --arch x64|arm64 [--force]');
+  console.log('Usage: node scripts/prepare-wsl2-image.mjs --arch x64|arm64 [--force] [--container]');
   process.exit(0);
 }
-if (process.platform !== 'win32') fail('The WSL2 image can only be prepared on a Windows build runner.');
+if (!options.container && process.platform !== 'win32') fail('The WSL2 image can only be prepared on a Windows build runner unless --container is used.');
+if (options.container && process.platform !== 'linux') fail('The container WSL2 image builder must run on a Linux build runner.');
 
 const imageConfig = JSON.parse(await readFile(imageConfigPath, 'utf8'));
 const image = imageConfig.images?.[options.arch];
@@ -50,6 +51,10 @@ if (!options.force && await reusableImage(metadataPath, outputPath, image, depen
 await mkdir(cacheDirectory, { recursive: true });
 await mkdir(outputDirectory, { recursive: true });
 await downloadAndVerify(image.sourceUrl, image.sourceSha256, sourcePath);
+if (options.container) {
+  await prepareWithContainer(sourcePath, outputPath, image, dependencies, dependencyManifestSha256);
+  process.exit(0);
+}
 await rm(buildDirectory, { recursive: true, force: true });
 await mkdir(buildDirectory, { recursive: true });
 await cleanupAbandonedBuildDistributions();
@@ -106,6 +111,56 @@ async function unregisterDistribution(distribution) {
   await run('wsl.exe', ['--unregister', distribution], WSL_DISTRIBUTION_CLEANUP_TIMEOUT_MS).catch(error => {
     console.warn(`Unable to unregister WSL2 distribution ${distribution}: ${error instanceof Error ? error.message : String(error)}`);
   });
+}
+
+async function prepareWithContainer(sourcePath, outputPath, image, dependencies, dependencyManifestSha256) {
+  const imageTag = `lotagate-wsl2-builder:${options.arch}-${process.pid}`;
+  const containerName = `lotagate-wsl2-builder-${options.arch}-${process.pid}`;
+  const temporaryOutputPath = `${outputPath}.part`;
+  try {
+    await runDocker(['version', '--format', '{{.Server.Version}}'], WSL_IMAGE_OPERATION_TIMEOUT_MS);
+    await runDocker(['import', '--platform', `linux/${options.arch === 'arm64' ? 'arm64' : 'amd64'}`, sourcePath, imageTag], WSL_IMAGE_OPERATION_TIMEOUT_MS);
+    await runDocker(['run', '--name', containerName, imageTag, '/bin/sh', '-c', buildContainerInstallCommand(dependencies)], WSL_IMAGE_OPERATION_TIMEOUT_MS);
+    await exportDockerContainer(containerName, temporaryOutputPath);
+    await rm(outputPath, { force: true });
+    await rename(temporaryOutputPath, outputPath);
+    const checksum = await sha256(outputPath);
+    await writeFile(`${outputPath}.sha256`, `${checksum}  ${image.outputFile}\n`, 'utf8');
+    await writeFile(`${outputPath}.json`, JSON.stringify({ schemaVersion: 2, architecture: options.arch, sourceSha256: image.sourceSha256, dependencyManifestSha256, aptPackages: dependencies.apt, imageSha256: checksum }, null, 2) + '\n', 'utf8');
+    console.log(`Prepared container-backed WSL2 image ${outputPath} (${checksum}).`);
+  } finally {
+    await rm(temporaryOutputPath, { force: true });
+    await runDocker(['rm', '--force', containerName], WSL_IMAGE_OPERATION_TIMEOUT_MS).catch(() => undefined);
+    await runDocker(['rmi', '--force', imageTag], WSL_IMAGE_OPERATION_TIMEOUT_MS).catch(() => undefined);
+  }
+}
+
+function buildContainerInstallCommand(dependencies) {
+  const packages = dependencies.apt.map(shellQuote).join(' ');
+  const commands = [`apt-get update`, `DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${packages}`, `rm -rf /var/lib/apt/lists/*`];
+  for (const npm of dependencies.npm) commands.push(`npm install --prefix ${shellQuote(npm.prefix)} --no-save ${npm.packages.map(shellQuote).join(' ')}`);
+  return commands.join(' && ');
+}
+
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\\"'\\\"'")}'`;
+}
+
+async function exportDockerContainer(containerName, target) {
+  const child = spawn('docker', ['export', containerName], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr.on('data', chunk => { stderr += chunk.toString('utf8').slice(-COMMAND_OUTPUT_BYTES); });
+  const exit = new Promise((resolvePromise, reject) => {
+    child.once('error', reject);
+    child.once('close', code => code === 0 ? resolvePromise() : reject(new Error(`docker export failed with exit code ${String(code)}: ${stderr.trim()}`)));
+  });
+  try {
+    await Promise.all([pipeline(child.stdout, createWriteStream(target)), exit]);
+  } catch (error) {
+    child.kill();
+    await rm(target, { force: true });
+    throw error;
+  }
 }
 
 function isProcessAlive(pid) {
@@ -206,6 +261,10 @@ async function run(command, args, timeoutMs) {
   return execFileAsync(command, args, { windowsHide: true, timeout: timeoutMs, maxBuffer: COMMAND_OUTPUT_BYTES, encoding: 'buffer' });
 }
 
+async function runDocker(args, timeoutMs) {
+  return run('docker', args, timeoutMs);
+}
+
 async function sha256(path) {
   const file = await import('node:fs');
   const hash = createHash('sha256');
@@ -233,10 +292,11 @@ function parseAptPackage(value) {
 function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'); }
 
 function parseOptions(args) {
-  const parsed = { arch: process.arch === 'arm64' ? 'arm64' : 'x64', force: false, help: false };
+  const parsed = { arch: process.arch === 'arm64' ? 'arm64' : 'x64', container: false, force: false, help: false };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === '--help' || argument === '-h') parsed.help = true;
+    else if (argument === '--container') parsed.container = true;
     else if (argument === '--force') parsed.force = true;
     else if (argument === '--arch') parsed.arch = args[++index];
     else fail(`Unknown option '${argument}'.`);

@@ -314,18 +314,27 @@ npm run release:target -- --list
 npm run release:target -- --target win32-x64
 ```
 
-`.github/workflows/desktop-release.yml` resolves that same list, runs every
-target on its native GitHub Actions runner, and uploads the results to a
-workflow artifact. After all targets succeed, the upload job authenticates to
-Google Drive through GitHub OIDC and creates the immutable tree
-`desktop-releases/vX.Y.Z/<windows|macos|linux>/<x64|arm64>`. Configure the
-repository secrets `LOTAGATE_GCP_WORKLOAD_IDENTITY_PROVIDER` and
-`LOTAGATE_GCP_SERVICE_ACCOUNT`, plus the repository secret
-`LOTAGATE_DRIVE_PARENT_FOLDER_ID`. The service account must have access to the
-configured Drive folder. `LOTAGATE_SPEECH_MODEL_URL` is an optional repository
-variable for a public HTTPS mirror containing the exact pinned model; when it
-is absent, the official whisper.cpp model URL is used. The release jobs also
-require the GitHub Repository Secrets `LOTAGATE_API_BASE_URL`,
+`.github/workflows/desktop-release.yml` resolves that same list and runs every
+target on its configured GitHub Actions runner. WSL2 guest images are prepared
+in container-backed Linux jobs for both architectures, so Windows ARM64
+packaging does not depend on WSL being installed on the Windows ARM runner.
+Target artifacts remain available as GitHub Actions artifacts for seven days.
+Download all six target artifacts directly to a local directory through the
+GitHub Actions API:
+
+```powershell
+$env:GH_TOKEN = (gh auth token)
+npm run artifacts:download -- --run-id 123456789
+```
+
+Use `--tag desktop-vX.Y.Z` instead of `--run-id` to resolve the successful
+release run automatically. The downloader verifies artifact archive paths and
+each target's `release-manifest.json` before writing the files. This replaces
+the former Google Drive upload step for collecting release artifacts locally.
+`LOTAGATE_SPEECH_MODEL_URL` is an optional repository variable for a public
+HTTPS mirror containing the exact pinned model; when it is absent, the official
+whisper.cpp model URL is used. The release jobs also require the GitHub
+Repository Secrets `LOTAGATE_API_BASE_URL`,
 `LOTAGATE_TRUSTED_ORIGIN`, and the base64 DER SubjectPublicKeyInfo
 `LOTAGATE_DESKTOP_UPDATE_PUBLIC_KEY`; `LOTAGATE_REMOTE_SERVER_URL` and
 `LOTAGATE_REMOTE_SERVER_GLOBAL_PREFIX` are optional repository secrets that
